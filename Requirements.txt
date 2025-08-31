@@ -1,0 +1,22 @@
+# PyQt5 for GUI
+PyQt5==5.15.9
+
+# Database dependencies
+sqlalchemy==2.0.43
+pymysql==1.4.6
+
+# Google Cloud SQL Connector (the correct package)
+cloud-sql-python-connector[pymysql]==1.4.3
+
+# Google Cloud authentication
+google-auth==2.23.4
+google-cloud-core==2.3.3
+
+# Document processing
+python-docx==0.8.11
+
+# Environment variables (optional)
+python-dotenv==1.0.0
+
+# Cryptography for secure connections
+cryptography==41.0.7
