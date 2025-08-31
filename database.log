@@ -1,0 +1,54 @@
+2025-08-20 13:22:32,733 - ERROR - Database query error: (1054, "Unknown column 'report_date' in 'where clause'")
+2025-08-20 13:22:44,844 - ERROR - Database query error: (1054, "Unknown column 'report_date' in 'where clause'")
+2025-08-20 14:03:57,616 - ERROR - Database query error: (1054, "Unknown column 'palawan_incentives' in 'field list'")
+2025-08-20 14:11:07,651 - ERROR - Database query error: (1054, "Unknown column 'palawan_payout_incentives' in 'field list'")
+2025-08-20 14:11:54,592 - ERROR - Database query error: (1054, "Unknown column 'report_date' in 'where clause'")
+2025-08-28 14:05:29,449 - ERROR - Database query error: (1054, "Unknown column 'palawan_sendout_principal' in 'field list'")
+2025-08-28 14:12:35,971 - ERROR - Database query error: (1054, "Unknown column 'mc_usd_buy_amount' in 'field list'")
+2025-08-29 10:38:23,203 - ERROR - Database query error: (1146, "Table 'operation_db.fund_transfers' doesn't exist")
+2025-08-29 11:03:41,483 - ERROR - Database query error: (1054, "Unknown column 'palawan_sendout_total' in 'field list'")
+2025-08-29 16:15:44,035 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:15:44,919 - ERROR - Neon connection failed (attempt 1): connection to server at "ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech" (13.228.46.236), port 5432 failed: ERROR:  unsupported startup parameter in options: default_transaction_isolation. Please use unpooled connection or remove this parameter from the startup package. More details: https://neon.tech/docs/connect/connection-errors#unsupported-startup-parameter
+
+2025-08-29 16:15:44,919 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:15:45,378 - ERROR - Neon connection failed (attempt 2): connection to server at "ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech" (13.228.46.236), port 5432 failed: ERROR:  unsupported startup parameter in options: default_transaction_isolation. Please use unpooled connection or remove this parameter from the startup package. More details: https://neon.tech/docs/connect/connection-errors#unsupported-startup-parameter
+
+2025-08-29 16:15:45,379 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:15:45,824 - ERROR - Neon connection failed (attempt 3): connection to server at "ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech" (13.228.46.236), port 5432 failed: ERROR:  unsupported startup parameter in options: default_transaction_isolation. Please use unpooled connection or remove this parameter from the startup package. More details: https://neon.tech/docs/connect/connection-errors#unsupported-startup-parameter
+
+2025-08-29 16:18:30,006 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:18:30,580 - ERROR - Neon connection failed (attempt 1): connection to server at "ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech" (13.228.46.236), port 5432 failed: ERROR:  unsupported startup parameter in options: default_transaction_isolation. Please use unpooled connection or remove this parameter from the startup package. More details: https://neon.tech/docs/connect/connection-errors#unsupported-startup-parameter
+
+2025-08-29 16:18:30,580 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:18:31,014 - ERROR - Neon connection failed (attempt 2): connection to server at "ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech" (13.228.46.236), port 5432 failed: ERROR:  unsupported startup parameter in options: default_transaction_isolation. Please use unpooled connection or remove this parameter from the startup package. More details: https://neon.tech/docs/connect/connection-errors#unsupported-startup-parameter
+
+2025-08-29 16:18:31,014 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:18:31,456 - ERROR - Neon connection failed (attempt 3): connection to server at "ep-lively-rain-a138xh73-pooler.ap-southeast-1.aws.neon.tech" (13.228.46.236), port 5432 failed: ERROR:  unsupported startup parameter in options: default_transaction_isolation. Please use unpooled connection or remove this parameter from the startup package. More details: https://neon.tech/docs/connect/connection-errors#unsupported-startup-parameter
+
+2025-08-29 16:21:55,036 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:21:55,865 - INFO - Database connection established successfully
+2025-08-29 16:31:42,926 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 16:31:43,390 - INFO - Database connection established successfully
+2025-08-29 23:23:27,509 - INFO - Attempting Neon connection to neondb_owner@ep-lively-rain-a138xh73.ap-southeast-1.aws.neon.tech:5432/neondb
+2025-08-29 23:23:28,330 - INFO - Database connection established successfully
+2025-08-31 11:50:24,708 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 11:50:34,949 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 11:50:39,651 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 11:53:16,063 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 11:53:56,638 - INFO - Attempting MySQL connection to root@localhost:3307/operation_db
+2025-08-31 11:54:00,755 - ERROR - MySQL connection failed (attempt 1): 2003 (HY000): Can't connect to MySQL server on 'localhost:3307' (10061)
+2025-08-31 11:54:00,756 - INFO - Attempting MySQL connection to root@localhost:3307/operation_db
+2025-08-31 11:54:04,832 - ERROR - MySQL connection failed (attempt 2): 2003 (HY000): Can't connect to MySQL server on 'localhost:3307' (10061)
+2025-08-31 11:54:04,832 - INFO - Attempting MySQL connection to root@localhost:3307/operation_db
+2025-08-31 11:54:08,904 - ERROR - MySQL connection failed (attempt 3): 2003 (HY000): Can't connect to MySQL server on 'localhost:3307' (10061)
+2025-08-31 11:57:18,790 - INFO - Attempting MySQL connection to root@localhost:3306/test
+2025-08-31 11:57:44,680 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 11:59:03,365 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 12:08:32,731 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 12:08:42,815 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 12:09:55,522 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 12:09:55,529 - INFO - Database connection established successfully
+2025-08-31 12:16:44,912 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 12:16:44,937 - INFO - Database connection established successfully
+2025-08-31 12:30:23,884 - INFO - Attempting MySQL connection to root@localhost:3306/operation_db
+2025-08-31 12:30:23,891 - INFO - Database connection established successfully
