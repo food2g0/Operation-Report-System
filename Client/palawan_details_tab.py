@@ -22,34 +22,7 @@ class PalawanDetailsTab(QWidget):
 
         palawan_layout = QVBoxLayout(palawan_widget)
 
-        # Instructions section
-        instructions_frame = QFrame()
-        instructions_frame.setStyleSheet("""
-            QFrame {
-                background-color: #fff3cd;
-                border-left: 4px solid #ffc107;
-                border-radius: 4px;
-                padding: 15px;
-                margin: 10px 0;
-            }
-        """)
-        instructions_layout = QVBoxLayout(instructions_frame)
-
-        note_label = QLabel("⚠️ IMPORTANT: ENCODE DAILY")
-        note_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #856404;")
-
-        instruction_label = QLabel(
-            "PALAWAN GUIDELINES:\n"
-            "• 60% to Manager (No Global) | 30% to Branch (With Global)\n"
-            "• Must match BIR book entries and Excel reports to Accounting"
-        )
-        instruction_label.setStyleSheet("font-size: 11px; color: #856404; margin-top: 8px;")
-        instruction_label.setWordWrap(True)
-
-        instructions_layout.addWidget(note_label)
-        instructions_layout.addWidget(instruction_label)
-
-        palawan_layout.addWidget(instructions_frame)
+    
 
         # Create main sections
         main_sections_frame = QFrame()
@@ -60,21 +33,21 @@ class PalawanDetailsTab(QWidget):
         sendout_group = self.create_palawan_section_group(
             "PALAWAN SEND-OUT",
             "sendout",
-            "#e74c3c"
+            "#1b75bc"
         )
 
         # Palawan Pay Out
         payout_group = self.create_palawan_section_group(
             "PALAWAN PAY-OUT",
             "payout",
-            "#27ae60"
+            "#1b75bc"
         )
 
         # Palawan International
         international_group = self.create_palawan_section_group(
             "PALAWAN INTERNATIONAL",
             "international",
-            "#3498db"
+            "#1b75bc"
         )
 
         main_sections_layout.addWidget(sendout_group, 0, 0)

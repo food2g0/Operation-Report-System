@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect import db_manager
+from db_connect_pooled import db_manager
 import datetime
 
 
@@ -14,33 +14,29 @@ class ReportPage(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PEPP Reconciliation Report")
-
-        # Get screen dimensions and maximize window
         self.setup_window_size()
 
-        # Main layout
         self.main_layout = QVBoxLayout()
         self.main_layout.setContentsMargins(15, 15, 15, 15)
         self.main_layout.setSpacing(10)
         self.setLayout(self.main_layout)
 
-        # Create components
         self.create_controls()
         self.create_report_table()
         self.create_buttons()
 
-        # Load data
         self.load_corporations()
 
+    # ─────────────────────────────────────────────────────────────────────────
+
     def setup_window_size(self):
-        """Setup window to be maximized and responsive"""
         desktop = QApplication.desktop()
-        screen_geometry = desktop.screenGeometry()
         self.setMinimumSize(800, 600)
         self.showMaximized()
 
+    # ─────────────────────────────────────────────────────────────────────────
+
     def create_controls(self):
-        """Create corporation and date selectors"""
         controls_frame = QFrame()
         controls_frame.setFrameStyle(QFrame.Box)
         controls_frame.setStyleSheet("""
@@ -51,18 +47,15 @@ class ReportPage(QWidget):
                 padding: 10px;
             }
         """)
-
         controls_layout = QHBoxLayout(controls_frame)
         controls_layout.setSpacing(20)
 
-        # Corporation selector
         corp_label = QLabel("Corporation:")
         corp_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.corp_selector = QComboBox()
         self.corp_selector.setMinimumWidth(200)
         self.corp_selector.currentTextChanged.connect(self.generate_report)
 
-        # Date selector
         date_label = QLabel("Date:")
         date_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.date_selector = QDateEdit(calendarPopup=True)
@@ -70,12 +63,13 @@ class ReportPage(QWidget):
         self.date_selector.setDisplayFormat("yyyy-MM-dd")
         self.date_selector.dateChanged.connect(self.generate_report)
 
-        # Partner Registry No field
         registry_label = QLabel("Partner Registry No:")
         registry_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.registry_input = QLineEdit()
         self.registry_input.setPlaceholderText("e.g., P210021A")
         self.registry_input.setMaximumWidth(150)
+        # Re-generate report when registry number changes so header updates live
+        self.registry_input.textChanged.connect(self.generate_report)
 
         controls_layout.addWidget(corp_label)
         controls_layout.addWidget(self.corp_selector)
@@ -89,23 +83,18 @@ class ReportPage(QWidget):
 
         self.main_layout.addWidget(controls_frame)
 
-    def create_report_table(self):
-        """Create the PEPP reconciliation report table"""
-        self.table = QTableWidget()
-        self.table.setColumnCount(4)  # Description, blank, Amount column 1, Amount column 2
-        self.table.setHorizontalHeaderLabels(["", "", "", ""])
+    # ─────────────────────────────────────────────────────────────────────────
 
-        # Hide headers for cleaner look
+    def create_report_table(self):
+        self.table = QTableWidget()
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["", "", "", ""])
         self.table.horizontalHeader().hide()
         self.table.verticalHeader().hide()
-
-        # Set column widths
-        self.table.setColumnWidth(0, 400)  # Description column
-        self.table.setColumnWidth(1, 50)  # Blank column
-        self.table.setColumnWidth(2, 100)  # Amount column 1
-        self.table.setColumnWidth(3, 150)  # Amount column 2
-
-        # Style the table
+        self.table.setColumnWidth(0, 400)
+        self.table.setColumnWidth(1, 50)
+        self.table.setColumnWidth(2, 100)
+        self.table.setColumnWidth(3, 150)
         self.table.setStyleSheet("""
             QTableWidget {
                 gridline-color: #d0d0d0;
@@ -118,11 +107,11 @@ class ReportPage(QWidget):
                 padding: 5px;
             }
         """)
-
         self.main_layout.addWidget(self.table)
 
+    # ─────────────────────────────────────────────────────────────────────────
+
     def create_buttons(self):
-        """Create export and print buttons"""
         button_frame = QFrame()
         button_frame.setMaximumHeight(60)
         button_layout = QHBoxLayout(button_frame)
@@ -138,9 +127,7 @@ class ReportPage(QWidget):
                 font-size: 11px;
                 min-width: 120px;
             }
-            QPushButton:hover {
-                background-color: #0056b3;
-            }
+            QPushButton:hover { background-color: #0056b3; }
         """
 
         self.export_button = QPushButton("Export to Excel")
@@ -159,437 +146,384 @@ class ReportPage(QWidget):
 
         self.main_layout.addWidget(button_frame)
 
+    # ─────────────────────────────────────────────────────────────────────────
+
     def load_corporations(self):
-        """Load unique corporations from the database"""
         self.corp_selector.clear()
         try:
-            query = "SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation"
-            corporations = db_manager.execute_query(query)
-
-            for corp in corporations:
-                if isinstance(corp, dict):
-                    self.corp_selector.addItem(corp['corporation'])
-                else:
-                    self.corp_selector.addItem(corp[0])
-
+            results = db_manager.execute_query(
+                "SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation"
+            )
+            for corp in results:
+                self.corp_selector.addItem(
+                    corp['corporation'] if isinstance(corp, dict) else corp[0]
+                )
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
 
+    # ─────────────────────────────────────────────────────────────────────────
+
     def get_totals_from_database(self):
-        """Get totals from payable_tbl for the selected corporation and date"""
-        corp = self.corp_selector.currentText()
+        """Fetch aggregated totals from payable_tbl. Returns None if no rows exist."""
+        corp          = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
 
         if not corp:
             return None
 
         try:
-            query = """
-                    SELECT SUM(sendout_capital)          as total_sendout_capital, \
-                           SUM(sendout_commission)       as total_sendout_commission, \
-                           SUM(sendout_sc)               as total_sendout_sc, \
-                           SUM(payout_capital)           as total_payout_capital, \
-                           SUM(payout_commission)        as total_payout_commission, \
-                           SUM(payout_sc)                as total_payout_sc, \
-                           SUM(international_commission) as total_international_commission, \
-                           SUM(skid)                     as total_skid, \
-                           SUM(skir)                     as total_skir, \
-                           SUM(cancellation)             as total_cancellation, \
-                           SUM(inc)                      as total_inc
-                    FROM payable_tbl
-                    WHERE corporation = %s \
-                      AND date = %s \
-                    """
+            result = db_manager.execute_query("""
+                SELECT SUM(sendout_capital)          AS total_sendout_capital,
+                       SUM(sendout_commission)       AS total_sendout_commission,
+                       SUM(sendout_sc)               AS total_sendout_sc,
+                       SUM(payout_capital)           AS total_payout_capital,
+                       SUM(payout_commission)        AS total_payout_commission,
+                       SUM(payout_sc)                AS total_payout_sc,
+                       SUM(international_commission) AS total_international_commission,
+                       SUM(skid)                     AS total_skid,
+                       SUM(skir)                     AS total_skir,
+                       SUM(cancellation)             AS total_cancellation,
+                       SUM(inc)                      AS total_inc
+                FROM payable_tbl
+                WHERE corporation = %s
+                  AND date        = %s
+            """, (corp, selected_date))
 
-            result = db_manager.execute_query(query, (corp, selected_date))
+            if not result or not result[0]:
+                return None
 
-            if result and result[0]:
-                if isinstance(result[0], dict):
-                    return result[0]
-                else:
-                    # Convert tuple to dict
-                    keys = ['total_sendout_capital', 'total_sendout_commission', 'total_sendout_sc',
-                            'total_payout_capital', 'total_payout_commission', 'total_payout_sc',
-                            'total_international_commission', 'total_skid', 'total_skir',
-                            'total_cancellation', 'total_inc']
-                    return dict(zip(keys, result[0]))
+            row = result[0]
 
-            return None
+            # If every SUM came back NULL it means no matching rows at all
+            if isinstance(row, dict):
+                if all(v is None for v in row.values()):
+                    return None
+                return row
+            else:
+                if all(v is None for v in row):
+                    return None
+                keys = [
+                    'total_sendout_capital', 'total_sendout_commission', 'total_sendout_sc',
+                    'total_payout_capital',  'total_payout_commission',  'total_payout_sc',
+                    'total_international_commission',
+                    'total_skid', 'total_skir', 'total_cancellation', 'total_inc',
+                ]
+                return dict(zip(keys, row))
 
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error retrieving totals: {str(e)}")
             return None
 
+    # ─────────────────────────────────────────────────────────────────────────
+
     def generate_report(self):
-        """Generate the PEPP reconciliation report"""
-        corp = self.corp_selector.currentText()
+        """
+        Auto-generates the report whenever corp/date/registry changes.
+        If no data exists yet, clears the table silently — no popup.
+        """
+        corp          = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
 
         if not corp:
+            self.table.setRowCount(0)
             return
 
-        # Get totals from database
         totals = self.get_totals_from_database()
+
+        # ── No data yet: clear table silently and exit ────────────────────────
         if not totals:
-            QMessageBox.information(self, "No Data", f"No data found for {corp} on {selected_date}")
+            self.table.setRowCount(0)
             return
 
-        # Extract values with null checking
-        sendout_capital = float(totals.get('total_sendout_capital') or 0)
-        sendout_commission = float(totals.get('total_sendout_commission') or 0)
-        sendout_sc = float(totals.get('total_sendout_sc') or 0)
-        payout_capital = float(totals.get('total_payout_capital') or 0)
-        payout_commission = float(totals.get('total_payout_commission') or 0)
-        payout_sc = float(totals.get('total_payout_sc') or 0)
+        # ── Extract values ────────────────────────────────────────────────────
+        sendout_capital          = float(totals.get('total_sendout_capital')          or 0)
+        sendout_commission       = float(totals.get('total_sendout_commission')       or 0)
+        sendout_sc               = float(totals.get('total_sendout_sc')               or 0)
+        payout_capital           = float(totals.get('total_payout_capital')           or 0)
+        payout_commission        = float(totals.get('total_payout_commission')        or 0)
+        payout_sc                = float(totals.get('total_payout_sc')                or 0)
         international_commission = float(totals.get('total_international_commission') or 0)
-        total_skid = float(totals.get('total_skid') or 0)
-        total_skir = float(totals.get('total_skir') or 0)
-        total_cancellation = float(totals.get('total_cancellation') or 0)
-        total_inc = float(totals.get('total_inc') or 0)
+        total_skid               = float(totals.get('total_skid')                     or 0)
+        total_skir               = float(totals.get('total_skir')                     or 0)
+        total_cancellation       = float(totals.get('total_cancellation')             or 0)
+        total_inc                = float(totals.get('total_inc')                      or 0)
 
-        # Calculate derived values
-        pepp_commission_61 = sendout_commission * 0.61
-        skid_61 = total_skid * 0.61
-        ajpi_commission_43 = payout_commission * 0.43
-        ajpi_international_80 = international_commission * 0.80
-        skir_57 = total_skir * 0.57
+        # ── Derived calculations ──────────────────────────────────────────────
+        pepp_commission_61       = sendout_commission       * 0.61
+        skid_61                  = total_skid               * 0.61
+        ajpi_commission_43       = payout_commission        * 0.43
+        ajpi_international_80    = international_commission * 0.80
+        skir_57                  = total_skir               * 0.57
 
-        # Calculate subtotals and totals
-        send_subtotal = sendout_capital + pepp_commission_61 + sendout_sc
+        send_subtotal                = sendout_capital + pepp_commission_61 + sendout_sc
         send_subtotal_after_discount = send_subtotal - skid_61
-        total_net_send = send_subtotal_after_discount - total_cancellation
+        total_net_send               = send_subtotal_after_discount - total_cancellation
 
-        release_subtotal = payout_capital + ajpi_commission_43 + ajpi_international_80
-        release_subtotal_with_inc = release_subtotal + total_inc
-        total_net_released = release_subtotal_with_inc + skir_57
+        release_subtotal             = payout_capital + ajpi_commission_43 + ajpi_international_80
+        release_subtotal_with_inc    = release_subtotal + total_inc
+        total_net_released           = release_subtotal_with_inc + skir_57
 
-        net_receivable_payable = total_net_send - total_net_released
+        net_receivable_payable       = total_net_send - total_net_released
 
-        # Clear and populate table
-        self.table.setRowCount(0)
+        registry = self.registry_input.text().strip() or "P210021A"
 
-        # Report data structure
+        # ── Build report rows ─────────────────────────────────────────────────
         report_data = [
             # Header
-            ("Palawan Express Pera Padala - " + corp, "", "", ""),
-            ("PEPP Reconciliation for", "", "Partner Registry No.", ""),
-            (selected_date, "", self.registry_input.text() or "P210021A", ""),
-            ("", "", "", ""),
-            ("", "", "", ""),
+            ("Palawan Express Pera Padala - " + corp, "",  "",            "",                      "header"),
+            ("PEPP Reconciliation for",               "",  "Partner Registry No.", "",             "header"),
+            (selected_date,                           "",  registry,      "",                      "header"),
+            ("", "", "", "", "blank"),
+            ("", "", "", "", "blank"),
 
-            # Send Transaction Section
-            ("Send Transaction", "", "", ""),
-            (f"    PEPP Remittance from {corp}", "", "P", f"{sendout_capital:,.2f}"),
-            ("    PEPP share: 61% of commission", "P", f"{sendout_commission:,.2f}", f"{pepp_commission_61:,.2f}"),
-            ("    PEPP share: Service Charge", "", f"{sendout_sc:,.2f}", f"{sendout_sc:,.2f}"),
-            ("        Subtotal", "", "", f"{send_subtotal:,.2f}"),
-            ("    Less: Discount ( Suki Card)", "", f"({total_skid:,.2f})", f"({skid_61:,.2f})"),
-            ("        Subtotal", "", "", f"{send_subtotal_after_discount:,.2f}"),
-            ("    Less: Cancellation", "", f"({total_cancellation:,.2f})", f"({total_cancellation:,.2f})"),
-            ("    Total Net Send", "", "", f"{total_net_send:,.2f}"),
-            ("", "", "", ""),
-            ("", "", "", ""),
+            # Send Transaction
+            ("Send Transaction",                                           "", "",                          "",                              "section"),
+            (f"    PEPP Remittance from {corp}",                           "", "P",                         f"{sendout_capital:,.2f}",        "indent"),
+            ("    PEPP share: 61% of commission",                          "P", f"{sendout_commission:,.2f}", f"{pepp_commission_61:,.2f}",   "indent"),
+            ("    PEPP share: Service Charge",                             "", f"{sendout_sc:,.2f}",         f"{sendout_sc:,.2f}",            "indent"),
+            ("        Subtotal",                                           "", "",                          f"{send_subtotal:,.2f}",          "subtotal"),
+            ("    Less: Discount (Suki Card)",                             "", f"({total_skid:,.2f})",       f"({skid_61:,.2f})",             "indent"),
+            ("        Subtotal",                                           "", "",                          f"{send_subtotal_after_discount:,.2f}", "subtotal"),
+            ("    Less: Cancellation",                                     "", f"({total_cancellation:,.2f})", f"({total_cancellation:,.2f})", "indent"),
+            ("    Total Net Send",                                         "", "",                          f"{total_net_send:,.2f}",         "total"),
+            ("", "", "", "", "blank"),
+            ("", "", "", "", "blank"),
 
-            # Release Transaction Section
-            ("    RELEASE Transaction (Payable to AJPI)", "", "", ""),
-            ("    PEPP Remittances released at AJPI", "", "P", f"{payout_capital:,.2f}"),
-            ("    AJPI share: 43% of commission", "P", f"{payout_commission:,.2f}", f"{ajpi_commission_43:,.2f}"),
-            ("    AJPI share: 50% of commission (LBC Domestic Payout)", "", "", ""),
-            ("    AJPI share: 80% of commission (International Payout)", "", f"{international_commission:,.2f}",
-             f"{ajpi_international_80:,.2f}"),
-            ("    Service Charge", "", f"{payout_sc:,.2f}", "-"),
-            ("        Subtotal", "", "", f"{release_subtotal:,.2f}"),
-            (f"    Add: AJPI Branch Incentives released on    {selected_date}", "", "", f"{total_inc:,.2f}"),
-            ("        Subtotal", "", "", f"{release_subtotal_with_inc:,.2f}"),
-            ("    Add: Rebates (Suki Card)", "", f"{skir_57:,.2f}", f"{total_skir:,.2f}"),
-            ("    Total Net Released", "", "", f"{total_net_released:,.2f}"),
-            ("", "", "", ""),
-            ("", "", "", ""),
+            # Release Transaction
+            ("    RELEASE Transaction (Payable to AJPI)",                  "", "",                          "",                              "section"),
+            ("    PEPP Remittances released at AJPI",                      "", "P",                         f"{payout_capital:,.2f}",         "indent"),
+            ("    AJPI share: 43% of commission",                          "P", f"{payout_commission:,.2f}", f"{ajpi_commission_43:,.2f}",    "indent"),
+            ("    AJPI share: 50% of commission (LBC Domestic Payout)",    "", "",                          "",                              "indent"),
+            ("    AJPI share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{ajpi_international_80:,.2f}", "indent"),
+            ("    Service Charge",                                         "", f"{payout_sc:,.2f}",          "-",                             "indent"),
+            ("        Subtotal",                                           "", "",                          f"{release_subtotal:,.2f}",       "subtotal"),
+            (f"    Add: AJPI Branch Incentives released on {selected_date}", "", "",                        f"{total_inc:,.2f}",              "indent"),
+            ("        Subtotal",                                           "", "",                          f"{release_subtotal_with_inc:,.2f}", "subtotal"),
+            ("    Add: Rebates (Suki Card)",                               "", f"{total_skir:,.2f}",         f"{skir_57:,.2f}",               "indent"),
+            ("    Total Net Released",                                     "", "",                          f"{total_net_released:,.2f}",     "total"),
+            ("", "", "", "", "blank"),
+            ("", "", "", "", "blank"),
 
-            # Summary Section
-            ("    Net Send", "", "", f"{total_net_send:,.2f}"),
-            ("    Less : Net Released", "", "", f"{total_net_released:,.2f}"),
-            ("    Net Receivable / (Payable)", "", "", f"{net_receivable_payable:,.2f}"),
+            # Summary
+            ("    Net Send",                    "", "", f"{total_net_send:,.2f}",         "regular"),
+            ("    Less : Net Released",         "", "", f"{total_net_released:,.2f}",     "regular"),
+            ("    Net Receivable / (Payable)",  "", "", f"{net_receivable_payable:,.2f}", "total"),
         ]
 
-        # Populate table
+        # ── Populate table ────────────────────────────────────────────────────
         self.table.setRowCount(len(report_data))
 
-        for row, (col1, col2, col3, col4) in enumerate(report_data):
-            # Set items
-            self.table.setItem(row, 0, QTableWidgetItem(col1))
-            self.table.setItem(row, 1, QTableWidgetItem(col2))
-            self.table.setItem(row, 2, QTableWidgetItem(col3))
-            self.table.setItem(row, 3, QTableWidgetItem(col4))
+        bold_font    = QFont(); bold_font.setBold(True)
+        regular_font = QFont()
 
-            # Apply formatting
-            for col in range(4):
-                item = self.table.item(row, col)
-                if item:
-                    # Header rows styling
-                    if row in [0, 1, 2]:
-                        font = QFont()
-                        font.setBold(True)
-                        item.setFont(font)
-                        if row == 0:
-                            item.setTextAlignment(Qt.AlignCenter)
+        for row, (col1, col2, col3, col4, row_type) in enumerate(report_data):
+            for col, text in enumerate([col1, col2, col3, col4]):
+                item = QTableWidgetItem(text)
 
-                    # Section headers
-                    elif "Transaction" in col1 or col1.startswith("    RELEASE"):
-                        font = QFont()
-                        font.setBold(True)
-                        item.setFont(font)
+                # Font
+                if row_type in ("header", "section", "total", "subtotal"):
+                    item.setFont(bold_font)
+                else:
+                    item.setFont(regular_font)
 
-                    # Total rows
-                    elif "Total Net" in col1 or "Net Receivable" in col1 or "Net Send" in col1:
-                        font = QFont()
-                        font.setBold(True)
-                        item.setFont(font)
-                        item.setBackground(QBrush(QColor("#f0f0f0")))
+                # Background
+                if row_type == "total":
+                    item.setBackground(QBrush(QColor("#f0f0f0")))
+                elif row_type == "subtotal":
+                    item.setBackground(QBrush(QColor("#f8f8f8")))
 
-                    # Subtotal rows
-                    elif "Subtotal" in col1:
-                        font = QFont()
-                        font.setBold(True)
-                        item.setFont(font)
-                        item.setBackground(QBrush(QColor("#f8f8f8")))
+                # Alignment
+                if col in (2, 3):
+                    item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                else:
+                    item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
 
-                    # Amount columns alignment
-                    if col in [2, 3]:
-                        item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                    else:
-                        item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # read-only
+                self.table.setItem(row, col, item)
 
-        # Adjust row heights
-        for row in range(self.table.rowCount()):
             self.table.setRowHeight(row, 25)
 
+        # Center the title row
+        title_item = self.table.item(0, 0)
+        if title_item:
+            title_item.setTextAlignment(Qt.AlignCenter)
+
+    # ─────────────────────────────────────────────────────────────────────────
+
     def export_to_excel(self):
-        """Export the PEPP report to Excel file"""
         if self.table.rowCount() == 0:
-            QMessageBox.warning(self, "No Data", "Please generate a report first.")
+            QMessageBox.warning(self, "No Data", "No report to export. Select a corporation and date first.")
             return
 
         try:
-            import pandas as pd
             from openpyxl import Workbook
             from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-            from openpyxl.utils.dataframe import dataframe_to_rows
-            import datetime
 
-            # Get data from form
-            corp = self.corp_selector.currentText()
-            date = self.date_selector.date().toString("yyyy-MM-dd")
-            registry_no = self.registry_input.text() or "P210021A"
+            corp          = self.corp_selector.currentText()
+            date          = self.date_selector.date().toString("yyyy-MM-dd")
+            registry      = self.registry_input.text().strip() or "P210021A"
 
-            # Get totals
             totals = self.get_totals_from_database()
             if not totals:
                 QMessageBox.warning(self, "No Data", "No data available for export.")
                 return
 
-            # Extract numbers
-            sendout_capital = float(totals.get('total_sendout_capital') or 0)
-            sendout_commission = float(totals.get('total_sendout_commission') or 0)
-            sendout_sc = float(totals.get('total_sendout_sc') or 0)
-            payout_capital = float(totals.get('total_payout_capital') or 0)
-            payout_commission = float(totals.get('total_payout_commission') or 0)
-            payout_sc = float(totals.get('total_payout_sc') or 0)
+            sendout_capital          = float(totals.get('total_sendout_capital')          or 0)
+            sendout_commission       = float(totals.get('total_sendout_commission')       or 0)
+            sendout_sc               = float(totals.get('total_sendout_sc')               or 0)
+            payout_capital           = float(totals.get('total_payout_capital')           or 0)
+            payout_commission        = float(totals.get('total_payout_commission')        or 0)
+            payout_sc                = float(totals.get('total_payout_sc')                or 0)
             international_commission = float(totals.get('total_international_commission') or 0)
-            total_skid = float(totals.get('total_skid') or 0)
-            total_skir = float(totals.get('total_skir') or 0)
-            total_cancellation = float(totals.get('total_cancellation') or 0)
-            total_inc = float(totals.get('total_inc') or 0)
+            total_skid               = float(totals.get('total_skid')                     or 0)
+            total_skir               = float(totals.get('total_skir')                     or 0)
+            total_cancellation       = float(totals.get('total_cancellation')             or 0)
+            total_inc                = float(totals.get('total_inc')                      or 0)
 
-            # Derived values
-            pepp_commission_61 = sendout_commission * 0.61
-            skid_61 = total_skid * 0.61
-            ajpi_commission_43 = payout_commission * 0.43
-            ajpi_international_80 = international_commission * 0.80
-            skir_57 = total_skir * 0.57
+            pepp_commission_61       = sendout_commission       * 0.61
+            skid_61                  = total_skid               * 0.61
+            ajpi_commission_43       = payout_commission        * 0.43
+            ajpi_international_80    = international_commission * 0.80
+            skir_57                  = total_skir               * 0.57
 
-            send_subtotal = sendout_capital + pepp_commission_61 + sendout_sc
+            send_subtotal                = sendout_capital + pepp_commission_61 + sendout_sc
             send_subtotal_after_discount = send_subtotal - skid_61
-            total_net_send = send_subtotal_after_discount - total_cancellation
+            total_net_send               = send_subtotal_after_discount - total_cancellation
+            release_subtotal             = payout_capital + ajpi_commission_43 + ajpi_international_80
+            release_subtotal_with_inc    = release_subtotal + total_inc
+            total_net_released           = release_subtotal_with_inc + skir_57
+            net_receivable_payable       = total_net_send - total_net_released
 
-            release_subtotal = payout_capital + ajpi_commission_43 + ajpi_international_80
-            release_subtotal_with_inc = release_subtotal + total_inc
-            total_net_released = release_subtotal_with_inc + skir_57
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "PEPP Reconciliation"
 
-            net_receivable_payable = total_net_send - total_net_released
-
-            # Create workbook and worksheet
-            workbook = Workbook()
-            worksheet = workbook.active
-            worksheet.title = "PEPP Reconciliation"
-
-            # Define styles
-            header_font = Font(bold=True, size=12)
-            section_font = Font(bold=True, size=11)
-            regular_font = Font(size=10)
-            total_font = Font(bold=True, size=11)
-
-            # Fill styles
-            header_fill = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
+            header_font   = Font(bold=True, size=12)
+            section_font  = Font(bold=True, size=11)
+            regular_font  = Font(size=10)
+            total_font    = Font(bold=True, size=11)
+            header_fill   = PatternFill(start_color="E6F3FF", end_color="E6F3FF", fill_type="solid")
             subtotal_fill = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
-            total_fill = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+            total_fill    = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
+            right_align   = Alignment(horizontal='right')
+            center_align  = Alignment(horizontal='center')
 
-            # Border style
-            thin_border = Border(
-                left=Side(style='thin'), right=Side(style='thin'),
-                top=Side(style='thin'), bottom=Side(style='thin')
-            )
+            r = 1
+            ws.merge_cells(f'A{r}:D{r}')
+            ws[f'A{r}'] = f"Palawan Express Pera Padala - {corp}"
+            ws[f'A{r}'].font = header_font
+            ws[f'A{r}'].alignment = center_align
+            ws[f'A{r}'].fill = header_fill
+            r += 1
 
-            current_row = 1
+            ws[f'A{r}'] = f"PEPP Reconciliation for {date}"
+            ws[f'C{r}'] = "Partner Registry No."
+            ws[f'D{r}'] = registry
+            for cell in [ws[f'A{r}'], ws[f'C{r}'], ws[f'D{r}']]:
+                cell.font = header_font
+            r += 2
 
-            # Header section
-            worksheet.merge_cells(f'A{current_row}:D{current_row}')
-            worksheet[f'A{current_row}'] = f"Palawan Express Pera Padala - {corp}"
-            worksheet[f'A{current_row}'].font = header_font
-            worksheet[f'A{current_row}'].alignment = Alignment(horizontal='center')
-            worksheet[f'A{current_row}'].fill = header_fill
-            current_row += 1
-
-            worksheet[f'A{current_row}'] = f"PEPP Reconciliation for {date}"
-            worksheet[f'C{current_row}'] = "Partner Registry No."
-            worksheet[f'D{current_row}'] = registry_no
-            worksheet[f'A{current_row}'].font = header_font
-            worksheet[f'C{current_row}'].font = header_font
-            worksheet[f'D{current_row}'].font = header_font
-            current_row += 2
-
-            # Data rows with proper formatting
-            data_rows = [
-                # Send Transaction Section
-                ("Send Transaction", "", "", "", "section"),
-                (f"    PEPP Remittance from {corp}", "", "P", f"{sendout_capital:,.2f}", "indent"),
-                ("    PEPP share: 61% of commission", "P", f"{sendout_commission:,.2f}", f"{pepp_commission_61:,.2f}",
-                 "indent"),
-                ("    PEPP share: Service Charge", "", f"{sendout_sc:,.2f}", f"{sendout_sc:,.2f}", "indent"),
-                ("        Subtotal", "", "", f"{send_subtotal:,.2f}", "subtotal"),
-                ("    Less: Discount (Suki Card)", "", f"({total_skid:,.2f})", f"({skid_61:,.2f})", "indent"),
-                ("        Subtotal", "", "", f"{send_subtotal_after_discount:,.2f}", "subtotal"),
-                ("    Less: Cancellation", "", f"({total_cancellation:,.2f})", f"({total_cancellation:,.2f})",
-                 "indent"),
-                ("    Total Net Send", "", "", f"{total_net_send:,.2f}", "total"),
+            rows = [
+                ("Send Transaction",                                           "", "",                              "",                                   "section"),
+                (f"    PEPP Remittance from {corp}",                           "", "P",                             f"{sendout_capital:,.2f}",             "indent"),
+                ("    PEPP share: 61% of commission",                          "P", f"{sendout_commission:,.2f}",   f"{pepp_commission_61:,.2f}",          "indent"),
+                ("    PEPP share: Service Charge",                             "", f"{sendout_sc:,.2f}",            f"{sendout_sc:,.2f}",                  "indent"),
+                ("        Subtotal",                                           "", "",                              f"{send_subtotal:,.2f}",               "subtotal"),
+                ("    Less: Discount (Suki Card)",                             "", f"({total_skid:,.2f})",          f"({skid_61:,.2f})",                   "indent"),
+                ("        Subtotal",                                           "", "",                              f"{send_subtotal_after_discount:,.2f}","subtotal"),
+                ("    Less: Cancellation",                                     "", f"({total_cancellation:,.2f})",  f"({total_cancellation:,.2f})",        "indent"),
+                ("    Total Net Send",                                         "", "",                              f"{total_net_send:,.2f}",              "total"),
                 ("", "", "", "", "blank"),
-
-                # Release Transaction Section
-                ("    RELEASE Transaction (Payable to AJPI)", "", "", "", "section"),
-                ("    PEPP Remittances released at AJPI", "", "P", f"{payout_capital:,.2f}", "indent"),
-                ("    AJPI share: 43% of commission", "P", f"{payout_commission:,.2f}", f"{ajpi_commission_43:,.2f}",
-                 "indent"),
-                ("    AJPI share: 50% of commission (LBC Domestic Payout)", "", "", "", "indent"),
-                ("    AJPI share: 80% of commission (International Payout)", "", f"{international_commission:,.2f}",
-                 f"{ajpi_international_80:,.2f}", "indent"),
-                ("    Service Charge", "", f"{payout_sc:,.2f}", "-", "indent"),
-                ("        Subtotal", "", "", f"{release_subtotal:,.2f}", "subtotal"),
-                (f"    Add: AJPI Branch Incentives released on {date}", "", "", f"{total_inc:,.2f}", "indent"),
-                ("        Subtotal", "", "", f"{release_subtotal_with_inc:,.2f}", "subtotal"),
-                ("    Add: Rebates (Suki Card)", "", f"{skir_57:,.2f}", f"{total_skir:,.2f}", "indent"),
-                ("    Total Net Released", "", "", f"{total_net_released:,.2f}", "total"),
+                ("    RELEASE Transaction (Payable to AJPI)",                  "", "",                              "",                                   "section"),
+                ("    PEPP Remittances released at AJPI",                      "", "P",                             f"{payout_capital:,.2f}",              "indent"),
+                ("    AJPI share: 43% of commission",                          "P", f"{payout_commission:,.2f}",    f"{ajpi_commission_43:,.2f}",          "indent"),
+                ("    AJPI share: 50% of commission (LBC Domestic Payout)",    "", "",                              "",                                   "indent"),
+                ("    AJPI share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{ajpi_international_80:,.2f}",   "indent"),
+                ("    Service Charge",                                         "", f"{payout_sc:,.2f}",             "-",                                  "indent"),
+                ("        Subtotal",                                           "", "",                              f"{release_subtotal:,.2f}",            "subtotal"),
+                (f"    Add: AJPI Branch Incentives released on {date}",        "", "",                              f"{total_inc:,.2f}",                   "indent"),
+                ("        Subtotal",                                           "", "",                              f"{release_subtotal_with_inc:,.2f}",   "subtotal"),
+                ("    Add: Rebates (Suki Card)",                               "", f"{total_skir:,.2f}",            f"{skir_57:,.2f}",                    "indent"),
+                ("    Total Net Released",                                     "", "",                              f"{total_net_released:,.2f}",          "total"),
                 ("", "", "", "", "blank"),
-
-                # Summary Section
-                ("    Net Send", "", "", f"{total_net_send:,.2f}", "regular"),
-                ("    Less : Net Released", "", "", f"{total_net_released:,.2f}", "regular"),
+                ("    Net Send",                   "", "", f"{total_net_send:,.2f}",         "regular"),
+                ("    Less : Net Released",        "", "", f"{total_net_released:,.2f}",     "regular"),
                 ("    Net Receivable / (Payable)", "", "", f"{net_receivable_payable:,.2f}", "total"),
             ]
 
-            # Add data rows
-            for row_data in data_rows:
-                col1, col2, col3, col4, row_type = row_data
+            for col1, col2, col3, col4, row_type in rows:
+                ws[f'A{r}'] = col1
+                ws[f'B{r}'] = col2
+                ws[f'C{r}'] = col3
+                ws[f'D{r}'] = col4
 
-                worksheet[f'A{current_row}'] = col1
-                worksheet[f'B{current_row}'] = col2
-                worksheet[f'C{current_row}'] = col3
-                worksheet[f'D{current_row}'] = col4
-
-                # Apply formatting based on row type
                 if row_type == "section":
-                    worksheet[f'A{current_row}'].font = section_font
-                    worksheet[f'B{current_row}'].font = section_font
-                    worksheet[f'C{current_row}'].font = section_font
-                    worksheet[f'D{current_row}'].font = section_font
+                    for c in ['A','B','C','D']: ws[f'{c}{r}'].font = section_font
                 elif row_type == "total":
-                    for col in ['A', 'B', 'C', 'D']:
-                        worksheet[f'{col}{current_row}'].font = total_font
-                        worksheet[f'{col}{current_row}'].fill = total_fill
+                    for c in ['A','B','C','D']:
+                        ws[f'{c}{r}'].font = total_font
+                        ws[f'{c}{r}'].fill = total_fill
                 elif row_type == "subtotal":
-                    for col in ['A', 'B', 'C', 'D']:
-                        worksheet[f'{col}{current_row}'].font = total_font
-                        worksheet[f'{col}{current_row}'].fill = subtotal_fill
+                    for c in ['A','B','C','D']:
+                        ws[f'{c}{r}'].font = total_font
+                        ws[f'{c}{r}'].fill = subtotal_fill
                 else:
-                    for col in ['A', 'B', 'C', 'D']:
-                        worksheet[f'{col}{current_row}'].font = regular_font
+                    for c in ['A','B','C','D']: ws[f'{c}{r}'].font = regular_font
 
-                # Right align amounts
-                worksheet[f'C{current_row}'].alignment = Alignment(horizontal='right')
-                worksheet[f'D{current_row}'].alignment = Alignment(horizontal='right')
+                ws[f'C{r}'].alignment = right_align
+                ws[f'D{r}'].alignment = right_align
+                r += 1
 
-                current_row += 1
+            # Signature
+            r += 2
+            ws[f'A{r}'] = "Prepared by:"
+            ws[f'C{r}'] = "Noted by:"
+            r += 2
+            ws[f'A{r}'] = "Rochelle G. Serrano"
+            ws[f'C{r}'] = "Aimee M. Martinez"
 
-            # Add signature section
-            current_row += 2
-            worksheet[f'A{current_row}'] = "Prepared by:"
-            worksheet[f'C{current_row}'] = "Noted by:"
-            worksheet[f'A{current_row}'].font = regular_font
-            worksheet[f'C{current_row}'].font = regular_font
-            current_row += 2
+            ws.column_dimensions['A'].width = 50
+            ws.column_dimensions['B'].width = 8
+            ws.column_dimensions['C'].width = 15
+            ws.column_dimensions['D'].width = 18
 
-            worksheet[f'A{current_row}'] = "Rochelle G. Serrano"
-            worksheet[f'C{current_row}'] = "Aimee M. Martinez"
-            worksheet[f'A{current_row}'].font = regular_font
-            worksheet[f'C{current_row}'].font = regular_font
+            ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"PEPP_Reconciliation_{corp}_{date}_{ts}.xlsx"
+            wb.save(filename)
+            QMessageBox.information(self, "Export Successful", f"Saved as:\n{filename}")
 
-            # Adjust column widths
-            worksheet.column_dimensions['A'].width = 50
-            worksheet.column_dimensions['B'].width = 8
-            worksheet.column_dimensions['C'].width = 15
-            worksheet.column_dimensions['D'].width = 18
-
-            # Save file
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"PEPP_Reconciliation_{corp}_{date}_{timestamp}.xlsx"
-            workbook.save(filename)
-
-            QMessageBox.information(self, "Export Successful", f"Report exported as: {filename}")
-
-        except ImportError as e:
-            missing_lib = str(e).split("'")[1] if "'" in str(e) else "required library"
+        except ImportError:
             QMessageBox.critical(self, "Missing Library",
-                                 f"Required library '{missing_lib}' is missing.\n"
-                                 f"Please install with: pip install pandas openpyxl")
+                                 "openpyxl is required.\nInstall with: pip install openpyxl")
         except Exception as e:
-            QMessageBox.critical(self, "Export Error", f"Error exporting to Excel: {str(e)}")
+            QMessageBox.critical(self, "Export Error", f"Error exporting: {str(e)}")
+
+    # ─────────────────────────────────────────────────────────────────────────
 
     def print_report(self):
-        """Print the PEPP report"""
         if self.table.rowCount() == 0:
-            QMessageBox.warning(self, "No Data", "Please generate a report first.")
+            QMessageBox.warning(self, "No Data", "No report to print. Select a corporation and date first.")
             return
 
         try:
-            doc = QTextDocument()
-            html = "<html><body style='font-family: Arial; font-size: 12px;'>"
+            doc  = QTextDocument()
+            html = "<html><body style='font-family:Arial; font-size:12px;'>"
 
             for row in range(self.table.rowCount()):
-                line = ""
+                parts = []
                 for col in range(4):
                     item = self.table.item(row, col)
                     if item and item.text().strip():
-                        if col == 0:
-                            line += item.text()
-                        else:
-                            line += f"&nbsp;&nbsp;&nbsp;{item.text()}"
+                        parts.append(item.text() if col == 0 else f"&nbsp;&nbsp;&nbsp;{item.text()}")
 
+                line = "".join(parts)
                 if line.strip():
-                    # Apply bold formatting for headers and totals
-                    if any(keyword in line for keyword in
-                           ["Palawan Express", "PEPP Reconciliation", "Transaction", "Total Net", "Net Receivable"]):
-                        html += f"<p style='font-weight: bold;'>{line}</p>"
-                    else:
-                        html += f"<p>{line}</p>"
+                    bold = any(kw in line for kw in [
+                        "Palawan Express", "PEPP Reconciliation", "Transaction",
+                        "Total Net", "Net Receivable", "Subtotal",
+                    ])
+                    tag = "b" if bold else "span"
+                    html += f"<p><{tag}>{line}</{tag}></p>"
                 else:
                     html += "<p>&nbsp;</p>"
 
@@ -597,19 +531,10 @@ class ReportPage(QWidget):
             doc.setHtml(html)
 
             printer = QPrinter()
-            dialog = QPrintDialog(printer, self)
+            dialog  = QPrintDialog(printer, self)
             if dialog.exec_() == QPrintDialog.Accepted:
                 doc.print_(printer)
                 QMessageBox.information(self, "Print Successful", "Report printed successfully!")
 
         except Exception as e:
-            QMessageBox.critical(self, "Print Error", f"Error printing report: {str(e)}")
-
-
-# Integration function to add to your main application
-def add_pepp_report_to_main_app(main_window):
-    """Add PEPP Report tab to the main application"""
-    pepp_report_page = ReportPage()
-    # Add to your tab widget or main window as needed
-    # main_window.tab_widget.addTab(pepp_report_page, "PEPP Report")
-    return pepp_report_page
+            QMessageBox.critical(self, "Print Error", f"Error printing: {str(e)}")

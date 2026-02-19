@@ -1,13 +1,13 @@
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QComboBox, QTableWidget, QTableWidgetItem,
-    QDateEdit, QMessageBox, QHeaderView, QSizePolicy, QPushButton, QHBoxLayout
+    QDateEdit, QMessageBox, QHeaderView, QSizePolicy, QPushButton, QHBoxLayout,
+    QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect import db_manager
+from db_connect_pooled import db_manager
 import datetime
-from docx import Document
 
 
 class MCPage(QWidget):
@@ -48,8 +48,20 @@ class MCPage(QWidget):
         self.layout.addWidget(self.table)
 
         # Export & Print Buttons
-        self.export_button = QPushButton("Export to Word")
-        self.export_button.clicked.connect(self.export_to_word)
+        self.export_button = QPushButton("📊 Export to Excel")
+        self.export_button.clicked.connect(self.export_to_excel)
+        self.export_button.setStyleSheet("""
+            QPushButton {
+                background-color: #217346;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1a5c38;
+            }
+        """)
 
         self.print_button = QPushButton("Print")
         self.print_button.clicked.connect(self.print_table)
@@ -144,44 +156,120 @@ class MCPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading data: {str(e)}")
 
-    def export_to_word(self):
-        """Export table data to Word document"""
+    def export_to_excel(self):
+        """Export table data to Excel with file dialog"""
         try:
-            document = Document()
-            document.add_heading('MC Transaction Report', 0)
-
-            corp = self.corp_selector.currentText()
-            date = self.date_selector.date().toString("yyyy-MM-dd")
-            document.add_paragraph(f"Corporation: {corp}")
-            document.add_paragraph(f"Date: {date}")
-
-            rows = self.table.rowCount()
-            cols = self.table.columnCount()
-
-            if rows == 0:
-                QMessageBox.warning(self, "No Data", "No data to export.")
-                return
-
-            word_table = document.add_table(rows=rows + 1, cols=cols)
-            word_table.style = 'Table Grid'
-
-            # Add headers
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Missing Dependency",
+                "The openpyxl package is required to export to Excel.\nInstall with: pip install openpyxl"
+            )
+            return
+        
+        corp = self.corp_selector.currentText()
+        date = self.date_selector.date().toString("yyyy-MM-dd")
+        
+        rows = self.table.rowCount()
+        cols = self.table.columnCount()
+        
+        if rows == 0:
+            QMessageBox.warning(self, "No Data", "No data to export.")
+            return
+        
+        # File dialog for save location
+        default_filename = f"MC_Report_{corp}_{date}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Excel File",
+            default_filename,
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+        
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "MC Report"
+            
+            # Styles
+            title_font = Font(bold=True, size=16)
+            header_font = Font(bold=True, size=11, color="FFFFFF")
+            header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            total_fill = PatternFill(start_color="E9ECEF", end_color="E9ECEF", fill_type="solid")
+            border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            # Title
+            ws.merge_cells('A1:C1')
+            ws['A1'] = "MC Transaction Report"
+            ws['A1'].font = title_font
+            ws['A1'].alignment = Alignment(horizontal='center')
+            
+            # Info
+            ws['A3'] = "Corporation:"
+            ws['B3'] = corp
+            ws['A4'] = "Date:"
+            ws['B4'] = date
+            ws['A3'].font = Font(bold=True)
+            ws['A4'].font = Font(bold=True)
+            
+            # Headers (row 6)
+            header_row = 6
             for col in range(cols):
+                cell = ws.cell(row=header_row, column=col+1)
                 header_item = self.table.horizontalHeaderItem(col)
-                word_table.cell(0, col).text = header_item.text() if header_item else ""
-
-            # Add data
+                cell.value = header_item.text() if header_item else ""
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+            
+            # Data rows
             for row in range(rows):
+                excel_row = header_row + 1 + row
+                is_total_row = (row == rows - 1)
+                
                 for col in range(cols):
+                    cell = ws.cell(row=excel_row, column=col+1)
                     item = self.table.item(row, col)
-                    word_table.cell(row + 1, col).text = item.text() if item else ""
-
-            filename = f"MC_Report_{corp}_{date}.docx"
-            document.save(filename)
-            QMessageBox.information(self, "Exported", f"Data exported to {filename}")
-
+                    
+                    if item:
+                        text = item.text()
+                        if col > 0:  # Numeric columns
+                            try:
+                                cell.value = float(text) if text else 0
+                                cell.number_format = '#,##0.00'
+                            except ValueError:
+                                cell.value = text
+                        else:
+                            cell.value = text
+                    
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
+                    
+                    if is_total_row:
+                        cell.fill = total_fill
+                        cell.font = Font(bold=True)
+            
+            # Auto-adjust column widths
+            ws.column_dimensions['A'].width = 20
+            ws.column_dimensions['B'].width = 15
+            ws.column_dimensions['C'].width = 15
+            
+            wb.save(file_path)
+            QMessageBox.information(self, "Export Successful", f"Report exported to:\n{file_path}")
+            
         except Exception as e:
-            QMessageBox.critical(self, "Export Error", f"Error exporting to Word: {str(e)}")
+            QMessageBox.critical(self, "Export Error", f"Error exporting to Excel: {str(e)}")
 
     def print_table(self):
         """Print the table"""

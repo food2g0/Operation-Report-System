@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect import db_manager
+from db_connect_pooled import db_manager
 import datetime
 from docx import Document
 
@@ -48,8 +48,8 @@ class PalawanPage(QWidget):
         self.layout.addWidget(self.table)
 
         # Export & Print Buttons
-        self.export_button = QPushButton("Export to Word")
-        self.export_button.clicked.connect(self.export_to_word)
+        self.export_button = QPushButton("Export to Excel")
+        self.export_button.clicked.connect(self.export_to_excel)
 
         self.print_button = QPushButton("Print")
         self.print_button.clicked.connect(self.print_table)
@@ -163,16 +163,21 @@ class PalawanPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading data: {str(e)}")
 
-    def export_to_word(self):
-        """Export table data to Word document"""
+    def export_to_excel(self):
+        """Export table data to an Excel (.xlsx) file using openpyxl"""
         try:
-            document = Document()
-            document.add_heading('Palawan Transaction Report', 0)
+            try:
+                from openpyxl import Workbook
+            except ImportError:
+                QMessageBox.critical(
+                    self,
+                    "Missing Dependency",
+                    "The openpyxl package is required to export to Excel.\nInstall with: pip install openpyxl"
+                )
+                return
 
             corp = self.corp_selector.currentText()
             date = self.date_selector.date().toString("yyyy-MM-dd")
-            document.add_paragraph(f"Corporation: {corp}")
-            document.add_paragraph(f"Date: {date}")
 
             rows = self.table.rowCount()
             cols = self.table.columnCount()
@@ -181,26 +186,31 @@ class PalawanPage(QWidget):
                 QMessageBox.warning(self, "No Data", "No data to export.")
                 return
 
-            word_table = document.add_table(rows=rows + 1, cols=cols)
-            word_table.style = 'Table Grid'
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Palawan Report"
 
             # Add headers
+            headers = []
             for col in range(cols):
                 header_item = self.table.horizontalHeaderItem(col)
-                word_table.cell(0, col).text = header_item.text() if header_item else ""
+                headers.append(header_item.text() if header_item else "")
+            ws.append(headers)
 
-            # Add data
+            # Add data rows
             for row in range(rows):
+                row_vals = []
                 for col in range(cols):
                     item = self.table.item(row, col)
-                    word_table.cell(row + 1, col).text = item.text() if item else ""
+                    row_vals.append(item.text() if item else "")
+                ws.append(row_vals)
 
-            filename = f"Palawan_Report_{corp}_{date}.docx"
-            document.save(filename)
+            filename = f"Palawan_Report_{corp}_{date}.xlsx"
+            wb.save(filename)
             QMessageBox.information(self, "Exported", f"Data exported to {filename}")
 
         except Exception as e:
-            QMessageBox.critical(self, "Export Error", f"Error exporting to Word: {str(e)}")
+            QMessageBox.critical(self, "Export Error", f"Error exporting to Excel: {str(e)}")
 
     def print_table(self):
         """Print the table"""

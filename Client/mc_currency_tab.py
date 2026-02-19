@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtCore import Qt
+import json
 
 
 class MCCurrencyTab(QWidget):
@@ -304,35 +305,36 @@ class MCCurrencyTab(QWidget):
 
     def get_data(self):
         """Get all data from MC Currency tab"""
-        mc_values = {
-            'mc_grand_total': 0.0,
-            'mc_entries_count': len(self.currency_entries)
-        }
-
+        # Build numeric summary and a JSON details string for flexible storage
         grand_total = 0.0
+        entries = []
 
-        for i, entry in enumerate(self.currency_entries, 1):
+        for entry in self.currency_entries:
             try:
                 currency = entry['currency_combo'].currentText()
                 quantity = int(entry['quantity_input'].text().strip()) if entry['quantity_input'].text().strip() else 0
                 rate = float(entry['rate_input'].text().strip()) if entry['rate_input'].text().strip() else 0.0
                 php_total = quantity * rate
-
-                # Store individual entry data
-                mc_values[f'mc_entry_{i}_currency'] = currency
-                mc_values[f'mc_entry_{i}_quantity'] = quantity
-                mc_values[f'mc_entry_{i}_rate'] = rate
-                mc_values[f'mc_entry_{i}_php_total'] = php_total
-
-                grand_total += php_total
-
             except (ValueError, AttributeError):
-                mc_values[f'mc_entry_{i}_currency'] = ""
-                mc_values[f'mc_entry_{i}_quantity'] = 0
-                mc_values[f'mc_entry_{i}_rate'] = 0.0
-                mc_values[f'mc_entry_{i}_php_total'] = 0.0
+                currency = ""
+                quantity = 0
+                rate = 0.0
+                php_total = 0.0
 
-        mc_values['mc_grand_total'] = grand_total
+            entries.append({
+                'currency': currency,
+                'quantity': quantity,
+                'rate': rate,
+                'php_total': php_total
+            })
+
+            grand_total += php_total
+
+        mc_values = {
+            'mc_grand_total': float(grand_total),
+            'mc_entries_count': int(len(self.currency_entries)),
+            'mc_details': json.dumps(entries, ensure_ascii=False)
+        }
 
         return mc_values
 
