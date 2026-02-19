@@ -3,7 +3,7 @@ PyQt5==5.15.9
 
 # Database dependencies
 sqlalchemy==2.0.43
-pymysql==1.4.6
+PyMySQL==1.1.0
 
 # Google Cloud SQL Connector (the correct package)
 cloud-sql-python-connector[pymysql]==1.4.3
@@ -14,9 +14,17 @@ google-cloud-core==2.3.3
 
 # Document processing
 python-docx==0.8.11
+openpyxl==3.1.2
 
 # Environment variables (optional)
 python-dotenv==1.0.0
 
 # Cryptography for secure connections
 cryptography==41.0.7
+
+# Password hashing
+bcrypt==4.1.2
+
+# Auto-updater dependencies
+requests==2.31.0
+packaging==23.2

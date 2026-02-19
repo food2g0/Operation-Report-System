@@ -1,162 +1,208 @@
+import os
+import time
+import threading
+import logging
 import pymysql
 from pymysql.cursors import DictCursor
-from dotenv import load_dotenv
-import os
-import logging
-
-# Load environment variables
-load_dotenv()
+from config import DB_CONFIG
 
 
 class DatabaseManager:
-    """Database manager for handling MySQL connection - Same structure as original psycopg2 code"""
+    """
+    Professional MySQL Database Manager
+    - Auto connect
+    - Auto reconnect
+    - Idle timeout auto-close
+    - Secure credential handling
+    """
 
-    def __init__(self):
+    def __init__(self, idle_timeout=300):
+        """
+        idle_timeout: seconds before DB connection is closed (default 5 mins)
+        """
         self.connection = None
+        self.idle_timeout = idle_timeout
+        self.last_used = time.time()
+        self.lock = threading.Lock()
+
         self.setup_logging()
         self.connect()
+        self.start_idle_monitor()
 
+    # ---------------------------------------------------
+    # Logging
+    # ---------------------------------------------------
     def setup_logging(self):
-        """Setup logging for database operations"""
         logging.basicConfig(
             level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
+            format="%(asctime)s - %(levelname)s - %(message)s",
             handlers=[
-                logging.FileHandler('database.log'),
+                logging.FileHandler("database.log"),
                 logging.StreamHandler()
             ]
         )
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger("DatabaseManager")
 
+    # ---------------------------------------------------
+    # Connection handling
+    # ---------------------------------------------------
     def connect(self):
-        """Establish MySQL database connection with retry logic"""
-        max_retries = 3
-        retry_count = 0
-
-        while retry_count < max_retries:
-            try:
-                # Get connection parameters from environment or use XAMPP defaults
-                host = os.getenv("MYSQL_HOST", "localhost")
-                port = int(os.getenv("MYSQL_PORT", 3306))
-                user = os.getenv("MYSQL_USER", "root")
-                password = os.getenv("MYSQL_PASSWORD", "")
-                database = os.getenv("MYSQL_DATABASE", "operation_db")
-
-                self.logger.info(f"Attempting MySQL connection to {user}@{host}:{port}/{database}")
-
-                # Connect using PyMySQL (similar interface to psycopg2)
-                self.connection = pymysql.connect(
-                    host=host,
-                    port=port,
-                    user=user,
-                    password=password,
-                    database=database,
-                    cursorclass=DictCursor,  # Similar to RealDictCursor in psycopg2
-                    autocommit=False,
-                    connect_timeout=30,
-                    charset='utf8mb4'
-                )
-
-                self.logger.info("Database connection established successfully")
-                return True
-
-            except Exception as e:
-                retry_count += 1
-                self.logger.error(f"MySQL connection failed (attempt {retry_count}): {e}")
-
-                if "Can't connect to MySQL server" in str(e):
-                    self.logger.error("MySQL server is not running! Please start MySQL in XAMPP Control Panel")
-                elif "Access denied" in str(e):
-                    self.logger.error("Access denied! Check your username and password")
-                elif "Unknown database" in str(e):
-                    self.logger.error(f"Database '{database}' doesn't exist!")
-
-                if retry_count >= max_retries:
-                    self.connection = None
-                    return False
-
-        return False
-
-    def reconnect_if_needed(self):
-        """Check connection and reconnect if necessary"""
+        """Establish database connection"""
         try:
-            if not self.connection or not self.connection.open:
-                return self.connect()
-
-            # Test the connection (similar to psycopg2 style)
-            with self.connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
+            self.connection = pymysql.connect(
+                host=DB_CONFIG['host'],
+                user=DB_CONFIG['user'],
+                password=DB_CONFIG['password'],
+                database=DB_CONFIG['database'],
+                port=DB_CONFIG['port'],
+                cursorclass=DictCursor,
+                autocommit=False,
+                connect_timeout=10,
+                charset="utf8mb4"
+            )
+            self.last_used = time.time()
+            self.logger.info("MySQL connected successfully")
             return True
-        except:
-            return self.connect()
 
-    def test_connection(self):
-        """Test database connection"""
-        try:
-            if not self.reconnect_if_needed():
-                return False
-
-            with self.connection.cursor() as cursor:
-                cursor.execute("SELECT 1 as test")
-                result = cursor.fetchone()
-                return result and result["test"] == 1
-        except:
+        except Exception as e:
+            self.connection = None
+            self.logger.error(f"MySQL connection failed: {e}")
             return False
 
-    def execute_query(self, query, params=None):
-        """Execute a query and return results"""
+    def reconnect_if_needed(self):
+        """Reconnect if connection is lost"""
+        if not self.connection:
+            return self.connect()
+
         try:
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            self.last_used = time.time()
+            return True
+
+        except Exception:
+            self.logger.warning("MySQL connection lost — reconnecting")
+            return self.connect()
+
+    # ---------------------------------------------------
+    # Idle monitor (auto close)
+    # ---------------------------------------------------
+    def start_idle_monitor(self):
+        def monitor():
+            while True:
+                time.sleep(30)
+                with self.lock:
+                    if (
+                        self.connection
+                        and time.time() - self.last_used > self.idle_timeout
+                    ):
+                        try:
+                            self.logger.info("Idle timeout reached — closing DB connection")
+                            self.connection.close()
+                            self.connection = None
+                        except Exception:
+                            pass
+
+        thread = threading.Thread(target=monitor, daemon=True)
+        thread.start()
+
+    # ---------------------------------------------------
+    # Query execution
+    # ---------------------------------------------------
+    def execute_query(self, query, params=None):
+        """Execute SELECT / INSERT / UPDATE / DELETE"""
+        with self.lock:
             if not self.reconnect_if_needed():
                 return None
 
-            with self.connection.cursor() as cursor:
-                cursor.execute(query, params)
-
-                if query.strip().upper().startswith('SELECT'):
-                    result = cursor.fetchall()
-                else:
-                    self.connection.commit()
-                    result = cursor.rowcount
-
-                return result
-
-        except Exception as e:
-            self.logger.error(f"Query execution failed: {e}")
-            if self.connection:
-                self.connection.rollback()
-            return None
-
-    def close(self):
-        """Close database connection"""
-        if self.connection:
             try:
-                self.connection.close()
-                self.logger.info("Database connection closed")
+                with self.connection.cursor() as cursor:
+                    self.last_used = time.time()
+                    cursor.execute(query, params)
+
+                    if query.strip().upper().startswith("SELECT"):
+                        return cursor.fetchall()
+                    else:
+                        self.connection.commit()
+                        return cursor.rowcount
+
             except Exception as e:
-                self.logger.error(f"Error closing connection: {e}")
+                self.logger.error(f"Query failed: {e}")
+                try:
+                    self.connection.rollback()
+                except Exception:
+                    pass
+                return None
+
+    def execute_query_with_exception(self, query, params=None):
+        """Same as execute_query but returns (result, exception)"""
+        with self.lock:
+            if not self.reconnect_if_needed():
+                return None, Exception("Database connection failed")
+
+            try:
+                with self.connection.cursor() as cursor:
+                    self.last_used = time.time()
+                    cursor.execute(query, params)
+
+                    if query.strip().upper().startswith("SELECT"):
+                        result = cursor.fetchall()
+                    else:
+                        self.connection.commit()
+                        result = cursor.rowcount
+
+                    return result, None
+
+            except Exception as e:
+                self.logger.error(f"Query failed: {e}")
+                try:
+                    self.connection.rollback()
+                except Exception:
+                    pass
+                return None, e
+
+    # ---------------------------------------------------
+    # Connection test
+    # ---------------------------------------------------
+    def test_connection(self):
+        """Test DB connection"""
+        if not self.reconnect_if_needed():
+            return False
+
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT 1 AS test")
+                result = cursor.fetchone()
+                return result and result["test"] == 1
+        except Exception:
+            return False
+
+    # ---------------------------------------------------
+    # Shutdown
+    # ---------------------------------------------------
+    def shutdown(self):
+        """Call this when app exits"""
+        with self.lock:
+            if self.connection:
+                try:
+                    self.connection.close()
+                    self.logger.info("DB connection closed on app exit")
+                except Exception:
+                    pass
+                self.connection = None
 
 
-# Global database manager instance
+# ---------------------------------------------------
+# Global instance (recommended)
+# ---------------------------------------------------
 db_manager = DatabaseManager()
 
+# ---------------------------------------------------
+# Standalone test
+# ---------------------------------------------------
 if __name__ == "__main__":
-    print("Testing MySQL database connection...")
+    print("Testing database connection...")
     if db_manager.test_connection():
-        print("✅ MySQL database connection successful")
-
-        # Test with a simple query
-        try:
-            result = db_manager.execute_query("SHOW DATABASES")
-            if result:
-                print("\nAvailable databases:")
-                for db in result:
-                    print(f"  - {db['Database']}")
-        except Exception as e:
-            print(f"Error listing databases: {e}")
+        print("✅ Database connection OK")
     else:
-        print("❌ MySQL database connection failed")
-        print("\nTroubleshooting tips:")
-        print("1. Make sure XAMPP is running")
-        print("2. Start MySQL service in XAMPP Control Panel")
-        print("3. Check if MySQL is running on port 3306")
-        print("4. Verify your database credentials")
+        print("❌ Database connection FAILED")

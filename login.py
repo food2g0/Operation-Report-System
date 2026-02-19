@@ -6,21 +6,28 @@ from PyQt5.QtCore import QSettings, Qt
 from PyQt5.QtGui import QFont
 
 from Client.client_dashboard import ClientDashboard
-from db_connect import db_manager
-from dotenv import load_dotenv
+from db_connect_pooled import db_manager
+from security import (
+    verify_password, hash_password, is_password_hashed,
+    login_rate_limiter, format_lockout_time
+)
 
-# Load environment variables
-load_dotenv()
-
-
+# Auto-updater (optional - comment out if not using)
+try:
+    from auto_updater import check_for_updates_silent
+    from version import __version__, CHECK_ON_STARTUP
+    AUTO_UPDATE_ENABLED = True
+except ImportError:
+    AUTO_UPDATE_ENABLED = False
+    print("Auto-updater not available (missing dependencies)")
 
 
 class LoginWindow(QWidget):
     def __init__(self, app):
         super().__init__()
         self.app = app
-        self.db_connection = None
         self.dashboard = None
+        self._update_checker_threads = []  # Store update checker threads
         self.setWindowTitle("Secure Login")
         self.setFixedSize(400, 500)
         self.settings = QSettings("MyCompany", "MyApp")
@@ -32,11 +39,36 @@ class LoginWindow(QWidget):
         self.apply_styles()
         self.load_saved_credentials()
         self.center_window()
+        
+        # Check for updates on startup (if enabled)
+        if AUTO_UPDATE_ENABLED and CHECK_ON_STARTUP:
+            self.check_updates_on_startup()
 
     def init_database(self):
         """Initialize MySQL database connection"""
-        # Use the global database manager
-        self.db_connection = db_manager.connection
+        # Test connection on startup and show error if it fails
+        if not db_manager.test_connection():
+            error_msg = "⚠️ Cannot Connect to Database\n\n"
+            error_msg += "Possible causes:\n"
+            error_msg += "• No internet connection\n"
+            error_msg += "• Database server is down\n"
+            error_msg += "• Incorrect database configuration\n\n"
+            error_msg += "Please check your connection and try again."
+            
+            QMessageBox.critical(
+                self,
+                "Database Connection Error",
+                error_msg
+            )
+    
+    def check_updates_on_startup(self):
+        """Check for application updates silently when the app starts"""
+        try:
+            # Silent update: downloads and installs automatically without user interaction
+            check_for_updates_silent(parent=self, auto_install=True)
+        except Exception as e:
+            # Don't show errors for update check failures on startup
+            print(f"Update check failed: {e}")
 
     def center_window(self):
         screen = self.app.desktop().screenGeometry()
@@ -191,6 +223,30 @@ class LoginWindow(QWidget):
         else:
             self.settings.remove("username")
 
+    def clear_password_field(self):
+        """Clear password field when returning to login"""
+        self.password_input.clear()
+        self.show_password_checkbox.setChecked(False)
+
+    def handle_logout(self):
+        """Handle logout from dashboard"""
+        print("🔓 Logout requested - returning to login screen")
+        
+        # Close and cleanup dashboard
+        if self.dashboard:
+            self.dashboard.close()
+            self.dashboard.deleteLater()
+            self.dashboard = None
+        
+        # Clear password for security
+        self.clear_password_field()
+        
+        # Show login window again
+        self.show()
+        self.center_window()
+        self.raise_()
+        self.activateWindow()
+
     def manual_login(self):
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
@@ -200,8 +256,14 @@ class LoginWindow(QWidget):
             return
 
         # Check if database connection exists
-        if not self.db_connection:
-            self.show_message("Connection Error", "No database connection available.", QMessageBox.Critical)
+        if not db_manager.test_connection():
+            error_msg = "⚠️ Cannot connect to database\n\n"
+            error_msg += "Please check:\n"
+            error_msg += "• Your internet connection\n"
+            error_msg += "• VPN if required\n"
+            error_msg += "• Database server status\n\n"
+            error_msg += "Contact IT support if the problem persists."
+            self.show_message("Connection Error", error_msg, QMessageBox.Critical)
             return
 
         # Disable button during login attempt
@@ -211,9 +273,23 @@ class LoginWindow(QWidget):
         try:
             # Check database connection first
             if not self.test_database_connection():
-                self.show_message("Connection Error", "Failed to connect to the database.", QMessageBox.Critical)
+                error_msg = "⚠️ Database connection lost\n\n"
+                error_msg += "Your internet connection may be unstable.\n"
+                error_msg += "Please check your connection and try again."
+                self.show_message("Connection Error", error_msg, QMessageBox.Critical)
                 return
 
+            # Check rate limiting before attempting login
+            is_locked, lockout_remaining = login_rate_limiter.is_locked(username)
+            if is_locked:
+                self.show_message(
+                    "Account Locked",
+                    f"⚠️ Too many failed attempts.\n\nPlease wait {format_lockout_time(lockout_remaining)} before trying again.",
+                    QMessageBox.Warning
+                )
+                return
+
+            # Check admin login first, then regular user
             if self.check_admin_login(username, password):
                 return
 
@@ -229,13 +305,8 @@ class LoginWindow(QWidget):
     def test_database_connection(self):
         """Test database connection"""
         try:
-            if not self.db_connection:
-                return False
-
-            with self.db_connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
-                result = cursor.fetchone()
-                return result is not None
+            # Use db_manager's built-in connection test
+            return db_manager.test_connection()
         except Exception as e:
             print(f"Database connection test failed: {e}")
             return False
@@ -244,24 +315,21 @@ class LoginWindow(QWidget):
         """Execute database query with MySQL"""
         return db_manager.execute_query(query, params)
 
-    def check_admin_login(self, username, password):
-        """Check for hardcoded admin login first, then check database"""
-        # Check hardcoded admin (backward compatibility)
-        if username.lower() == "admin" and password == "Admin1234":
+    def _migrate_password_if_needed(self, user_id: int, password: str, stored_password: str):
+        """Migrate plaintext password to bcrypt hash after successful login"""
+        if not is_password_hashed(stored_password):
             try:
-                from admin_dashboard import AdminDashboard
-                self.show_message("Admin Login", "Welcome, Admin!", QMessageBox.Information)
-                self.save_credentials(username)
-                self.dashboard = AdminDashboard()
-                self.dashboard.show()
-                self.close()
-                return True
+                hashed = hash_password(password)
+                db_manager.execute_query(
+                    "UPDATE users SET password = %s WHERE id = %s",
+                    (hashed, user_id)
+                )
+                print(f"Password migrated to bcrypt for user ID {user_id}")
             except Exception as e:
-                print(f"Error loading AdminDashboard: {e}")
-                self.show_message("Error", "Failed to load admin dashboard.", QMessageBox.Critical)
-                return False
+                print(f"Failed to migrate password: {e}")
 
-        # Check database for admin users
+    def check_admin_login(self, username, password):
+        """Check database for admin users - no hardcoded credentials"""
         try:
             query = """
                     SELECT id, username, password, branch, corporation, role
@@ -274,24 +342,31 @@ class LoginWindow(QWidget):
 
             if result:
                 user_data = result[0]
-                stored_password = user_data['password']  # Use dict key for MySQL DictCursor
+                stored_password = user_data['password']
+                user_id = user_data['id']
 
-                if stored_password == password:
+                if verify_password(password, stored_password):
+                    # Migrate password to bcrypt if still plaintext
+                    self._migrate_password_if_needed(user_id, password, stored_password)
+                    login_rate_limiter.reset(username)  # Clear failed attempts
                     try:
                         from admin_dashboard import AdminDashboard
                         self.show_message("Admin Login", f"Welcome, {username}!", QMessageBox.Information)
                         self.save_credentials(username)
                         self.dashboard = AdminDashboard()
+                        # Connect logout signal if admin dashboard has one
+                        if hasattr(self.dashboard, 'logout_requested'):
+                            self.dashboard.logout_requested.connect(self.handle_logout)
                         self.dashboard.show()
-                        self.close()
+                        self.hide()  # Hide instead of close
                         return True
                     except Exception as e:
                         print(f"Error loading AdminDashboard: {e}")
                         self.show_message("Error", "Failed to load admin dashboard.", QMessageBox.Critical)
                         return False
         except Exception as e:
-            print(f"Database Error during admin check: {e}")
-            # Don't show error message here, let it fall through to regular user authentication
+            # If `users` table doesn't exist, skip DB admin check and continue
+            print(f"Database Error during admin check (users table may be missing): {e}")
 
         return False
 
@@ -299,48 +374,73 @@ class LoginWindow(QWidget):
         """Authenticate regular users from the database"""
         try:
             # Query to get user by username
-            query = """
+            # Prefer `users` table if available
+            query_users = """
                     SELECT id, username, password, branch, corporation, role
                     FROM users
                     WHERE username = %s LIMIT 1
                     """
 
-            result = self.execute_database_query(query, [username])
+            result = None
+            try:
+                result = self.execute_database_query(query_users, [username])
+            except Exception as e:
+                # Likely `users` table missing; fall back to `clients` table
+                print(f"users table query failed, falling back to clients: {e}")
 
             if result:
                 user_data = result[0]
-                # Extract data from result dictionary (using DictCursor)
                 user_id = user_data['id']
                 db_username = user_data['username']
                 stored_password = user_data['password']
                 branch = user_data.get('branch') or "Unknown"
                 corporation = user_data.get('corporation') or "Unknown"
-                role = user_data['role']
+                role = user_data.get('role', 'user')
 
-                if stored_password == password:
-                    # Successful login
+                if verify_password(password, stored_password):
+                    # Migrate password to bcrypt if still plaintext
+                    self._migrate_password_if_needed(user_id, password, stored_password)
+                    login_rate_limiter.reset(username)  # Clear failed attempts
+                    
                     self.show_message("Login Success", f"Welcome, {db_username}!", QMessageBox.Information)
                     self.save_credentials(db_username)
-
-                    # Create appropriate dashboard based on role
                     if role == 'admin':
                         try:
                             from admin_dashboard import AdminDashboard
                             self.dashboard = AdminDashboard()
+                            # Connect logout signal if admin dashboard has one
+                            if hasattr(self.dashboard, 'logout_requested'):
+                                self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
                             print(f"Error loading AdminDashboard: {e}")
                             self.show_message("Error", "Failed to load admin dashboard.", QMessageBox.Critical)
                             return
                     else:
-                        # Regular user dashboard - pass database manager
                         self.dashboard = ClientDashboard(db_username, branch, corporation, db_manager)
-
+                        # Connect logout signal from client dashboard
+                        self.dashboard.logout_requested.connect(self.handle_logout)
+                    
                     self.dashboard.show()
-                    self.close()
+                    self.hide()  # Hide instead of close
                 else:
-                    self.show_message("Login Failed", "Incorrect password.", QMessageBox.Warning)
-            else:
-                self.show_message("Login Failed", "User not found.", QMessageBox.Warning)
+                    # Record failed attempt
+                    is_locked, remaining, lockout_time = login_rate_limiter.record_failed_attempt(username)
+                    if is_locked:
+                        self.show_message(
+                            "Account Locked",
+                            f"⚠️ Too many failed attempts.\n\nPlease wait {format_lockout_time(lockout_time)} before trying again.",
+                            QMessageBox.Warning
+                        )
+                    elif remaining > 0:
+                        self.show_message("Login Failed", f"Incorrect password.\n{remaining} attempts remaining.", QMessageBox.Warning)
+                    else:
+                        self.show_message("Login Failed", "Incorrect password.", QMessageBox.Warning)
+                return
+            
+            # If no user found in users table
+            # Still record as failed attempt to prevent username enumeration
+            login_rate_limiter.record_failed_attempt(username)
+            self.show_message("Login Failed", "Invalid username or password.", QMessageBox.Warning)
 
         except Exception as e:
             print(f"Database Error during authentication: {e}")
@@ -354,3 +454,13 @@ class LoginWindow(QWidget):
         if event.key() == Qt.Key_Return or event.key() == Qt.Key_Enter:
             self.manual_login()
         super().keyPressEvent(event)
+    
+    def closeEvent(self, event):
+        """Clean up threads before closing"""
+        # Wait for update checker threads to finish (max 2 seconds)
+        if hasattr(self, '_update_checker_threads'):
+            for thread in self._update_checker_threads[:]:
+                if thread.isRunning():
+                    thread.quit()
+                    thread.wait(2000)  # Wait up to 2 seconds
+        event.accept()
