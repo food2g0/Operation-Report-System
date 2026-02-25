@@ -332,10 +332,10 @@ class LoginWindow(QWidget):
         """Check database for admin users - no hardcoded credentials"""
         try:
             query = """
-                    SELECT id, username, password, branch, corporation, role
+                    SELECT id, username, password, branch, corporation, role, account_type
                     FROM users
-                    WHERE username = %s \
-                      AND role = 'admin' LIMIT 1
+                    WHERE username = %s
+                      AND role IN ('admin', 'super_admin') LIMIT 1
                     """
 
             result = self.execute_database_query(query, [username])
@@ -349,20 +349,29 @@ class LoginWindow(QWidget):
                     # Migrate password to bcrypt if still plaintext
                     self._migrate_password_if_needed(user_id, password, stored_password)
                     login_rate_limiter.reset(username)  # Clear failed attempts
+                    role = user_data.get('role', 'admin')
                     try:
-                        from admin_dashboard import AdminDashboard
-                        self.show_message("Admin Login", f"Welcome, {username}!", QMessageBox.Information)
-                        self.save_credentials(username)
-                        self.dashboard = AdminDashboard()
-                        # Connect logout signal if admin dashboard has one
+                        if role == 'super_admin':
+                            from super_admin_dashboard import SuperAdminDashboard
+                            self.show_message("Super Admin Login", f"Welcome, {username}! (Super Admin)", QMessageBox.Information)
+                            self.save_credentials(username)
+                            self.dashboard = SuperAdminDashboard()
+                        else:
+                            from admin_dashboard import AdminDashboard
+                            account_type = user_data.get('account_type', 2)  # Default to Brand B
+                            brand_label = "Brand A" if account_type == 1 else "Brand B"
+                            self.show_message("Admin Login", f"Welcome, {username}! ({brand_label} Admin)", QMessageBox.Information)
+                            self.save_credentials(username)
+                            self.dashboard = AdminDashboard(account_type=account_type)
+                        # Connect logout signal
                         if hasattr(self.dashboard, 'logout_requested'):
                             self.dashboard.logout_requested.connect(self.handle_logout)
                         self.dashboard.show()
                         self.hide()  # Hide instead of close
                         return True
                     except Exception as e:
-                        print(f"Error loading AdminDashboard: {e}")
-                        self.show_message("Error", "Failed to load admin dashboard.", QMessageBox.Critical)
+                        print(f"Error loading dashboard: {e}")
+                        self.show_message("Error", "Failed to load dashboard.", QMessageBox.Critical)
                         return False
         except Exception as e:
             # If `users` table doesn't exist, skip DB admin check and continue
@@ -404,11 +413,20 @@ class LoginWindow(QWidget):
                     
                     self.show_message("Login Success", f"Welcome, {db_username}!", QMessageBox.Information)
                     self.save_credentials(db_username)
-                    if role == 'admin':
+                    if role == 'super_admin':
+                        try:
+                            from super_admin_dashboard import SuperAdminDashboard
+                            self.dashboard = SuperAdminDashboard()
+                            if hasattr(self.dashboard, 'logout_requested'):
+                                self.dashboard.logout_requested.connect(self.handle_logout)
+                        except Exception as e:
+                            print(f"Error loading SuperAdminDashboard: {e}")
+                            self.show_message("Error", "Failed to load super admin dashboard.", QMessageBox.Critical)
+                            return
+                    elif role == 'admin':
                         try:
                             from admin_dashboard import AdminDashboard
                             self.dashboard = AdminDashboard()
-                            # Connect logout signal if admin dashboard has one
                             if hasattr(self.dashboard, 'logout_requested'):
                                 self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
@@ -417,7 +435,6 @@ class LoginWindow(QWidget):
                             return
                     else:
                         self.dashboard = ClientDashboard(db_username, branch, corporation, db_manager)
-                        # Connect logout signal from client dashboard
                         self.dashboard.logout_requested.connect(self.handle_logout)
                     
                     self.dashboard.show()

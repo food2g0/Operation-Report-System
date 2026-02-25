@@ -1,13 +1,25 @@
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QComboBox, QTableWidget, QTableWidgetItem,
     QDateEdit, QMessageBox, QHeaderView, QSizePolicy, QPushButton, QHBoxLayout,
-    QApplication, QDesktopWidget, QScrollArea, QFrame, QLineEdit
+    QApplication, QDesktopWidget, QScrollArea, QFrame, QLineEdit, QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from db_connect_pooled import db_manager
+from decimal import Decimal, ROUND_HALF_UP
 import datetime
+
+def _round2(value):
+    """Round to 2 decimal places using round-half-up (traditional rounding)."""
+    return float(Decimal(str(value)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+def _mult_round2(a, b):
+    """Multiply two numbers using Decimal arithmetic and round to 2 decimal places (ROUND_HALF_UP).
+    This avoids floating point precision issues like 2443.50 * 0.61 = 1490.5349999... instead of 1490.535.
+    """
+    result = Decimal(str(a)) * Decimal(str(b))
+    return float(result.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
 
 
 class ReportPage(QWidget):
@@ -23,7 +35,7 @@ class ReportPage(QWidget):
 
         self.create_controls()
         self.create_report_table()
-        self.create_buttons()
+        # Buttons moved into the top controls so they're visible on small screens
 
         self.load_corporations()
 
@@ -54,7 +66,7 @@ class ReportPage(QWidget):
         corp_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.corp_selector = QComboBox()
         self.corp_selector.setMinimumWidth(200)
-        self.corp_selector.currentTextChanged.connect(self.generate_report)
+        self.corp_selector.currentTextChanged.connect(self._on_corp_changed)
 
         date_label = QLabel("Date:")
         date_label.setFont(QFont("Arial", 10, QFont.Bold))
@@ -66,10 +78,19 @@ class ReportPage(QWidget):
         registry_label = QLabel("Partner Registry No:")
         registry_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.registry_input = QLineEdit()
-        self.registry_input.setPlaceholderText("e.g., P210021A")
+        self.registry_input.setPlaceholderText("e.g., P250683A")
         self.registry_input.setMaximumWidth(150)
+        self.registry_input.setReadOnly(True)
         # Re-generate report when registry number changes so header updates live
         self.registry_input.textChanged.connect(self.generate_report)
+
+        # Registration status filter
+        reg_filter_label = QLabel("Branch Status:")
+        reg_filter_label.setFont(QFont("Arial", 10, QFont.Bold))
+        self.reg_filter_selector = QComboBox()
+        self.reg_filter_selector.setMinimumWidth(150)
+        self.reg_filter_selector.addItem("Registered Only", "registered")
+        self.reg_filter_selector.currentIndexChanged.connect(self.generate_report)
 
         controls_layout.addWidget(corp_label)
         controls_layout.addWidget(self.corp_selector)
@@ -79,6 +100,39 @@ class ReportPage(QWidget):
         controls_layout.addSpacing(30)
         controls_layout.addWidget(registry_label)
         controls_layout.addWidget(self.registry_input)
+        controls_layout.addSpacing(30)
+        controls_layout.addWidget(reg_filter_label)
+        controls_layout.addWidget(self.reg_filter_selector)
+        # Export / Print buttons moved here so they remain visible on small screens
+        # Use a compact style to avoid overflowing when window is narrow
+        button_style = """
+            QPushButton {
+                padding: 8px 16px;
+                border: 2px solid #007bff;
+                border-radius: 6px;
+                background-color: #007bff;
+                color: white;
+                font-weight: bold;
+                font-size: 11px;
+                min-width: 90px;
+            }
+            QPushButton:hover { background-color: #0056b3; }
+        """
+
+        self.export_button = QPushButton("Export to Excel")
+        self.export_button.setStyleSheet(button_style)
+        self.export_button.clicked.connect(self.export_to_excel)
+        self.export_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+
+        self.print_button = QPushButton("Print Report")
+        self.print_button.setStyleSheet(button_style)
+        self.print_button.clicked.connect(self.print_report)
+        self.print_button.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
+
+        controls_layout.addSpacing(20)
+        controls_layout.addWidget(self.export_button)
+        controls_layout.addSpacing(8)
+        controls_layout.addWidget(self.print_button)
         controls_layout.addStretch()
 
         self.main_layout.addWidget(controls_frame)
@@ -148,6 +202,25 @@ class ReportPage(QWidget):
 
     # ─────────────────────────────────────────────────────────────────────────
 
+    # ── Corporation → Partner Registry No. mapping ─────────────────────────
+    REGISTRY_MAP = {
+        'ALEXITE CORP':       'P250683A',
+        'HOMENEEDS PAWNSHOP': 'P250677A',
+        'HOMENEEDS PAWNSHOP INC': 'P250677A',
+        'KRISTAL CLEAR':      'P250678A',
+        'SAFELOCK':           'P250680A',
+        'MEGAWORLD':          'P250679A',
+        'SAN RAMON CORP':     'P250681A',
+        'SILVERSTAR PAWNSHOP':'P250682A',
+        'GLOBAL RELIANCE':    'P250681A',
+    }
+
+    def _on_corp_changed(self, corp_name):
+        """Auto-fill partner registry number when corporation changes."""
+        registry = self.REGISTRY_MAP.get(corp_name, '')
+        self.registry_input.setText(registry)
+        self.generate_report()
+
     def load_corporations(self):
         self.corp_selector.clear()
         try:
@@ -167,27 +240,77 @@ class ReportPage(QWidget):
         """Fetch aggregated totals from payable_tbl. Returns None if no rows exist."""
         corp          = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        reg_filter    = self.reg_filter_selector.currentData()
 
         if not corp:
             return None
 
         try:
-            result = db_manager.execute_query("""
-                SELECT SUM(sendout_capital)          AS total_sendout_capital,
-                       SUM(sendout_commission)       AS total_sendout_commission,
-                       SUM(sendout_sc)               AS total_sendout_sc,
-                       SUM(payout_capital)           AS total_payout_capital,
-                       SUM(payout_commission)        AS total_payout_commission,
-                       SUM(payout_sc)                AS total_payout_sc,
-                       SUM(international_commission) AS total_international_commission,
-                       SUM(skid)                     AS total_skid,
-                       SUM(skir)                     AS total_skir,
-                       SUM(cancellation)             AS total_cancellation,
-                       SUM(inc)                      AS total_inc
-                FROM payable_tbl
-                WHERE corporation = %s
-                  AND date        = %s
-            """, (corp, selected_date))
+            # Build query based on registration filter
+            # SKID/SKIR/CANCELLATION come from daily_reports, INC from payable_tbl
+            if reg_filter == "registered":
+                # Only include branches that are registered
+                result = db_manager.execute_query("""
+                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
+                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
+                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
+                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
+                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
+                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
+                           SUM(dr.palawan_international_commission) AS total_international_commission,
+                           SUM(dr.palawan_suki_discounts)         AS total_skid,
+                           SUM(dr.palawan_suki_rebates)           AS total_skir,
+                           SUM(dr.palawan_cancel)                 AS total_cancellation,
+                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    FROM daily_reports dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                    LEFT JOIN payable_tbl p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    WHERE dr.corporation = %s
+                      AND dr.date        = %s
+                      AND b.is_registered = 1
+                """, (corp, selected_date))
+            elif reg_filter == "not_registered":
+                # Only include branches that are NOT registered
+                result = db_manager.execute_query("""
+                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
+                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
+                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
+                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
+                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
+                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
+                           SUM(dr.palawan_international_commission) AS total_international_commission,
+                           SUM(dr.palawan_suki_discounts)         AS total_skid,
+                           SUM(dr.palawan_suki_rebates)           AS total_skir,
+                           SUM(dr.palawan_cancel)                 AS total_cancellation,
+                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    FROM daily_reports dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                    LEFT JOIN payable_tbl p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    WHERE dr.corporation = %s
+                      AND dr.date        = %s
+                      AND b.is_registered = 0
+                """, (corp, selected_date))
+            else:
+                # All branches (original query)
+                result = db_manager.execute_query("""
+                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
+                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
+                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
+                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
+                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
+                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
+                           SUM(dr.palawan_international_commission) AS total_international_commission,
+                           SUM(dr.palawan_suki_discounts)         AS total_skid,
+                           SUM(dr.palawan_suki_rebates)           AS total_skir,
+                           SUM(dr.palawan_cancel)                 AS total_cancellation,
+                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    FROM daily_reports dr
+                    LEFT JOIN payable_tbl p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    WHERE dr.corporation = %s
+                      AND dr.date        = %s
+                """, (corp, selected_date))
 
             if not result or not result[0]:
                 return None
@@ -228,6 +351,19 @@ class ReportPage(QWidget):
             self.table.setRowCount(0)
             return
 
+  
+        corp_abbrev_map = {
+            'SILVERSTAR PAWNSHOP': 'SJPI',
+            'ALEXITE CORP': 'AJPI',
+            'SAN RAMON CORP': 'SRPPI',
+            'HOMENEEDS PAWNSHOP': 'HPI',
+            'HOMENEEDS PAWNSHOP INC': 'HPI',
+            'KRISTAL CLEAR': 'KCDGPI',
+            'SAFELOCK': 'SPI',
+            'MEGAWORLD': 'MDPI'
+        }
+        corp_abbrev = corp_abbrev_map.get(corp, 'AJPI')  # Default to AJPI if not found
+
         totals = self.get_totals_from_database()
 
         # ── No data yet: clear table silently and exit ────────────────────────
@@ -248,24 +384,25 @@ class ReportPage(QWidget):
         total_cancellation       = float(totals.get('total_cancellation')             or 0)
         total_inc                = float(totals.get('total_inc')                      or 0)
 
-        # ── Derived calculations ──────────────────────────────────────────────
-        pepp_commission_61       = sendout_commission       * 0.61
-        skid_61                  = total_skid               * 0.61
-        ajpi_commission_43       = payout_commission        * 0.43
-        ajpi_international_80    = international_commission * 0.80
-        skir_57                  = total_skir               * 0.57
+        # ── Derived calculations (round-half-up to 2dp) ───────────────────
+        # Use _mult_round2 to avoid floating point precision issues
+        pepp_commission_61       = _mult_round2(sendout_commission, 0.61)
+        skid_61                  = _mult_round2(total_skid, 0.61)
+        corp_commission_43       = _mult_round2(payout_commission, 0.43)
+        corp_international_80    = _mult_round2(international_commission, 0.80)
+        skir_57                  = _mult_round2(total_skir, 0.57)
 
-        send_subtotal                = sendout_capital + pepp_commission_61 + sendout_sc
-        send_subtotal_after_discount = send_subtotal - skid_61
-        total_net_send               = send_subtotal_after_discount - total_cancellation
+        send_subtotal                = _round2(sendout_capital + pepp_commission_61 + sendout_sc)
+        send_subtotal_after_discount = _round2(send_subtotal - skid_61)
+        total_net_send               = _round2(send_subtotal_after_discount - total_cancellation)
 
-        release_subtotal             = payout_capital + ajpi_commission_43 + ajpi_international_80
-        release_subtotal_with_inc    = release_subtotal + total_inc
-        total_net_released           = release_subtotal_with_inc + skir_57
+        release_subtotal             = _round2(payout_capital + corp_commission_43 + corp_international_80)
+        release_subtotal_with_inc    = _round2(release_subtotal + total_inc)
+        total_net_released           = _round2(release_subtotal_with_inc + skir_57)
 
-        net_receivable_payable       = total_net_send - total_net_released
+        net_receivable_payable       = _round2(total_net_send - total_net_released)
 
-        registry = self.registry_input.text().strip() or "P210021A"
+        registry = self.registry_input.text().strip()
 
         # ── Build report rows ─────────────────────────────────────────────────
         report_data = [
@@ -290,14 +427,14 @@ class ReportPage(QWidget):
             ("", "", "", "", "blank"),
 
             # Release Transaction
-            ("    RELEASE Transaction (Payable to AJPI)",                  "", "",                          "",                              "section"),
-            ("    PEPP Remittances released at AJPI",                      "", "P",                         f"{payout_capital:,.2f}",         "indent"),
-            ("    AJPI share: 43% of commission",                          "P", f"{payout_commission:,.2f}", f"{ajpi_commission_43:,.2f}",    "indent"),
-            ("    AJPI share: 50% of commission (LBC Domestic Payout)",    "", "",                          "",                              "indent"),
-            ("    AJPI share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{ajpi_international_80:,.2f}", "indent"),
+            (f"    RELEASE Transaction (Payable to {corp_abbrev})",           "", "",                          "",                              "section"),
+            (f"    PEPP Remittances released at {corp_abbrev}",               "", "P",                         f"{payout_capital:,.2f}",         "indent"),
+            (f"    {corp_abbrev} share: 43% of commission",                   "P", f"{payout_commission:,.2f}", f"{corp_commission_43:,.2f}",    "indent"),
+            (f"    {corp_abbrev} share: 50% of commission (LBC Domestic Payout)",    "", "",                          "",                              "indent"),
+            (f"    {corp_abbrev} share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{corp_international_80:,.2f}", "indent"),
             ("    Service Charge",                                         "", f"{payout_sc:,.2f}",          "-",                             "indent"),
             ("        Subtotal",                                           "", "",                          f"{release_subtotal:,.2f}",       "subtotal"),
-            (f"    Add: AJPI Branch Incentives released on {selected_date}", "", "",                        f"{total_inc:,.2f}",              "indent"),
+            (f"    Add: {corp_abbrev} Branch Incentives released on {selected_date}", "", "",                        f"{total_inc:,.2f}",              "indent"),
             ("        Subtotal",                                           "", "",                          f"{release_subtotal_with_inc:,.2f}", "subtotal"),
             ("    Add: Rebates (Suki Card)",                               "", f"{total_skir:,.2f}",         f"{skir_57:,.2f}",               "indent"),
             ("    Total Net Released",                                     "", "",                          f"{total_net_released:,.2f}",     "total"),
@@ -361,7 +498,20 @@ class ReportPage(QWidget):
 
             corp          = self.corp_selector.currentText()
             date          = self.date_selector.date().toString("yyyy-MM-dd")
-            registry      = self.registry_input.text().strip() or "P210021A"
+            registry      = self.registry_input.text().strip()
+
+            # Corporation abbreviation mapping
+            corp_abbrev_map = {
+                'SILVERSTAR PAWNSHOP': 'SJPI',
+                'ALEXITE CORP': 'AJPI',
+                'SAN RAMON CORP': 'SRPPI',
+                'HOMENEEDS PAWNSHOP': 'HPI',
+                'HOMENEEDS PAWNSHOP INC': 'HPI',
+                'KRISTAL CLEAR': 'KCDGPI',
+                'SAFELOCK': 'SPI',
+                'MEGAWORLD': 'MDPI'
+            }
+            corp_abbrev = corp_abbrev_map.get(corp, 'AJPI')  # Default to AJPI if not found
 
             totals = self.get_totals_from_database()
             if not totals:
@@ -380,19 +530,19 @@ class ReportPage(QWidget):
             total_cancellation       = float(totals.get('total_cancellation')             or 0)
             total_inc                = float(totals.get('total_inc')                      or 0)
 
-            pepp_commission_61       = sendout_commission       * 0.61
-            skid_61                  = total_skid               * 0.61
-            ajpi_commission_43       = payout_commission        * 0.43
-            ajpi_international_80    = international_commission * 0.80
-            skir_57                  = total_skir               * 0.57
+            pepp_commission_61       = _mult_round2(sendout_commission, 0.61)
+            skid_61                  = _mult_round2(total_skid, 0.61)
+            corp_commission_43       = _mult_round2(payout_commission, 0.43)
+            corp_international_80    = _mult_round2(international_commission, 0.80)
+            skir_57                  = _mult_round2(total_skir, 0.57)
 
-            send_subtotal                = sendout_capital + pepp_commission_61 + sendout_sc
-            send_subtotal_after_discount = send_subtotal - skid_61
-            total_net_send               = send_subtotal_after_discount - total_cancellation
-            release_subtotal             = payout_capital + ajpi_commission_43 + ajpi_international_80
-            release_subtotal_with_inc    = release_subtotal + total_inc
-            total_net_released           = release_subtotal_with_inc + skir_57
-            net_receivable_payable       = total_net_send - total_net_released
+            send_subtotal                = _round2(sendout_capital + pepp_commission_61 + sendout_sc)
+            send_subtotal_after_discount = _round2(send_subtotal - skid_61)
+            total_net_send               = _round2(send_subtotal_after_discount - total_cancellation)
+            release_subtotal             = _round2(payout_capital + corp_commission_43 + corp_international_80)
+            release_subtotal_with_inc    = _round2(release_subtotal + total_inc)
+            total_net_released           = _round2(release_subtotal_with_inc + skir_57)
+            net_receivable_payable       = _round2(total_net_send - total_net_released)
 
             wb = Workbook()
             ws = wb.active
@@ -434,14 +584,14 @@ class ReportPage(QWidget):
                 ("    Less: Cancellation",                                     "", f"({total_cancellation:,.2f})",  f"({total_cancellation:,.2f})",        "indent"),
                 ("    Total Net Send",                                         "", "",                              f"{total_net_send:,.2f}",              "total"),
                 ("", "", "", "", "blank"),
-                ("    RELEASE Transaction (Payable to AJPI)",                  "", "",                              "",                                   "section"),
-                ("    PEPP Remittances released at AJPI",                      "", "P",                             f"{payout_capital:,.2f}",              "indent"),
-                ("    AJPI share: 43% of commission",                          "P", f"{payout_commission:,.2f}",    f"{ajpi_commission_43:,.2f}",          "indent"),
-                ("    AJPI share: 50% of commission (LBC Domestic Payout)",    "", "",                              "",                                   "indent"),
-                ("    AJPI share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{ajpi_international_80:,.2f}",   "indent"),
+                (f"    RELEASE Transaction (Payable to {corp_abbrev})",        "", "",                              "",                                   "section"),
+                (f"    PEPP Remittances released at {corp_abbrev}",            "", "P",                             f"{payout_capital:,.2f}",              "indent"),
+                (f"    {corp_abbrev} share: 43% of commission",                "P", f"{payout_commission:,.2f}",    f"{corp_commission_43:,.2f}",          "indent"),
+                (f"    {corp_abbrev} share: 50% of commission (LBC Domestic Payout)",    "", "",                              "",                                   "indent"),
+                (f"    {corp_abbrev} share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{corp_international_80:,.2f}",   "indent"),
                 ("    Service Charge",                                         "", f"{payout_sc:,.2f}",             "-",                                  "indent"),
                 ("        Subtotal",                                           "", "",                              f"{release_subtotal:,.2f}",            "subtotal"),
-                (f"    Add: AJPI Branch Incentives released on {date}",        "", "",                              f"{total_inc:,.2f}",                   "indent"),
+                (f"    Add: {corp_abbrev} Branch Incentives released on {date}",        "", "",                              f"{total_inc:,.2f}",                   "indent"),
                 ("        Subtotal",                                           "", "",                              f"{release_subtotal_with_inc:,.2f}",   "subtotal"),
                 ("    Add: Rebates (Suki Card)",                               "", f"{total_skir:,.2f}",            f"{skir_57:,.2f}",                    "indent"),
                 ("    Total Net Released",                                     "", "",                              f"{total_net_released:,.2f}",          "total"),
@@ -487,8 +637,26 @@ class ReportPage(QWidget):
             ws.column_dimensions['C'].width = 15
             ws.column_dimensions['D'].width = 18
 
-            ts       = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"PEPP_Reconciliation_{corp}_{date}_{ts}.xlsx"
+            # Generate default filename
+            ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"PEPP_Reconciliation_{corp}_{date}_{ts}.xlsx"
+            
+            # Show save dialog
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Excel Report",
+                default_filename,
+                "Excel Files (*.xlsx);;All Files (*)"
+            )
+            
+            if not filename:
+                # User cancelled
+                return
+            
+            # Ensure .xlsx extension
+            if not filename.lower().endswith('.xlsx'):
+                filename += '.xlsx'
+            
             wb.save(filename)
             QMessageBox.information(self, "Export Successful", f"Saved as:\n{filename}")
 

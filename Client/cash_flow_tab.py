@@ -1,3 +1,5 @@
+import json
+import os
 import re
 
 from PyQt5.QtWidgets import (
@@ -7,68 +9,100 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtCore import Qt
 
+# ── field-config helpers (shared with super_admin_dashboard) ──────────────────
+import sys as _sys
+
+def _get_config_dir() -> str:
+    """Return directory containing field_config.json.
+    Works in both dev mode and PyInstaller frozen builds."""
+    if getattr(_sys, 'frozen', False):
+        # Running as a PyInstaller one-file exe — config lives next to the exe
+        return os.path.dirname(_sys.executable)
+    # Dev mode: two levels up from Client/cash_flow_tab.py → project root
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+_BASE_DIR = _get_config_dir()
+FIELD_CONFIG_PATH = os.path.join(_BASE_DIR, "field_config.json")
+
+
+def _load_field_config() -> dict:
+    """Load field_config.json.  Returns an empty structure on any error."""
+    try:
+        with open(FIELD_CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"Brand A": {"debit": [], "credit": []},
+                "Brand B": {"debit": [], "credit": []}}
+
+
+def _sanitize_column(name: str) -> str:
+    col = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+    return col
+
 
 class CashFlowTab(QWidget):
-    def __init__(self, parent):
+    def __init__(self, parent, brand_name="Brand A"):
         super().__init__()
         self.parent = parent
-        self.current_brand = "Brand A"  # Default to Brand A
-        
-        # Connect to brand change signal from parent
-        self.parent.brand_changed.connect(self.on_brand_changed)
-        
+        self.brand_name = brand_name  # Fixed brand for this tab instance
+
         # Storage for inputs
         self.debit_inputs = {}
         self.credit_inputs = {}
         self.debit_lotes_inputs = {}
         self.credit_lotes_inputs = {}
-        
+
         # Main layout
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(10)
-        
-        # Build initial UI for Brand A
-        self.setup_ui()
 
-    def on_brand_changed(self, brand_name):
-        """Handle brand switching"""
-        if brand_name == self.current_brand:
-            return
-        self.current_brand = brand_name
-        self.rebuild_ui()
-
-    def rebuild_ui(self):
-        """Clear and rebuild entire UI for current brand"""
-        while self.main_layout.count():
-            item = self.main_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-        self.debit_inputs.clear()
-        self.credit_inputs.clear()
-        self.debit_lotes_inputs.clear()
-        self.credit_lotes_inputs.clear()
+        # Build UI for this brand
         self.setup_ui()
 
     def setup_ui(self):
         """Setup UI based on current brand"""
+        brand_color = "#3B82F6" if self.brand_name == "Brand A" else "#8B5CF6"
+        brand_color_light = "#EFF6FF" if self.brand_name == "Brand A" else "#F5F3FF"
+
         # === Debit Section (Cash Outflow) ===
         debit_scroll = QScrollArea()
         debit_scroll.setWidgetResizable(True)
-        debit_scroll.setMaximumHeight(600)
 
-        debit_box = QGroupBox("Cash Outflow")
+        debit_box = QGroupBox("")
+        debit_box.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                margin-top: 18px;
+                padding: 18px 16px 14px 16px;
+            }}
+            QGroupBox::title {{
+                color: #EF4444;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 1.2px;
+                padding: 2px 10px;
+                background-color: #FFFFFF;
+                border-radius: 4px;
+            }}
+        """)
         debit_form = QFormLayout()
-        debit_form.setSpacing(8)
-        debit_form.setContentsMargins(15, 20, 15, 15)
+        debit_form.setSpacing(10)
+        debit_form.setContentsMargins(16, 24, 16, 16)
 
         debit_fields = self.get_debit_fields()
         self.debit_inputs = self.build_input_group(debit_form, debit_fields, is_debit=True)
 
         debit_form.addRow(self.parent.create_separator(), QLabel(""))
         self.debit_total_display = self.parent.create_display_field("0.00")
+        self.debit_total_display.setStyleSheet(
+            "font-weight: 800; font-size: 14px; color: #EF4444; "
+            "background-color: #FEF2F2; border: 1px solid #FECACA; "
+            "border-radius: 8px; padding: 8px 12px;"
+        )
         total_label = QLabel("Total Cash In:")
-        total_label.setStyleSheet("font-weight: bold; color: #c0392b; font-size: 12px;")
+        total_label.setStyleSheet("font-weight: 700; color: #EF4444; font-size: 12px;")
         debit_form.addRow(total_label, self.debit_total_display)
 
         debit_box.setLayout(debit_form)
@@ -77,20 +111,41 @@ class CashFlowTab(QWidget):
         # === Credit Section (Cash Inflow) ===
         credit_scroll = QScrollArea()
         credit_scroll.setWidgetResizable(True)
-        credit_scroll.setMaximumHeight(600)
 
-        credit_box = QGroupBox("Cash Inflow")
+        credit_box = QGroupBox("")
+        credit_box.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                margin-top: 18px;
+                padding: 18px 16px 14px 16px;
+            }}
+            QGroupBox::title {{
+                color: #22C55E;
+                font-size: 11px;
+                font-weight: 800;
+                letter-spacing: 1.2px;
+                padding: 2px 10px;
+                background-color: #FFFFFF;
+                border-radius: 4px;
+            }}
+        """)
         credit_form = QFormLayout()
-        credit_form.setSpacing(8)
-        credit_form.setContentsMargins(15, 20, 15, 15)
+        credit_form.setSpacing(10)
+        credit_form.setContentsMargins(16, 24, 16, 16)
 
         credit_fields = self.get_credit_fields()
         self.credit_inputs = self.build_input_group(credit_form, credit_fields, is_debit=False)
 
         credit_form.addRow(self.parent.create_separator(), QLabel(""))
         self.credit_total_display = self.parent.create_display_field("0.00")
+        self.credit_total_display.setStyleSheet(
+            "font-weight: 800; font-size: 14px; color: #22C55E; "
+            "background-color: #F0FDF4; border: 1px solid #BBF7D0; "
+            "border-radius: 8px; padding: 8px 12px;"
+        )
         total_label = QLabel("Total Cash Out:")
-        total_label.setStyleSheet("font-weight: bold; color: #27ae60; font-size: 12px;")
+        total_label.setStyleSheet("font-weight: 700; color: #22C55E; font-size: 12px;")
         credit_form.addRow(total_label, self.credit_total_display)
 
         credit_box.setLayout(credit_form)
@@ -100,171 +155,21 @@ class CashFlowTab(QWidget):
         self.main_layout.addWidget(credit_scroll)
 
     def get_debit_fields(self):
-        """Get debit fields based on current brand"""
-        if self.current_brand == "Brand A":
-            return [
-                ("Rescate Jewelry", "Enter Rescate Jewelry"),
-                ("Interest", "Enter Interest"),
-                ("Penalty", "Enter Penalty"),
-                ("Stamp", "Enter Stamp"),
-                ("Rescuardo/Affidavit", "Enter Rescuardo/Affidavit"),
-                ("HABOL Renew/Tubos", "Enter HABOL Renew/Tubos"),
-                ("Habol R/T Interest&Stamp", "Enter Habol R/T Interest&Stamp"),
-                ("CR STORAGE", "Enter CR STORAGE"),
-                ("CR Storage Int/Penalty", "Enter CR Storage Int/Penalty"),
-                ("Rescate Silver", "Enter Rescate Silver"),
-                ("Silver int.", "Enter Silver int."),
-                ("Res Storage", "Enter Res Storage"),
-                ("Res. Storage Int./Penalty", "Enter Res. Storage Int./Penalty"),
-                ("Res. Motor", "Enter Res. Motor"),
-                ("Penalty Motor", "Enter Penalty Motor"),
-                ("Jew. A.I", "Enter Jew. A.I"),
-                ("S.C", "Enter S.C"),
-                ("O.s.f Sto.", "Enter O.s.f Sto."),
-                ("Sto. A.I", "Enter Sto. A.I"),
-                ("Silver A.I", "Enter Silver A.I"),
-                ("O.s.f Silver", "Enter O.s.f Silver"),
-                ("Motor A.I", "Enter Motor A.I"),
-                ("O.s.f Motor", "Enter O.s.f Motor"),
-                ("Miscellaneous Fee", "Enter Miscellaneous Fee"),
-                ("Insurance(20)", "Enter Insurance(20)"),
-                ("Insurance PHILAM(php 30)", "Enter Insurance PHILAM(php 30)"),
-                ("Insurance PHILAM(php 60)", "Enter Insurance PHILAM(php 60)"),
-                ("Insurance PHILAM(php 90)", "Enter Insurance PHILAM(php 90)"),
-                ("Fund Transfer from BRANCH", "Enter Fund Transfer from BRANCH"),
-                ("AYANAH + SC", "Enter AYANAH + SC"),
-                ("Sendah Load + SC", "Enter Sendah Load + SC"),
-                ("Smart Money + SC", "Enter Smart Money + SC"),
-                ("G-Cash In", "Enter G-Cash In"),
-                ("Gcash Out S.C", "Enter Gcash Out S.C"),
-                ("Abra S.O + S.C", "Enter Abra S.O + S.C"),
-                ("BDO S.C", "Enter BDO S.C"),
-                ("Palawan Pay Cash Out SC", "Enter Palawan Pay Cash Out SC"),
-                ("Ria In + S.C", "Enter Ria In + S.C"),
-                ("Paymaya In", "Enter Paymaya In"),
-                ("I2I Remittance In", "Enter I2I Remittance In"),
-                ("I2I Bills Payment", "Enter I2I Bills Payment"),
-                ("I2I Bank Transfer", "Enter I2I Bank Transfer"),
-                ("I2I Pesonet", "Enter I2I Pesonet"),
-                ("I2I Instapay", "Enter I2I Instapay"),
-                ("Sendah Bills + SC", "Enter Sendah Bills + SC"),
-                ("Palawan Send Out", "Enter Palawan Send Out"),
-                ("Palawan S.C", "Enter Palawan S.C"),
-                ("Palawan Suki Card", "Enter Palawan Suki Card"),
-                ("Palawan Pay Cash-In +SC", "Enter Palawan Pay Cash-In +SC"),
-                ("Palawan Load + SC", "Enter Palawan Load + SC"),
-                ("Palawan Pay Bills + SC", "Enter Palawan Pay Bills + SC"),
-                ("Palawan Change Receiver", "Enter Palawan Change Receiver"),
-                ("MC In", "Enter MC In"),
-                ("Handling fee", "Enter Handling fee"),
-                ("Other Penalty", "Enter Other Penalty"),
-                ("Cash Overage", "Enter Cash Overage"),
-            ]
-        else:  # Brand B
-            return [
-                ("Rescate Jewelry", "Enter Rescate Jewelry"),
-                ("Interest", "Enter Interest"),
-                ("Penalty", "Enter Penalty"),
-                ("Stamp", "Enter Stamp"),
-                ("Resguardo/Affidavit", "Enter Resguardo/Affidavit"),
-                ("HABOL Renew/Tubos", "Enter Habol Renew/Tubos"),
-                ("Habol R/T Interest&Stamp", "Enter Habol R/T Interest&Stamp"),
-                ("Jew. A.I", "Enter Jew. A.I"),
-                ("S.C", "Enter S.C."),
-                ("Fund Transfer from BRANCH", "Enter Fund Transfer from BRANCH"),
-                ("Sendah Load + SC", "Enter Sendah Load + SC"),
-                ("PPAY CO SC", "Enter PPAY CO SC"),
-                ("Palawan Send Out", "Enter Palawan Send Out"),
-                ("Palawan S.C", "Enter Palawan S.C"),
-                ("Palawan Suki Card", "Enter Palawan Suki Card"),
-                ("Palawan Pay Cash-In + SC", "Enter Palawan Pay Cash-In + SC"),
-                ("Palawan Pay Bills + SC", "Enter Palawan Pay Bills + SC"),
-                ("Palawan Load", "Enter Palawan Load"),
-                ("Palawan Change Receiver", "Enter Palawan Change Receiver"),
-                ("MC In", "Enter MC In"),
-                ("Handling fee", "Enter Handling fee"),
-                ("Other Penalty", "Enter Other Penalty"),
-                ("Cash Overage", "Enter Cash Overage"),
-            ]
+        """Load debit fields for this brand from field_config.json."""
+        cfg = _load_field_config()
+        entries = cfg.get(self.brand_name, {}).get("debit", [])
+        if entries:
+            return [(e[0], e[1] if len(e) >= 2 else f"Enter {e[0]}") for e in entries]
+        # Fallback – empty list shows nothing rather than crashing
+        return []
 
     def get_credit_fields(self):
-        """Get credit fields based on current brand"""
-        if self.current_brand == "Brand A":
-            return [
-                ("Empeno JEW. (NEW)", "Enter Empeno Jew"),
-                ("Empeno JEW (RENEW)", "Enter Empeno Jew"),
-                ("Empeno STO. (NEW)", "Enter Empeno STO. (NEW)"),
-                ("Fund Empeno STO. (RENEW)", "Enter Empeno STO. (RENEW)"),
-                ("Empeno Motor/Car", "Enter Empeno Motor/Car"),
-                ("Empeno silver", "Enter Empeno silver"),
-                ("G-Cash Out", "Enter G-Cash Out"),
-                ("G-Cash Padala (SENDAH)", "Enter G-Cash Padala (SENDAH)"),
-                ("Abra P.o", "Enter Abra P.o"),
-                ("BDO P.o", "Enter BDO P.o"),
-                ("I2I Remittance Out", "Enter I2I Remittance Out"),
-                ("Remitly", "Enter Remitly"),
-                ("Smart Money P.O.", "Enter Smart Money P.O."),
-                ("Fund Transfer to HEAD OFFICE", "Enter Fund Transfer to HEAD OFFICE"),
-                ("Fund Transfer to BRANCH", "Enter Fund Transfer to BRANCH"),
-                ("AYANAH OUT", "Enter AYANAH OUT"),
-                ("Palawan Pay Out", "Enter Palawan Pay Out"),
-                ("Palawan Pay Out (incentives)", "Enter Palawan Pay Out (incentives)"),
-                ("Palawan Pay Cash Out", "Enter Palawan Pay Cash Out"),
-                ("MC Out", "Enter MC Out"),
-                ("PC-Inc. Emp", "Enter PC-Inc. Emp"),
-                ("PC-Inc. Motor", "Enter PC-Inc. Motor"),
-                ("PC-Inc. Suki Card", "Enter PC-Inc. Suki Card"),
-                ("PC-Inc. Insurance", "Enter PC-Inc. Insurance"),
-                ("PC-Inc. MC", "Enter PC-Inc. MC"),
-                ("PC-Salary", "Enter PC-Salary"),
-                ("PC-Rental", "Enter PC-Rental"),
-                ("PC-Electric", "Enter PC-Electric"),
-                ("PC-Water", "Enter PC-Water"),
-                ("PC-Internet", "Enter PC-Internet"),
-                ("PC-Lbc/Jrs/Jnt", "Enter PC-Lbc/Jrs/Jnt"),
-                ("PC-Permits/BIR Payments", "Enter PC-Permits/BIR Payments"),
-                ("PC-Supplies/Xerox/Maintenance", "Enter PC-Supplies/Xerox/Maintenance"),
-                ("PC-Transpo", "Enter PC-Transpo"),
-                ("Transfast", "Enter Transfast"),
-                ("Paymaya Out", "Enter Paymaya Out"),
-                ("Ria Out", "Enter Ria Out"),
-                ("FIXCO", "Enter FIXCO"),
-                ("Moneygram", "Enter Moneygram"),
-                ("Palawan Cancel", "Enter Palawan Cancel"),
-                ("Palawan Suki Discounts", "Enter Palawan Suki Discounts"),
-                ("Palawan Suki Rebates", "Enter Palawan Suki Rebates"),
-                ("Storage Rebates", "Enter Storage Rebates"),
-                ("Silver Rebates", "Enter Silver Rebates"),
-                ("OTHERS", "Enter Others"),
-                ("Cash Shortage", "Enter Cash Shortage"),
-            ]
-        else:  # Brand B
-            return [
-                ("Empeno JEW. (NEW)", "Enter Empeno Jew"),
-                ("Empeno JEW (RENEW)", "Enter Empeno Jew"),
-                ("Fund Transfer to HEAD OFFICE", "Enter Fund Transfer to HEAD OFFICE"),
-                ("Fund Transfer to BRANCH", "Enter Fund Transfer to BRANCH"),
-                ("Palawan Pay Out", "Enter Palawan Pay Out"),
-                ("Palawan Pay Out (incentives)", "Enter Palawan Pay Out (incentives)"),
-                ("Palawan Pay Cash Out", "Enter Palawan Pay Cash Out"),
-                ("PC-Inc. Emp", "Enter PC-Inc. Emp"),
-                ("PC-Inc. Suki Card", "Enter PC-Inc. Suki Card"),
-                ("PC-Inc. Insurance", "Enter PC-Inc. Insurance"),
-                ("PC-Salary", "Enter PC-Salary"),
-                ("PC-Rental", "Enter PC-Rental"),
-                ("PC-Electric", "Enter PC-Electric"),
-                ("PC-Water", "Enter PC-Water"),
-                ("PC-Internet", "Enter PC-Internet"),
-                ("PC-Lbc/Jrs/Jnt", "Enter PC-Lbc/Jrs/Jnt"),
-                ("PC-Permits/BIR Payments", "Enter PC-Permits/BIR Payments"),
-                ("PC-Supplies/Xerox/Maintenance", "Enter PC-Supplies/Xerox/Maintenance"),
-                ("PC-Transpo", "Enter PC-Transpo"),
-                ("Palawan Cancel", "Enter Palawan Cancel"),
-                ("Palawan Suki Discounts", "Enter Palawan Suki Discounts"),
-                ("Palawan Suki Rebates", "Enter Palawan Suki Rebates"),
-                ("OTHERS", "Enter Others"),
-                ("Cash Shortage", "Enter Cash Shortage"),
-            ]
+        """Load credit fields for this brand from field_config.json."""
+        cfg = _load_field_config()
+        entries = cfg.get(self.brand_name, {}).get("credit", [])
+        if entries:
+            return [(e[0], e[1] if len(e) >= 2 else f"Enter {e[0]}") for e in entries]
+        return []
 
     def build_input_group(self, form_layout, fields, is_debit=True):
         """Build input group for fields with lotes input"""
@@ -279,12 +184,16 @@ class CashFlowTab(QWidget):
             container.setContentsMargins(0, 0, 0, 0)
             row_layout = QHBoxLayout(container)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(6)
+            row_layout.setSpacing(8)
             row_layout.addWidget(amount_field, 1)
-            row_layout.addWidget(QLabel("Lotes:"), 0)
+
+            lotes_lbl = QLabel("Lotes:")
+            lotes_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #94A3B8;")
+            row_layout.addWidget(lotes_lbl, 0)
             row_layout.addWidget(lotes_field, 0)
 
             label = QLabel(label_text + ":")
+            label.setStyleSheet("font-size: 12px; font-weight: 600; color: #334155;")
             form_layout.addRow(label, container)
 
             inputs[label_text] = amount_field
@@ -305,7 +214,12 @@ class CashFlowTab(QWidget):
         field = QLineEdit()
         field.setValidator(QIntValidator(0, 999999))
         field.setPlaceholderText(placeholder)
-        field.setMaximumWidth(70)
+        field.setMaximumWidth(72)
+        field.setStyleSheet(
+            "background-color: #F8FAFC; border: 1px solid #E2E8F0; "
+            "border-radius: 6px; padding: 6px 8px; font-size: 12px; "
+            "color: #64748B; font-weight: 600; min-height: 30px; min-width: 50px;"
+        )
         field.textChanged.connect(self.parent.recalculate_all)
         return field
 
@@ -322,189 +236,32 @@ class CashFlowTab(QWidget):
 
     @staticmethod
     def _sanitize_column(name: str) -> str:
-        """
-        Safe SQL column name fallback.
-        Replaces every run of non-alphanumeric characters with a single
-        underscore, then strips leading/trailing underscores.
-        e.g. "Empeno STO. (NEW)" -> "empeno_sto_new"
-        """
-        col = name.lower()
-        col = re.sub(r'[^a-z0-9]+', '_', col)
-        col = col.strip('_')
+        col = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
         return col
 
+    def _build_column_mapping(self) -> dict:
+        """Build a label→db_column dict from this brand's config entries."""
+        cfg = _load_field_config()
+        brand_cfg = cfg.get(self.brand_name, {})
+        mapping = {}
+        for section in ("debit", "credit"):
+            for entry in brand_cfg.get(section, []):
+                label = entry[0]
+                col   = entry[2] if len(entry) >= 3 else _sanitize_column(label)
+                mapping[label] = col
+        return mapping
+
     def field_name_to_db_column(self, field_name):
-        """Convert field label to DB column name via explicit map, then safe fallback."""
+        """Convert field label to DB column name using config, then safe fallback."""
 
-        # ── Brand A ───────────────────────────────────────────────────────────
-        brand_a_mapping = {
-            # Debit
-            "Rescate Jewelry":               "rescate_jewelry",
-            "Interest":                      "interest",
-            "Penalty":                       "penalty",
-            "Stamp":                         "stamp",
-            "Rescuardo/Affidavit":           "rescuardo_affidavit",
-            "HABOL Renew/Tubos":             "habol_renew_tubos",
-            "Habol R/T Interest&Stamp":      "habol_rt_interest_stamp",
-            "CR STORAGE":                    "cr_storage",
-            "CR Storage Int/Penalty":        "cr_storage_int_penalty",
-            "Rescate Silver":                "rescate_silver",
-            "Silver int.":                   "silver_interest",
-            "Res Storage":                   "res_storage",
-            "Res. Storage Int./Penalty":     "res_storage_int_penalty",
-            "Res. Motor":                    "res_motor",
-            "Penalty Motor":                 "penalty_motor",
-            "Jew. A.I":                      "jew_ai",
-            "S.C":                           "service_charge",
-            "O.s.f Sto.":                    "osf_storage",
-            "Sto. A.I":                      "storage_ai",
-            "Silver A.I":                    "silver_ai",
-            "O.s.f Silver":                  "osf_silver",
-            "Motor A.I":                     "motor_ai",
-            "O.s.f Motor":                   "osf_motor",
-            "Miscellaneous Fee":             "miscellaneous_fee",
-            "Insurance(20)":                 "insurance_20",
-            "Insurance PHILAM(php 30)":      "insurance_philam_30",
-            "Insurance PHILAM(php 60)":      "insurance_philam_60",
-            "Insurance PHILAM(php 90)":      "insurance_philam_90",
-            "Fund Transfer from BRANCH":     "fund_transfer_from_branch",
-            "AYANAH + SC":                   "ayanah_sc",
-            "Sendah Load + SC":              "sendah_load_sc",
-            "Smart Money + SC":              "smart_money_sc",
-            "G-Cash In":                     "gcash_in",
-            "Gcash Out S.C":                 "gcash_out_sc",
-            "Abra S.O + S.C":               "abra_so_sc",
-            "BDO S.C":                       "bdo_sc",
-            "Palawan Pay Cash Out SC":       "palawan_pay_cash_out_sc",
-            "Ria In + S.C":                  "ria_in_sc",
-            "Paymaya In":                    "paymaya_in",
-            "I2I Remittance In":             "i2i_remittance_in",
-            "I2I Bills Payment":             "i2i_bills_payment",
-            "I2I Bank Transfer":             "i2i_bank_transfer",
-            "I2I Pesonet":                   "i2i_pesonet",
-            "I2I Instapay":                  "i2i_instapay",
-            "Sendah Bills + SC":             "sendah_bills_sc",
-            "Palawan Send Out":              "palawan_send_out",
-            "Palawan S.C":                   "palawan_sc",
-            "Palawan Suki Card":             "palawan_suki_card",
-            "Palawan Pay Cash-In +SC":       "palawan_pay_cash_in_sc",
-            "Palawan Load + SC":             "palawan_load_sc",
-            "Palawan Pay Bills + SC":        "palawan_pay_bills_sc",
-            "Palawan Change Receiver":       "palawan_change_receiver",
-            "MC In":                         "mc_in",
-            "Handling fee":                  "handling_fee",
-            "Other Penalty":                 "other_penalty",
-            "Cash Overage":                  "cash_overage",
-            # Credit
-            "Empeno JEW. (NEW)":             "empeno_jew_new",
-            "Empeno JEW (RENEW)":            "empeno_jew_renew",
-            "Empeno STO. (NEW)":             "empeno_sto_new",
-            "Fund Empeno STO. (RENEW)":      "fund_empeno_sto_renew",
-            "Empeno Motor/Car":              "empeno_motor_car",
-            "Empeno silver":                 "empeno_silver",
-            "G-Cash Out":                    "gcash_out",
-            "G-Cash Padala (SENDAH)":        "gcash_padala_sendah",
-            "Abra P.o":                      "abra_po",
-            "BDO P.o":                       "bdo_po",
-            "I2I Remittance Out":            "i2i_remittance_out",
-            "Remitly":                       "remitly",
-            "Smart Money P.O.":              "smart_money_po",
-            "Fund Transfer to HEAD OFFICE":  "fund_transfer_to_head_office",
-            "Fund Transfer to BRANCH":       "fund_transfer_to_branch",
-            "AYANAH OUT":                    "ayanah_out",
-            "Palawan Pay Out":               "palawan_pay_out",
-            "Palawan Pay Out (incentives)":  "palawan_pay_out_incentives",
-            "Palawan Pay Cash Out":          "palawan_pay_cash_out",
-            "MC Out":                        "mc_out",
-            "PC-Inc. Emp":                   "pc_inc_emp",
-            "PC-Inc. Motor":                 "pc_inc_motor",
-            "PC-Inc. Suki Card":             "pc_inc_suki_card",
-            "PC-Inc. Insurance":             "pc_inc_insurance",
-            "PC-Inc. MC":                    "pc_inc_mc",
-            "PC-Salary":                     "pc_salary",
-            "PC-Rental":                     "pc_rental",
-            "PC-Electric":                   "pc_electric",
-            "PC-Water":                      "pc_water",
-            "PC-Internet":                   "pc_internet",
-            "PC-Lbc/Jrs/Jnt":               "pc_lbc_jrs_jnt",
-            "PC-Permits/BIR Payments":       "pc_permits_bir_payments",
-            "PC-Supplies/Xerox/Maintenance": "pc_supplies_xerox_maintenance",
-            "PC-Transpo":                    "pc_transpo",
-            "Transfast":                     "transfast",
-            "Paymaya Out":                   "paymaya_out",
-            "Ria Out":                       "ria_out",
-            "FIXCO":                         "fixco",
-            "Moneygram":                     "moneygram",
-            "Palawan Cancel":                "palawan_cancel",
-            "Palawan Suki Discounts":        "palawan_suki_discounts",
-            "Palawan Suki Rebates":          "palawan_suki_rebates",
-            "Storage Rebates":               "storage_rebates",
-            "Silver Rebates":                "silver_rebates",
-            "OTHERS":                        "others",
-            "Cash Shortage":                 "cash_shortage",
-        }
-
-        # ── Brand B ───────────────────────────────────────────────────────────
-        brand_b_mapping = {
-            # Debit
-            "Rescate Jewelry":               "rescate_jewelry",
-            "Interest":                      "interest",
-            "Penalty":                       "penalty",
-            "Stamp":                         "stamp",
-            "Resguardo/Affidavit":           "resguardo_affidavit",
-            "HABOL Renew/Tubos":             "habol_renew_tubos",
-            "Habol R/T Interest&Stamp":      "habol_rt_interest_stamp",
-            "Jew. A.I":                      "jew_ai",
-            "S.C":                           "sc",
-            "Fund Transfer from BRANCH":     "fund_transfer_from_branch",
-            "Sendah Load + SC":              "sendah_load_sc",
-            "PPAY CO SC":                    "ppay_co_sc",
-            "Palawan Send Out":              "palawan_send_out",
-            "Palawan S.C":                   "palawan_sc",
-            "Palawan Suki Card":             "palawan_suki_card",
-            "Palawan Pay Cash-In + SC":      "palawan_pay_cash_in_sc",
-            "Palawan Pay Bills + SC":        "palawan_pay_bills_sc",
-            "Palawan Load":                  "palawan_load",
-            "Palawan Change Receiver":       "palawan_change_receiver",
-            "MC In":                         "mc_in",
-            "Handling fee":                  "handling_fee",
-            "Other Penalty":                 "other_penalty",
-            "Cash Overage":                  "cash_overage",
-            # Credit
-            "Empeno JEW. (NEW)":             "empeno_jew_new",
-            "Empeno JEW (RENEW)":            "empeno_jew_renew",
-            "Fund Transfer to HEAD OFFICE":  "fund_transfer_to_head_office",
-            "Fund Transfer to BRANCH":       "fund_transfer_to_branch",
-            "Palawan Pay Out":               "palawan_pay_out",
-            "Palawan Pay Out (incentives)":  "palawan_pay_out_incentives",
-            "Palawan Pay Cash Out":          "palawan_pay_cash_out",
-            "PC-Inc. Emp":                   "pc_inc_emp",
-            "PC-Inc. Suki Card":             "pc_inc_suki_card",
-            "PC-Inc. Insurance":             "pc_inc_insurance",
-            "PC-Salary":                     "pc_salary",
-            "PC-Rental":                     "pc_rental",
-            "PC-Electric":                   "pc_electric",
-            "PC-Water":                      "pc_water",
-            "PC-Internet":                   "pc_internet",
-            "PC-Lbc/Jrs/Jnt":               "pc_lbc_jrs_jnt",
-            "PC-Permits/BIR Payments":       "pc_permits_bir_payments",
-            "PC-Supplies/Xerox/Maintenance": "pc_supplies_xerox_maintenance",
-            "PC-Transpo":                    "pc_transpo",
-            "Palawan Cancel":                "palawan_cancel",
-            "Palawan Suki Discounts":        "palawan_suki_discounts",
-            "Palawan Suki Rebates":          "palawan_suki_rebates",
-            "OTHERS":                        "others",
-            "Cash Shortage":                 "cash_shortage",
-        }
-
-        mapping = brand_a_mapping if self.current_brand == "Brand A" else brand_b_mapping
+        mapping = self._build_column_mapping()
 
         if field_name in mapping:
             return mapping[field_name]
 
         # Safe fallback — no dots, parens, or special chars will reach SQL
         col = self._sanitize_column(field_name)
-        print(f"[WARN] field_name_to_db_column: '{field_name}' not in mapping, "
+        print(f"[WARN] field_name_to_db_column: '{field_name}' not in config mapping, "
               f"using sanitized fallback '{col}'")
         return col
 
@@ -533,6 +290,43 @@ class CashFlowTab(QWidget):
         for field in list(self.debit_inputs.values()) + list(self.debit_lotes_inputs.values()) \
                      + list(self.credit_inputs.values()) + list(self.credit_lotes_inputs.values()):
             field.clear()
+
+    def get_raw_field_values(self) -> dict:
+        """Return {label: {amount, lotes}} for all fields (used by draft save)."""
+        out = {}
+        for label, widget in self.debit_inputs.items():
+            lotes_w = self.debit_lotes_inputs.get(label)
+            out[f"debit::{label}"] = {
+                "amount": widget.text(),
+                "lotes": lotes_w.text() if lotes_w else ""
+            }
+        for label, widget in self.credit_inputs.items():
+            lotes_w = self.credit_lotes_inputs.get(label)
+            out[f"credit::{label}"] = {
+                "amount": widget.text(),
+                "lotes": lotes_w.text() if lotes_w else ""
+            }
+        return out
+
+    def set_raw_field_values(self, data: dict):
+        """Restore field values from draft data dict."""
+        for key, val in data.items():
+            section, label = key.split("::", 1)
+            if section == "debit":
+                widget = self.debit_inputs.get(label)
+                lotes_w = self.debit_lotes_inputs.get(label)
+            else:
+                widget = self.credit_inputs.get(label)
+                lotes_w = self.credit_lotes_inputs.get(label)
+            if widget:
+                widget.blockSignals(True)
+                widget.setText(val.get("amount", ""))
+                widget.blockSignals(False)
+            if lotes_w:
+                lotes_w.blockSignals(True)
+                lotes_w.setText(val.get("lotes", ""))
+                lotes_w.blockSignals(False)
+        self.parent.recalculate_all()
 
     def set_enabled(self, enabled):
         """Enable or disable all inputs"""

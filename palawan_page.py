@@ -11,8 +11,11 @@ from docx import Document
 
 
 class PalawanPage(QWidget):
-    def __init__(self):
+    def __init__(self, account_type=2):
         super().__init__()
+        self.account_type = account_type
+        # Set correct table based on brand: Brand A -> daily_reports_brand_a, Brand B -> daily_reports
+        self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
         self.setWindowTitle("Palawan Transactions")
         self.resize(900, 600)
 
@@ -29,11 +32,20 @@ class PalawanPage(QWidget):
         self.date_selector.setDisplayFormat("yyyy-MM-dd")
         self.date_selector.dateChanged.connect(self.populate_table)
 
+        # Registration status filter
+        self.reg_filter_selector = QComboBox()
+        self.reg_filter_selector.addItem("Registered Only", "registered")
+        self.reg_filter_selector.addItem("Not Registered", "not_registered")
+        self.reg_filter_selector.addItem("All Branches", "all")
+        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
+
         # Add selectors to layout
         self.layout.addWidget(QLabel("Select Corporation:"))
         self.layout.addWidget(self.corp_selector)
         self.layout.addWidget(QLabel("Select Date:"))
         self.layout.addWidget(self.date_selector)
+        self.layout.addWidget(QLabel("Branch Status:"))
+        self.layout.addWidget(self.reg_filter_selector)
 
         # Table
         self.table = QTableWidget()
@@ -62,55 +74,82 @@ class PalawanPage(QWidget):
         self.load_corporations()
 
     def load_corporations(self):
-        """Load unique corporations from the daily_reports table"""
+        """Load unique corporations from the daily reports table"""
         self.corp_selector.clear()
         try:
-            # Get distinct corporations from daily_reports table
-            query = "SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation"
+            # Get distinct corporations from appropriate table
+            query = f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation"
             corporations = db_manager.execute_query(query)
 
+            self.corp_selector.blockSignals(True)
             for corp in corporations:
                 self.corp_selector.addItem(corp['corporation'])
+            self.corp_selector.blockSignals(False)
 
         except Exception as e:
+            self.corp_selector.blockSignals(False)
             QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
 
     def populate_table(self):
         """Populate table with Palawan transaction data from daily_reports"""
         corp = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
-
-        if not corp:
-            return
-
-    def populate_table(self):
-        """Populate table with Palawan transaction data from daily_reports"""
-        corp = self.corp_selector.currentText()
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        reg_filter = self.reg_filter_selector.currentData()
 
         if not corp:
             return
 
         try:
-            # Query to get Palawan data for the selected corporation and date
-            query = """
-                    SELECT branch, \
-                           COALESCE(palawan_send_out, 0)   as palawan_send_out, \
-                           COALESCE(palawan_sc, 0)         as palawan_sc, \
-                           COALESCE(palawan_pay_out, 0)    as palawan_pay_out, \
+            # Build query based on registration filter
+            if reg_filter == "registered":
+                query = f"""
+                    SELECT dr.branch, 
+                           COALESCE(dr.palawan_send_out, 0)   as palawan_send_out, 
+                           COALESCE(dr.palawan_sc, 0)         as palawan_sc, 
+                           COALESCE(dr.palawan_pay_out, 0)    as palawan_pay_out, 
+                           COALESCE(dr.palawan_pay_out_incentives, 0) as palawan_pay_out_incentives
+                    FROM {self.daily_table} dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                    WHERE dr.corporation = %s 
+                      AND dr.date = %s
+                      AND b.is_registered = 1
+                    ORDER BY dr.branch
+                """
+            elif reg_filter == "not_registered":
+                query = f"""
+                    SELECT dr.branch, 
+                           COALESCE(dr.palawan_send_out, 0)   as palawan_send_out, 
+                           COALESCE(dr.palawan_sc, 0)         as palawan_sc, 
+                           COALESCE(dr.palawan_pay_out, 0)    as palawan_pay_out, 
+                           COALESCE(dr.palawan_pay_out_incentives, 0) as palawan_pay_out_incentives
+                    FROM {self.daily_table} dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                    WHERE dr.corporation = %s 
+                      AND dr.date = %s
+                      AND b.is_registered = 0
+                    ORDER BY dr.branch
+                """
+            else:
+                query = f"""
+                    SELECT branch, 
+                           COALESCE(palawan_send_out, 0)   as palawan_send_out, 
+                           COALESCE(palawan_sc, 0)         as palawan_sc, 
+                           COALESCE(palawan_pay_out, 0)    as palawan_pay_out, 
                            COALESCE(palawan_pay_out_incentives, 0) as palawan_pay_out_incentives
-                    FROM daily_reports
-                    WHERE corporation = %s \
+                    FROM {self.daily_table}
+                    WHERE corporation = %s 
                       AND date = %s
-                    ORDER BY branch \
-                    """
+                    ORDER BY branch
+                """
 
             results = db_manager.execute_query(query, (corp, selected_date))
 
             self.table.setRowCount(0)
 
             if not results:
-                QMessageBox.information(self, "No Data", f"No data found for {selected_date}.")
+                self.table.setRowCount(0)
                 return
 
             total_in = 0.0

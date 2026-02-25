@@ -7,6 +7,9 @@ from PyQt5.QtGui import QDoubleValidator, QFont, QIntValidator
 from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer
 from db_connect_pooled import db_manager
 from security import SessionManager
+import json
+import os
+import sys
 
 from palawan_page import PalawanPage
 from mc_page import MCPage
@@ -16,6 +19,9 @@ from report_page import ReportPage
 from admin_manage import create_corporation, create_branch, create_client
 from variance_review_page import VarianceReviewPage
 from user_management_page import UserManagementPage
+from daily_transaction_page import DailyTransactionPage
+from new_sanla_page import NewSanlaPage
+from new_renew_page import NewRenewPage
 
 # Auto-updater (optional)
 try:
@@ -31,12 +37,12 @@ except ImportError:
 class AdminDashboard(QWidget):
     logout_requested = pyqtSignal()
     
-    def __init__(self):
+    def __init__(self, account_type=2):
         super().__init__()
-        self.setWindowTitle("Admin Dashboard - Cash Management System")
-        self.setGeometry(100, 100, 1000, 700)
-        self.setMinimumSize(900, 600)
-
+        # account_type: 1 = Brand A Admin, 2 = Brand B Admin
+        self.account_type = account_type
+        brand_label = "Brand A" if account_type == 1 else "Brand B"
+        self.setWindowTitle(f"Admin Dashboard ({brand_label}) - Cash Management System")
         self.db = db_manager
         self._update_checker_threads = []  # Store update checker threads
         
@@ -51,58 +57,70 @@ class AdminDashboard(QWidget):
         self.debit_lotes_inputs = {}
         self.credit_lotes_inputs = {}
 
-        # Updated field mappings with separate Cash Shortage and Cash Overage
-        self.debit_fields = {
-            "Rescate Jewelry": "rescate_jewelry",
-            "Interest": "interest",
-            "Penalty": "penalty",
-            "Stamp": "stamp",
-            "Resguardo/Affidavit": "resguardo_affidavit",
-            "HABOL Renew/Tubos": "habol_renew_tubos",
-            "Habol R/T Interest&Stamp": "habol_rt_interest_stamp",
-            "Jew. A.I": "jew_ai",
-            "S.C": "sc",
-            "Fund Transfer from BRANCH": "fund_transfer_from_branch",
-            "Sendah Load + SC": "sendah_load_sc",
-            "PPAY CO SC": "ppay_co_sc",
-            "Palawan Send Out": "palawan_send_out",
-            "Palawan S.C": "palawan_sc",
-            "Palawan Suki Card": "palawan_suki_card",
-            "Palawan Pay Cash-In + SC": "palawan_pay_cash_in_sc",
-            "Palawan Pay Bills + SC": "palawan_pay_bills_sc",
-            "Palawan Load": "palawan_load",
-            "Palawan Change Receiver": "palawan_change_receiver",
-            "MC In": "mc_in",
-            "Handling fee": "handling_fee",
-            "Other Penalty": "other_penalty",
-            "Cash Overage": "cash_overage"  # ← Cash Overage in Debit (Money In)
-        }
+        # Load field mappings from field_config.json based on account_type
+        brand_key = "Brand A" if account_type == 1 else "Brand B"
+        field_config = self._load_field_config()
+        
+        if field_config and brand_key in field_config:
+            brand_config = field_config[brand_key]
+            # Convert list format to dict format: [["Label", "placeholder", "db_column"], ...] -> {"Label": "db_column"}
+            self.debit_fields = {item[0]: item[2] for item in brand_config.get("debit", [])}
+            self.credit_fields = {item[0]: item[2] for item in brand_config.get("credit", [])}
+        else:
+            # Fallback to Brand B hardcoded fields if config not found
+            self.debit_fields = {
+                "Rescate Jewelry": "rescate_jewelry",
+                "Interest": "interest",
+                "Penalty": "penalty",
+                "Stamp": "stamp",
+                "Resguardo/Affidavit": "resguardo_affidavit",
+                "HABOL Renew/Tubos": "habol_renew_tubos",
+                "Habol R/T Interest&Stamp": "habol_rt_interest_stamp",
+                "Jew. A.I": "jew_ai",
+                "S.C": "sc",
+                "Fund Transfer from BRANCH": "fund_transfer_from_branch",
+                "Sendah Load + SC": "sendah_load_sc",
+                "PPAY CO SC": "ppay_co_sc",
+                "Palawan Send Out": "palawan_send_out",
+                "Palawan S.C": "palawan_sc",
+                "Palawan Suki Card": "palawan_suki_card",
+                "Palawan Pay Cash-In + SC": "palawan_pay_cash_in_sc",
+                "Palawan Pay Bills + SC": "palawan_pay_bills_sc",
+                "Palawan Load": "palawan_load",
+                "Palawan Change Receiver": "palawan_change_receiver",
+                "MC In": "mc_in",
+                "Handling fee": "handling_fee",
+                "Other Penalty": "other_penalty",
+                "Cash Overage": "cash_overage"
+            }
+            self.credit_fields = {
+                "Empeno JEW. (NEW)": "empeno_jew_new",
+                "Empeno JEW (RENEW)": "empeno_jew_renew",
+                "Fund Transfer to HEAD OFFICE": "fund_transfer_to_head_office",
+                "Fund Transfer to BRANCH": "fund_transfer_to_branch",
+                "Palawan Pay Out": "palawan_pay_out",
+                "Palawan Pay Out (incentives)": "palawan_pay_out_incentives",
+                "Palawan Pay Cash Out": "palawan_pay_cash_out",
+                "MC Out": "mc_out",
+                "PC-Salary": "pc_salary",
+                "PC-Rental": "pc_rental",
+                "PC-Electric": "pc_electric",
+                "PC-Water": "pc_water",
+                "PC-Internet": "pc_internet",
+                "PC-Lbc/Jrs/Jnt": "pc_lbc_jrs_jnt",
+                "PC-Permits/BIR Payments": "pc_permits_bir_payments",
+                "PC-Supplies/Xerox/Maintenance": "pc_supplies_xerox_maintenance",
+                "PC-Transpo": "pc_transpo",
+                "Palawan Cancel": "palawan_cancel",
+                "Palawan Suki Discounts": "palawan_suki_discounts",
+                "Palawan Suki Rebates": "palawan_suki_rebates",
+                "OTHERS": "others",
+                "Cash Shortage": "cash_shortage"
+            }
 
-        self.credit_fields = {
-            "Empeno JEW. (NEW)": "empeno_jew_new",
-            "Empeno JEW (RENEW)": "empeno_jew_renew",
-            "Fund Transfer to HEAD OFFICE": "fund_transfer_to_head_office",
-            "Fund Transfer to BRANCH": "fund_transfer_to_branch",
-            "Palawan Pay Out": "palawan_pay_out",
-            "Palawan Pay Out (incentives)": "palawan_pay_out_incentives",
-            "Palawan Pay Cash Out": "palawan_pay_cash_out",
-            "MC Out": "mc_out",
-            "PC-Salary": "pc_salary",
-            "PC-Rental": "pc_rental",
-            "PC-Electric": "pc_electric",
-            "PC-Water": "pc_water",
-            "PC-Internet": "pc_internet",
-            "PC-Lbc/Jrs/Jnt": "pc_lbc_jrs_jnt",
-            "PC-Permits/BIR Payments": "pc_permits_bir_payments",
-            "PC-Supplies/Xerox/Maintenance": "pc_supplies_xerox_maintenance",
-            "PC-Transpo": "pc_transpo",
-            "Palawan Cancel": "palawan_cancel",
-            "Palawan Suki Discounts": "palawan_suki_discounts",
-            "Palawan Suki Rebates": "palawan_suki_rebates",
-            "OTHERS": "others",
-            "Cash Shortage": "cash_shortage"  # ← Cash Shortage in Credit (Money Out)
-        }
-
+        # Set correct table based on brand: Brand A -> daily_reports_brand_a, Brand B -> daily_reports
+        self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
+        
         self.setup_styles()
         self.build_ui()
         self.load_corporations()
@@ -110,6 +128,27 @@ class AdminDashboard(QWidget):
         # Check if the app was just updated and show success message
         if AUTO_UPDATE_ENABLED and check_update_success:
             check_update_success(parent=self)
+
+    def _load_field_config(self):
+        """Load field configuration from field_config.json"""
+        try:
+            # Determine config directory based on whether we're frozen (PyInstaller)
+            if getattr(sys, 'frozen', False):
+                config_dir = os.path.dirname(sys.executable)
+            else:
+                config_dir = os.path.dirname(os.path.abspath(__file__))
+            
+            config_path = os.path.join(config_dir, 'field_config.json')
+            
+            if os.path.exists(config_path):
+                with open(config_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                print(f"field_config.json not found at {config_path}")
+                return None
+        except Exception as e:
+            print(f"Error loading field_config.json: {e}")
+            return None
 
     def setup_styles(self):
 
@@ -401,6 +440,7 @@ class AdminDashboard(QWidget):
         nav_layout.setContentsMargins(10, 8, 10, 8)
         nav_layout.setSpacing(5)
 
+        # Create all buttons
         self.daily_btn = QPushButton("📊 Daily Cash Count")
         self.variance_btn = QPushButton("⚠️ Variance Review")
         self.palawan_btn = QPushButton("🏦 Palawan")
@@ -408,62 +448,109 @@ class AdminDashboard(QWidget):
         self.fund_btn = QPushButton("💰 Fund Transfer")
         self.payable_btn = QPushButton("💰 Payable")
         self.report_btn = QPushButton("📈 Payable Reports")
+        self.daily_txn_btn = QPushButton("📋 Daily Transaction")
+        self.new_sanla_btn = QPushButton("🆕 New Sanla")
+        self.new_renew_btn = QPushButton("🔄 New & Renew")
         self.admin_btn = QPushButton("⚙️ User Management")
 
         # Make buttons checkable for active state
-        self.daily_btn.setCheckable(True)
-        self.variance_btn.setCheckable(True)
-        self.palawan_btn.setCheckable(True)
-        self.mc_btn.setCheckable(True)
-        self.fund_btn.setCheckable(True)
-        self.payable_btn.setCheckable(True)
-        self.report_btn.setCheckable(True)
-        self.admin_btn.setCheckable(True)
+        for btn in [self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn,
+                    self.fund_btn, self.payable_btn, self.report_btn, self.daily_txn_btn,
+                    self.new_sanla_btn, self.new_renew_btn, self.admin_btn]:
+            btn.setCheckable(True)
         self.daily_btn.setChecked(True)  # Default selection
 
-        nav_layout.addWidget(self.daily_btn)
-        nav_layout.addWidget(self.variance_btn)
-        nav_layout.addWidget(self.palawan_btn)
-        nav_layout.addWidget(self.mc_btn)
-        nav_layout.addWidget(self.fund_btn)
-        nav_layout.addWidget(self.payable_btn)
-        nav_layout.addWidget(self.report_btn)
-        nav_layout.addWidget(self.admin_btn)
+        # Brand A Admin (account_type=1): Daily Cash, Variance, Palawan, MC, Fund Transfer,
+        #                                 Payable, Daily Txn, New Sanla, New & Renew, User Mgmt
+        # Brand B Admin (account_type=2): Daily Cash, Variance, Palawan, MC, Fund Transfer,
+        #                                 Payable, Payable Reports, User Mgmt
+        if self.account_type == 1:
+            # Brand A Admin tabs
+            self.nav_buttons = [
+                self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn,
+                self.fund_btn, self.payable_btn, self.daily_txn_btn, self.new_sanla_btn,
+                self.new_renew_btn, self.admin_btn
+            ]
+        else:
+            # Brand B Admin tabs
+            self.nav_buttons = [
+                self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn,
+                self.fund_btn, self.payable_btn, self.report_btn, self.admin_btn
+            ]
+
+        for btn in self.nav_buttons:
+            nav_layout.addWidget(btn)
         nav_layout.addStretch()
 
         main_layout.addWidget(nav_frame)
 
         # --- STACKED VIEWS ---
         self.stack = QStackedWidget()
+        
+        # Create all widgets - pass account_type where needed for brand-specific data
         self.daily_cash_widget = self.build_daily_cash_widget()
-        self.variance_widget = VarianceReviewPage()
-        self.palawan_widget = PalawanPage()
-        self.mc_widget = MCPage()
-        self.fund_widget = FundTransferPage()
-        self.payable_widget = PayablesPage()
+        self.variance_widget = VarianceReviewPage(account_type=self.account_type)
+        self.palawan_widget = PalawanPage(account_type=self.account_type)
+        self.mc_widget = MCPage(account_type=self.account_type)
+        self.fund_widget = FundTransferPage(account_type=self.account_type)
+        self.payable_widget = PayablesPage(account_type=self.account_type)
         self.report_widget = ReportPage()
+        self.daily_txn_widget = DailyTransactionPage()
+        self.new_sanla_widget = NewSanlaPage()
+        self.new_renew_widget = NewRenewPage()
         self.admin_widget = UserManagementPage()
 
-        self.stack.addWidget(self.daily_cash_widget)  # index 0
-        self.stack.addWidget(self.variance_widget)  # index 1
-        self.stack.addWidget(self.palawan_widget)  # index 2
-        self.stack.addWidget(self.mc_widget)  # index 3
-        self.stack.addWidget(self.fund_widget)  # index 4
-        self.stack.addWidget(self.payable_widget)  # index 5
-        self.stack.addWidget(self.report_widget)  # index 6
-        self.stack.addWidget(self.admin_widget)  # index 7
+        # Add widgets to stack based on account type
+        # Brand A: Daily Cash, Variance, Palawan, MC, Fund, Payable, Daily Txn, New Sanla, New Renew, User Mgmt
+        # Brand B: Daily Cash, Variance, Palawan, MC, Fund, Payable, Report, User Mgmt
+        if self.account_type == 1:
+            # Brand A Admin stack
+            self.stack.addWidget(self.daily_cash_widget)  # index 0
+            self.stack.addWidget(self.variance_widget)    # index 1
+            self.stack.addWidget(self.palawan_widget)     # index 2
+            self.stack.addWidget(self.mc_widget)          # index 3
+            self.stack.addWidget(self.fund_widget)        # index 4
+            self.stack.addWidget(self.payable_widget)     # index 5
+            self.stack.addWidget(self.daily_txn_widget)   # index 6
+            self.stack.addWidget(self.new_sanla_widget)   # index 7
+            self.stack.addWidget(self.new_renew_widget)   # index 8
+            self.stack.addWidget(self.admin_widget)       # index 9
+        else:
+            # Brand B Admin stack
+            self.stack.addWidget(self.daily_cash_widget)  # index 0
+            self.stack.addWidget(self.variance_widget)    # index 1
+            self.stack.addWidget(self.palawan_widget)     # index 2
+            self.stack.addWidget(self.mc_widget)          # index 3
+            self.stack.addWidget(self.fund_widget)        # index 4
+            self.stack.addWidget(self.payable_widget)     # index 5
+            self.stack.addWidget(self.report_widget)      # index 6
+            self.stack.addWidget(self.admin_widget)       # index 7
         
         main_layout.addWidget(self.stack)
 
         # Connect nav buttons to switch views
-        self.daily_btn.clicked.connect(lambda: self.switch_view(0, self.daily_btn))
-        self.variance_btn.clicked.connect(lambda: self.switch_view(1, self.variance_btn))
-        self.palawan_btn.clicked.connect(lambda: self.switch_view(2, self.palawan_btn))
-        self.mc_btn.clicked.connect(lambda: self.switch_view(3, self.mc_btn))
-        self.fund_btn.clicked.connect(lambda: self.switch_view(4, self.fund_btn))
-        self.payable_btn.clicked.connect(lambda: self.switch_view(5, self.payable_btn))
-        self.report_btn.clicked.connect(lambda: self.switch_view(6, self.report_btn))
-        self.admin_btn.clicked.connect(lambda: self.switch_view(7, self.admin_btn))
+        if self.account_type == 1:
+            # Brand A connections
+            self.daily_btn.clicked.connect(lambda: self.switch_view(0, self.daily_btn))
+            self.variance_btn.clicked.connect(lambda: self.switch_view(1, self.variance_btn))
+            self.palawan_btn.clicked.connect(lambda: self.switch_view(2, self.palawan_btn))
+            self.mc_btn.clicked.connect(lambda: self.switch_view(3, self.mc_btn))
+            self.fund_btn.clicked.connect(lambda: self.switch_view(4, self.fund_btn))
+            self.payable_btn.clicked.connect(lambda: self.switch_view(5, self.payable_btn))
+            self.daily_txn_btn.clicked.connect(lambda: self.switch_view(6, self.daily_txn_btn))
+            self.new_sanla_btn.clicked.connect(lambda: self.switch_view(7, self.new_sanla_btn))
+            self.new_renew_btn.clicked.connect(lambda: self.switch_view(8, self.new_renew_btn))
+            self.admin_btn.clicked.connect(lambda: self.switch_view(9, self.admin_btn))
+        else:
+            # Brand B connections
+            self.daily_btn.clicked.connect(lambda: self.switch_view(0, self.daily_btn))
+            self.variance_btn.clicked.connect(lambda: self.switch_view(1, self.variance_btn))
+            self.palawan_btn.clicked.connect(lambda: self.switch_view(2, self.palawan_btn))
+            self.mc_btn.clicked.connect(lambda: self.switch_view(3, self.mc_btn))
+            self.fund_btn.clicked.connect(lambda: self.switch_view(4, self.fund_btn))
+            self.payable_btn.clicked.connect(lambda: self.switch_view(5, self.payable_btn))
+            self.report_btn.clicked.connect(lambda: self.switch_view(6, self.report_btn))
+            self.admin_btn.clicked.connect(lambda: self.switch_view(7, self.admin_btn))
 
         self.setLayout(main_layout)
 
@@ -532,8 +619,7 @@ class AdminDashboard(QWidget):
         """Switch view and update button states"""
         self.stack.setCurrentIndex(index)
         # Uncheck all buttons
-        for btn in [self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn, self.fund_btn, 
-                    self.payable_btn, self.report_btn, self.admin_btn]:
+        for btn in self.nav_buttons:
             if btn:
                 btn.setChecked(False)
         # Check active button
@@ -1193,7 +1279,7 @@ class AdminDashboard(QWidget):
      
         try:
             self.corp_selector.clear()
-            result = self.db.execute_query("SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation")
+            result = self.db.execute_query(f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation")
             if result:
                 for row in result:
                     if row['corporation']:
@@ -1208,9 +1294,9 @@ class AdminDashboard(QWidget):
             self.branch_selector.clear()
             corp_name = self.corp_selector.currentText()
             if corp_name:
-                query = """
+                query = f"""
                     SELECT DISTINCT branch
-                    FROM daily_reports
+                    FROM {self.daily_table}
                     WHERE corporation = %s
                     ORDER BY branch
                 """
@@ -1345,8 +1431,8 @@ class AdminDashboard(QWidget):
             if reply == QMessageBox.No:
                 return
 
-            delete_query = """
-                DELETE FROM daily_reports
+            delete_query = f"""
+                DELETE FROM {self.daily_table}
                 WHERE corporation = %s AND branch = %s AND date = %s
             """
             rows_affected = self.db.execute_query(delete_query, [corp_name, branch_name, selected_date])
@@ -1568,9 +1654,9 @@ class AdminDashboard(QWidget):
             return
 
         try:
-            query = """
+            query = f"""
                 SELECT *
-                FROM daily_reports
+                FROM {self.daily_table}
                 WHERE corporation = %s
                   AND branch = %s
                   AND date = %s
@@ -1779,7 +1865,7 @@ class AdminDashboard(QWidget):
             values.extend([corp_name, branch_name, selected_date])
             
             update_query = f"""
-                UPDATE daily_reports
+                UPDATE {self.daily_table}
                 SET {', '.join(set_clauses)}
                 WHERE corporation = %s AND branch = %s AND date = %s
             """

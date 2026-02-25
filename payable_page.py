@@ -48,8 +48,11 @@ class ColoredHeaderView(QHeaderView):
 
 
 class PayablesPage(QWidget):
-    def __init__(self):
+    def __init__(self, account_type=2):
         super().__init__()
+        self.account_type = account_type
+        # Set correct table based on brand: Brand A -> daily_reports_brand_a, Brand B -> daily_reports
+        self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
         self.setWindowTitle("Palawan Transactions - Detailed View")
 
         self._is_loading = False  # ← FLAG: prevents auto-save during table population
@@ -98,70 +101,66 @@ class PayablesPage(QWidget):
         """Load data into table. _is_loading flag blocks auto-save during fill."""
         corp          = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        reg_filter    = self.reg_filter_selector.currentData()
+        os_filter     = self.os_filter_selector.currentData()  # None or OS name
 
-        if not corp:
+        # Need at least a corporation OR an OS selected
+        if not corp and not os_filter:
             return
 
         # ── SET FLAG: stops on_item_changed from saving while we fill the table ──
         self._is_loading = True
 
         try:
-            daily_query = """
-                SELECT branch,
-                       COALESCE(palawan_sendout_lotes_total, 0)         AS so_lotes,
-                       COALESCE(palawan_sendout_principal, 0)           AS so_capital,
-                       COALESCE(palawan_sendout_sc, 0)                  AS so_sc,
-                       COALESCE(palawan_sendout_commission, 0)          AS so_commission,
-                       COALESCE(palawan_sendout_regular_total, 0)       AS so_total,
-                       COALESCE(palawan_payout_lotes_total, 0)          AS po_lotes,
-                       COALESCE(palawan_payout_principal, 0)            AS po_capital,
-                       COALESCE(palawan_payout_sc, 0)                   AS po_sc,
-                       COALESCE(palawan_payout_commission, 0)           AS po_commission,
-                       COALESCE(palawan_payout_regular_total, 0)        AS po_total,
-                       COALESCE(palawan_international_lotes_total, 0)   AS int_lotes,
-                       COALESCE(palawan_international_principal, 0)     AS int_capital,
-                       COALESCE(palawan_international_sc, 0)            AS int_sc,
-                       COALESCE(palawan_international_commission, 0)    AS int_commission,
-                       COALESCE(palawan_international_regular_total, 0) AS int_total
-                FROM daily_reports
-                WHERE corporation = %s
-                  AND date        = %s
-                ORDER BY branch
+            # ── Build SELECT columns (always the same) ────────────────────────
+            select_cols = f"""
+                    SELECT dr.branch,
+                           COALESCE(dr.palawan_sendout_lotes_total, 0)         AS so_lotes,
+                           COALESCE(dr.palawan_sendout_principal, 0)           AS so_capital,
+                           COALESCE(dr.palawan_sendout_sc, 0)                  AS so_sc,
+                           COALESCE(dr.palawan_sendout_commission, 0)          AS so_commission,
+                           COALESCE(dr.palawan_sendout_regular_total, 0)       AS so_total,
+                           COALESCE(dr.palawan_payout_lotes_total, 0)          AS po_lotes,
+                           COALESCE(dr.palawan_payout_principal, 0)            AS po_capital,
+                           COALESCE(dr.palawan_payout_sc, 0)                   AS po_sc,
+                           COALESCE(dr.palawan_payout_commission, 0)           AS po_commission,
+                           COALESCE(dr.palawan_payout_regular_total, 0)        AS po_total,
+                           COALESCE(dr.palawan_international_lotes_total, 0)   AS int_lotes,
+                           COALESCE(dr.palawan_international_principal, 0)     AS int_capital,
+                           COALESCE(dr.palawan_international_sc, 0)            AS int_sc,
+                           COALESCE(dr.palawan_international_commission, 0)    AS int_commission,
+                           COALESCE(dr.palawan_international_regular_total, 0) AS int_total,
+                           COALESCE(dr.palawan_suki_discounts, 0)              AS skid,
+                           COALESCE(dr.palawan_suki_rebates, 0)                AS skir,
+                           COALESCE(dr.palawan_cancel, 0)                      AS cancellation,
+                           COALESCE(dr.palawan_pay_out_incentives, 0)          AS po_incentives,
+                           dr.corporation                                      AS corp_name
+                    FROM {self.daily_table} dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN corporations c ON b.corporation_id = c.id
+                           AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
             """
 
-            # Simple, no-JOIN query — one row per branch guaranteed by unique constraint
-            payable_query = """
-                SELECT branch,
-                       COALESCE(skid,         0) AS skid,
-                       COALESCE(skir,         0) AS skir,
-                       COALESCE(cancellation, 0) AS cancellation,
-                       COALESCE(inc,          0) AS inc
-                FROM payable_tbl
-                WHERE corporation = %s
-                  AND date        = %s
-            """
+            # ── Build WHERE clauses dynamically ───────────────────────────────
+            where_parts = ["dr.date = %s"]
+            params = [selected_date]
 
-            results         = db_manager.execute_query(daily_query,   (corp, selected_date))
-            payable_results = db_manager.execute_query(payable_query,  (corp, selected_date))
+            if corp:
+                where_parts.append("dr.corporation = %s")
+                params.append(corp)
 
-            # Build branch → adjustments lookup
-            payable_data = {}
-            if payable_results:
-                for r in payable_results:
-                    if isinstance(r, dict):
-                        payable_data[r['branch']] = {
-                            'skid':         float(r['skid']         or 0),
-                            'skir':         float(r['skir']         or 0),
-                            'cancellation': float(r['cancellation'] or 0),
-                            'inc':          float(r['inc']          or 0),
-                        }
-                    elif isinstance(r, (list, tuple)) and len(r) >= 5:
-                        payable_data[r[0]] = {
-                            'skid':         float(r[1] or 0),
-                            'skir':         float(r[2] or 0),
-                            'cancellation': float(r[3] or 0),
-                            'inc':          float(r[4] or 0),
-                        }
+            if reg_filter == "registered":
+                where_parts.append("b.is_registered = 1")
+            elif reg_filter == "not_registered":
+                where_parts.append("b.is_registered = 0")
+
+            if os_filter:
+                where_parts.append("b.os_name = %s")
+                params.append(os_filter)
+
+            daily_query = select_cols + " WHERE " + " AND ".join(where_parts) + " ORDER BY dr.branch"
+
+            results = db_manager.execute_query(daily_query, tuple(params))
 
             self.table.setRowCount(0)
 
@@ -177,7 +176,11 @@ class PayablesPage(QWidget):
                 self.table.insertRow(row_count)
 
                 branch_name = row_data['branch'] if isinstance(row_data, dict) else row_data[0]
+                # Store the corporation this branch belongs to (for cross-corp OS filtering)
+                row_corp = row_data['corp_name'] if isinstance(row_data, dict) else ''
                 self.table.setItem(row_count, 0, QTableWidgetItem(branch_name))
+                # Stash corp in the branch item's data role so _sync can retrieve it
+                self.table.item(row_count, 0).setData(Qt.UserRole, row_corp)
 
                 # Columns 1-15: daily report values (read-only)
                 if isinstance(row_data, dict):
@@ -192,8 +195,18 @@ class PayablesPage(QWidget):
                         float(row_data['int_sc']),     float(row_data['int_commission']),
                         float(row_data['int_total']),
                     ]
+                    # SKID, SKIR, CANCELLATION, INC from daily_reports
+                    skid_val = float(row_data['skid'])
+                    skir_val = float(row_data['skir'])
+                    cancel_val = float(row_data['cancellation'])
+                    inc_val = float(row_data['po_incentives'])
                 else:
                     values = [float(x) for x in row_data[1:16]]
+                    # SKID, SKIR, CANCELLATION, INC from tuple indices 16, 17, 18, 19
+                    skid_val = float(row_data[16]) if len(row_data) > 16 else 0.0
+                    skir_val = float(row_data[17]) if len(row_data) > 17 else 0.0
+                    cancel_val = float(row_data[18]) if len(row_data) > 18 else 0.0
+                    inc_val = float(row_data[19]) if len(row_data) > 19 else 0.0
 
                 for i, value in enumerate(values, 1):
                     item = QTableWidgetItem(f"{value:.2f}")
@@ -201,24 +214,29 @@ class PayablesPage(QWidget):
                     self.table.setItem(row_count, i, item)
                     column_totals[i - 1] += value
 
-                # Columns 16-19: SKID, SKIR, CANCELLATION, INC — load from DB
-                adj = payable_data.get(branch_name, {
-                    'skid': 0.0, 'skir': 0.0, 'cancellation': 0.0, 'inc': 0.0
-                })
-
-                for i, key in enumerate(['skid', 'skir', 'cancellation', 'inc']):
-                    col_index = 16 + i
-                    item      = QTableWidgetItem(f"{adj[key]:.2f}")
+                # Columns 16-18: SKID, SKIR, CANCELLATION from daily_reports (read-only)
+                for col_index, val in [(16, skid_val), (17, skir_val), (18, cancel_val)]:
+                    item = QTableWidgetItem(f"{val:.2f}")
                     item.setTextAlignment(Qt.AlignCenter)
-                    item.setFlags(item.flags() | Qt.ItemIsEditable)
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Read-only
                     self.table.setItem(row_count, col_index, item)
-                    column_totals[col_index - 1] += adj[key]
+                    column_totals[col_index - 1] += val
+
+                # Column 19: INC from daily_reports.palawan_pay_out_incentives (read-only)
+                item = QTableWidgetItem(f"{inc_val:.2f}")
+                item.setTextAlignment(Qt.AlignCenter)
+                item.setFlags(item.flags() & ~Qt.ItemIsEditable)  # Read-only – carried from cash flow
+                self.table.setItem(row_count, 19, item)
+                column_totals[18] += inc_val
 
                 row_count += 1
 
             self.add_totals_row(column_totals)
             self.add_group_headers_visual()
             QTimer.singleShot(200, self.adjust_responsive_widths)
+
+            # ── Auto-sync INC values to payable_tbl so report_page can read them ──
+            self._sync_inc_to_payable(selected_date)
 
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading data: {str(e)}")
@@ -227,6 +245,59 @@ class PayablesPage(QWidget):
         finally:
             # ── CLEAR FLAG: user edits can now trigger auto-save again ──────
             self._is_loading = False
+
+    # ─────────────────────────────────────────────────────────────────────────
+    def _sync_inc_to_payable(self, selected_date):
+        """Sync palawan_pay_out_incentives (INC) from daily_reports into payable_tbl
+        so that report_page can read them."""
+        try:
+            totals_row = self.table.rowCount() - 1
+            for row in range(totals_row):
+                branch_item = self.table.item(row, 0)
+                if not branch_item:
+                    continue
+                branch = branch_item.text()
+                # Get the corporation stored per-row (handles cross-corp OS filter)
+                row_corp = branch_item.data(Qt.UserRole) or self.corp_selector.currentText()
+                if not row_corp:
+                    continue
+                inc_item = self.table.item(row, 19)
+                inc_val = float(inc_item.text()) if inc_item and inc_item.text().strip() else 0.0
+
+                def get(c):
+                    it = self.table.item(row, c)
+                    try:
+                        return float(it.text()) if it and it.text().strip() else 0.0
+                    except ValueError:
+                        return 0.0
+
+                db_manager.execute_query("""
+                    INSERT INTO payable_tbl (
+                        corporation, branch, date,
+                        sendout_capital, sendout_sc, sendout_commission, sendout_total,
+                        payout_capital,  payout_sc,  payout_commission,  payout_total,
+                        international_capital, international_sc,
+                        international_commission, international_total,
+                        skid, skir, cancellation, inc
+                    ) VALUES (
+                        %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s, %s
+                    )
+                    ON DUPLICATE KEY UPDATE
+                        inc        = VALUES(inc),
+                        updated_at = CURRENT_TIMESTAMP
+                """, (
+                    row_corp, branch, selected_date,
+                    get(2),  get(3),  get(4),  get(5),
+                    get(7),  get(8),  get(9),  get(10),
+                    get(12), get(13), get(14), get(15),
+                    get(16), get(17), get(18), inc_val,
+                ))
+        except Exception as e:
+            print(f"INC auto-sync error: {e}")
 
     # ─────────────────────────────────────────────────────────────────────────
     def on_item_changed(self, item):
@@ -241,7 +312,8 @@ class PayablesPage(QWidget):
         row = item.row()
         col = item.column()
 
-        if 16 <= col <= 19:
+        # Only INC column (19) is editable now
+        if col == 19:
             # Block signals while we reformat the text to avoid recursion
             self.table.blockSignals(True)
             try:
@@ -249,7 +321,6 @@ class PayablesPage(QWidget):
                 item.setText(f"{value:.2f}")
             except ValueError:
                 item.setText("0.00")
-                self.table.blockSignals(False)
                 QMessageBox.warning(self, "Invalid Input", "Please enter a valid number.")
                 return
             finally:
@@ -260,17 +331,21 @@ class PayablesPage(QWidget):
 
     # ─────────────────────────────────────────────────────────────────────────
     def save_single_row_adjustments(self, row):
-        """Auto-save SKID/SKIR/CANCELLATION/INC for one row immediately after edit."""
+        """Auto-save INC value for one row immediately after edit."""
         if self._is_loading:
             return
         if row >= self.table.rowCount() - 1:  # skip totals row
             return
 
-        corp          = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
         branch_item   = self.table.item(row, 0)
 
-        if not branch_item or not corp:
+        if not branch_item:
+            return
+
+        # Get per-row corporation stored during populate_table
+        corp = branch_item.data(Qt.UserRole) or self.corp_selector.currentText()
+        if not corp:
             return
 
         branch = branch_item.text()
@@ -283,10 +358,11 @@ class PayablesPage(QWidget):
                 return 0.0
 
         try:
-            skid         = get(16)
-            skir         = get(17)
-            cancellation = get(18)
-            inc          = get(19)
+            # Get all values from the table
+            skid         = get(16)  # From daily_reports (read-only in UI)
+            skir         = get(17)  # From daily_reports (read-only in UI)
+            cancellation = get(18)  # From daily_reports (read-only in UI)
+            inc          = get(19)  # Editable by user
 
             # Check if a record already exists for this branch/date
             check = db_manager.execute_query(
@@ -296,7 +372,7 @@ class PayablesPage(QWidget):
             )
 
             if check:
-                # Record exists — just update the 4 adjustment fields
+                # Record exists — update INC and also sync SKID/SKIR/CANCELLATION from daily_reports
                 db_manager.execute_query("""
                     UPDATE payable_tbl
                        SET skid         = %s,
@@ -339,10 +415,9 @@ class PayablesPage(QWidget):
     # ─────────────────────────────────────────────────────────────────────────
     def save_to_database(self):
         """Manual save — writes every row to payable_tbl."""
-        corp          = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
 
-        if not corp or self.table.rowCount() == 0:
+        if self.table.rowCount() == 0:
             QMessageBox.warning(self, "No Data", "No data to save.")
             return
 
@@ -399,17 +474,21 @@ class PayablesPage(QWidget):
                 if not branch_item:
                     continue
                 branch = branch_item.text()
+                # Get per-row corporation stored during populate_table
+                row_corp = branch_item.data(Qt.UserRole) or self.corp_selector.currentText()
+                if not row_corp:
+                    continue
 
                 try:
                     check = db_manager.execute_query(
                         "SELECT id FROM payable_tbl "
                         "WHERE corporation=%s AND branch=%s AND date=%s LIMIT 1",
-                        (corp, branch, selected_date)
+                        (row_corp, branch, selected_date)
                     )
                     exists = bool(check)
 
                     db_manager.execute_query(upsert, (
-                        corp, branch, selected_date,
+                        row_corp, branch, selected_date,
                         get(row,2),  get(row,3),  get(row,4),  get(row,5),
                         get(row,7),  get(row,8),  get(row,9),  get(row,10),
                         get(row,12), get(row,13), get(row,14), get(row,15),
@@ -428,7 +507,8 @@ class PayablesPage(QWidget):
                    f"Updated records: {updated_count}\n")
             if error_count:
                 msg += f"Errors:          {error_count}\n"
-            msg += f"\nCorporation: {corp}\nDate: {selected_date}"
+            corp_display = self.corp_selector.currentText() or "All Corporations"
+            msg += f"\nCorporation: {corp_display}\nDate: {selected_date}"
             QMessageBox.information(self, "Save Successful", msg)
 
         except Exception as e:
@@ -484,11 +564,47 @@ class PayablesPage(QWidget):
             QDateEdit:focus { border-color:#007bff; }
         """)
 
+        # Registration status filter
+        reg_filter_label = QLabel("Branch Status:")
+        reg_filter_label.setFont(QFont("Arial", 12, QFont.Bold))
+        self.reg_filter_selector = QComboBox()
+        self.reg_filter_selector.setMinimumWidth(150)
+        self.reg_filter_selector.setMinimumHeight(40)
+        self.reg_filter_selector.addItem("Registered Only", "registered")
+        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
+        self.reg_filter_selector.setStyleSheet("""
+            QComboBox { padding:10px; border:2px solid #dee2e6; border-radius:6px;
+                        background-color:white; font-size:13px; }
+            QComboBox:focus { border-color:#007bff; }
+            QComboBox::drop-down { width: 30px; }
+        """)
+
         selectors_layout.addWidget(corp_label)
         selectors_layout.addWidget(self.corp_selector)
         selectors_layout.addSpacing(30)
         selectors_layout.addWidget(date_label)
         selectors_layout.addWidget(self.date_selector)
+        selectors_layout.addSpacing(30)
+        selectors_layout.addWidget(reg_filter_label)
+        selectors_layout.addWidget(self.reg_filter_selector)
+
+        # OS (Operation Supervisor) filter
+        selectors_layout.addSpacing(30)
+        os_filter_label = QLabel("OS Filter:")
+        os_filter_label.setFont(QFont("Arial", 12, QFont.Bold))
+        self.os_filter_selector = QComboBox()
+        self.os_filter_selector.setMinimumWidth(180)
+        self.os_filter_selector.setMinimumHeight(40)
+        self.os_filter_selector.addItem("All (by Corporation)", None)
+        self.os_filter_selector.currentIndexChanged.connect(self.populate_table)
+        self.os_filter_selector.setStyleSheet("""
+            QComboBox { padding:10px; border:2px solid #dee2e6; border-radius:6px;
+                        background-color:white; font-size:13px; }
+            QComboBox:focus { border-color:#007bff; }
+            QComboBox::drop-down { width: 30px; }
+        """)
+        selectors_layout.addWidget(os_filter_label)
+        selectors_layout.addWidget(self.os_filter_selector)
         selectors_layout.addStretch()
 
         controls_layout.addLayout(selectors_layout)
@@ -642,10 +758,6 @@ class PayablesPage(QWidget):
                 QPushButton:pressed {{ background-color:{c3}; }}
             """
 
-        self.save_button = QPushButton("💾 Save to Database")
-        self.save_button.clicked.connect(self.save_to_database)
-        self.save_button.setStyleSheet(styled("#28a745","#1e7e34","#155724"))
-
         self.export_button = QPushButton("📊 Export to Excel")
         self.export_button.clicked.connect(self.export_to_excel)
         self.export_button.setStyleSheet(styled("#217346","#1a5c38","#155724"))
@@ -655,8 +767,6 @@ class PayablesPage(QWidget):
         self.print_button.setStyleSheet(styled("#6f42c1","#5a2d91","#4c1f75"))
 
         button_layout.addStretch()
-        button_layout.addWidget(self.save_button)
-        button_layout.addSpacing(15)
         button_layout.addWidget(self.export_button)
         button_layout.addSpacing(15)
         button_layout.addWidget(self.print_button)
@@ -665,15 +775,46 @@ class PayablesPage(QWidget):
         self.main_layout.addWidget(button_frame, 0)  # stretch=0, fixed at bottom
 
     def load_corporations(self):
+        self.corp_selector.blockSignals(True)
         self.corp_selector.clear()
+        self.corp_selector.addItem("")  # empty = All Corporations (when using OS filter)
         try:
             results = db_manager.execute_query(
-                "SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation"
+                f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation"
             )
             for corp in results:
                 self.corp_selector.addItem(corp['corporation'])
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
+        finally:
+            self.corp_selector.blockSignals(False)
+
+        # Also refresh OS filter dropdown
+        self._load_os_options()
+
+    def _load_os_options(self):
+        """Populate the OS filter dropdown with distinct OS names from branches."""
+        self.os_filter_selector.blockSignals(True)
+        current = self.os_filter_selector.currentData()
+        self.os_filter_selector.clear()
+        self.os_filter_selector.addItem("All (by Corporation)", None)
+        try:
+            rows = db_manager.execute_query(
+                "SELECT DISTINCT os_name FROM branches WHERE os_name IS NOT NULL AND os_name != '' ORDER BY os_name"
+            )
+            if rows:
+                for r in rows:
+                    os_name = r['os_name'] if isinstance(r, dict) else r[0]
+                    self.os_filter_selector.addItem(os_name, os_name)
+            # Restore previous selection if still valid
+            if current:
+                idx = self.os_filter_selector.findData(current)
+                if idx >= 0:
+                    self.os_filter_selector.setCurrentIndex(idx)
+        except Exception as e:
+            print(f"Error loading OS options: {e}")
+        finally:
+            self.os_filter_selector.blockSignals(False)
 
     def add_totals_row(self, column_totals):
         row_count   = self.table.rowCount()

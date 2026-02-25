@@ -25,6 +25,7 @@ CreateUninstallRegKey=yes
 ; Include the single .exe - NO .env file (credentials are embedded in the exe)
 Source: "dist\main.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "assets\*"; DestDir: "{app}\assets"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "field_config.json"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\ORS"; Filename: "{app}\main.exe"
