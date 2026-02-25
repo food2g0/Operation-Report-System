@@ -25,11 +25,11 @@ def get_config():
         # ============================================
         try:
             # These placeholders are replaced by build_secure.py
-            host = '__MYSQL_HOST__'
-            port_str = '__MYSQL_PORT__'
-            user = '__MYSQL_USER__'
-            password = '__MYSQL_PASSWORD__'
-            database = '__MYSQL_DATABASE__'
+            host = '222.127.90.218'
+            port_str = '3306'
+            user = 'ors_user'
+            password = 'ORS_StrongPass_2026!'
+            database = 'operation_db'
             
             # Validate that placeholders were replaced
             if host.startswith('__') and host.endswith('__'):

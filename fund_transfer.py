@@ -11,8 +11,9 @@ import datetime
 
 
 class FundTransferPage(QWidget):
-    def __init__(self):
+    def __init__(self, account_type=2):
         super().__init__()
+        self.account_type = account_type
         self.setWindowTitle("Fund Transfer")
         self.resize(1100, 650)
 
@@ -23,6 +24,15 @@ class FundTransferPage(QWidget):
         self.corp_selector = QComboBox()
         self.corp_selector.currentTextChanged.connect(self.populate_table)
 
+        self.brand_selector = QComboBox()
+        self.brand_selector.addItem("Brand A", "daily_reports_brand_a")
+        self.brand_selector.addItem("Brand B", "daily_reports")
+        # Set default brand based on account_type
+        if account_type == 1:
+            self.brand_selector.setCurrentIndex(0)  # Brand A
+        else:
+            self.brand_selector.setCurrentIndex(1)  # Brand B
+        self.brand_selector.currentIndexChanged.connect(self.populate_table)
 
         self.date_selector = QDateEdit(calendarPopup=True)
         self.date_selector.setDate(QDate.currentDate())
@@ -32,6 +42,8 @@ class FundTransferPage(QWidget):
 
         self.layout.addWidget(QLabel("Select Corporation:"))
         self.layout.addWidget(self.corp_selector)
+        self.layout.addWidget(QLabel("Select Brand:"))
+        self.layout.addWidget(self.brand_selector)
         self.layout.addWidget(QLabel("Select Date:"))
         self.layout.addWidget(self.date_selector)
 
@@ -104,14 +116,15 @@ class FundTransferPage(QWidget):
 
             if not corporations:
                 print("No corporations found in database")
-                QMessageBox.warning(self, "No Data", "No corporations found in database")
                 return
 
+            self.corp_selector.blockSignals(True)
             for corp in corporations:
                 self.corp_selector.addItem(corp['corporation'])
-                print(f"Added corporation: {corp['corporation']}")  # Debug
+            self.corp_selector.blockSignals(False)
 
         except Exception as e:
+            self.corp_selector.blockSignals(False)
             print(f"Error loading corporations: {e}")
             QMessageBox.critical(self, "Database Error", f"Error connecting to database: {str(e)}")
 
@@ -169,19 +182,20 @@ class FundTransferPage(QWidget):
         self.table.itemChanged.connect(self.on_item_changed)
 
     def populate_table(self):
-        """Populate table with data from daily_reports table only"""
+        """Populate table with data from the selected brand's daily_reports table"""
         corp = self.corp_selector.currentText()
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        table_name = self.brand_selector.currentData() or "daily_reports"
 
         if not corp:
             return
 
         try:
-            # Get all branches for the corporation and date with cash count from daily_reports only
-            query = """
+            # Get all branches for the corporation and date with cash count
+            query = f"""
                     SELECT branch,
                            COALESCE(cash_count, 0) as cash_count
-                    FROM daily_reports
+                    FROM {table_name}
                     WHERE corporation = %s
                       AND date = %s
                     ORDER BY branch
@@ -192,7 +206,7 @@ class FundTransferPage(QWidget):
 
             if not results:
                 print(f"No data found for {corp} on {selected_date}")
-                QMessageBox.information(self, "No Data", f"No data found for {corp} on {selected_date}")
+                self.table.setRowCount(0)
                 return
 
             total_cash_count = 0.0

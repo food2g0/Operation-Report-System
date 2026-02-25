@@ -67,13 +67,26 @@ class VarianceReviewPage(QWidget):
         "Cash Shortage": "cash_shortage"
     }
     
-    def __init__(self):
+    def __init__(self, account_type=2):
         super().__init__()
         self.db = db_manager
-        self.current_table = "daily_reports"  # Default to Brand B
+        self.account_type = account_type
+        # Set correct table based on brand: Brand A -> daily_reports_brand_a, Brand B -> daily_reports
+        self.current_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
         self.setup_ui()
+        # Set brand filter to match account_type
+        if account_type == 1:
+            self.brand_filter.setCurrentText("Brand A")
+        else:
+            self.brand_filter.setCurrentText("Brand B")
         self._load_corporations()
-    
+
+    @staticmethod
+    def _filter_label(text, style=""):
+        lbl = QLabel(text)
+        lbl.setStyleSheet(style or "font-size: 11px; font-weight: 600; padding: 0; background: transparent;")
+        return lbl
+
     def setup_ui(self):
         """Setup the variance review UI"""
         main_layout = QVBoxLayout(self)
@@ -107,14 +120,15 @@ class VarianceReviewPage(QWidget):
         self.brand_filter.setFixedWidth(90)
         self.brand_filter.setStyleSheet("font-size: 11px;")
         self.brand_filter.currentTextChanged.connect(self._on_brand_changed)
-        filter_layout.addWidget(QLabel("Brand:"))
+        lbl_style = "font-size: 11px; font-weight: 600; color: #856404; padding: 0; background: transparent;"
+        filter_layout.addWidget(self._filter_label("Brand:", lbl_style))
         filter_layout.addWidget(self.brand_filter)
 
         # Corporation filter
         self.corp_filter = QComboBox()
         self.corp_filter.setFixedWidth(140)
         self.corp_filter.setStyleSheet("font-size: 11px;")
-        filter_layout.addWidget(QLabel("Corp:"))
+        filter_layout.addWidget(self._filter_label("Corp:", lbl_style))
         filter_layout.addWidget(self.corp_filter)
 
         # Date filter
@@ -124,7 +138,7 @@ class VarianceReviewPage(QWidget):
         self.date_filter.setDate(QDate.currentDate())
         self.date_filter.setFixedWidth(110)
         self.date_filter.setStyleSheet("font-size: 11px;")
-        filter_layout.addWidget(QLabel("Date:"))
+        filter_layout.addWidget(self._filter_label("Date:", lbl_style))
         filter_layout.addWidget(self.date_filter)
 
         # All dates toggle
@@ -146,7 +160,7 @@ class VarianceReviewPage(QWidget):
         self.var_type_filter.addItems(["All", "Short", "Over"])
         self.var_type_filter.setFixedWidth(70)
         self.var_type_filter.setStyleSheet("font-size: 11px;")
-        filter_layout.addWidget(QLabel("Type:"))
+        filter_layout.addWidget(self._filter_label("Type:", lbl_style))
         filter_layout.addWidget(self.var_type_filter)
 
         # Search button

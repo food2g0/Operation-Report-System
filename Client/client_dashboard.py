@@ -1,13 +1,15 @@
 import datetime
+import json
+import os
 import time
 
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout,
     QGroupBox, QPushButton, QSizePolicy, QDateEdit,
     QMessageBox, QScrollArea, QFrame, QGridLayout, QTabWidget,
-    QComboBox
+    QComboBox, QApplication
 )
-from PyQt5.QtGui import QDoubleValidator, QFont
+from PyQt5.QtGui import QDoubleValidator, QFont, QFontDatabase
 from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer
 
 from Client.cash_flow_tab import CashFlowTab
@@ -26,220 +28,274 @@ except ImportError:
     check_update_success = None
 
 
-_BG_APP      = "#F4F6F9"
-_BG_CARD     = "#FFFFFF"
-_BG_INPUT    = "#FFFFFF"
-_BG_READONLY = "#F0F3F7"
-_BG_HEADER   = "#0A2647"
-_BG_SUMMARY  = "#0D2E55"
+# ═══════════════════════════════════════════════════════════
+#  3-COLOR DESIGN SYSTEM
+#  Palette: Slate (neutral) · Indigo (primary) · Emerald (success/action)
+# ═══════════════════════════════════════════════════════════
 
-_BORDER      = "#D3DAE6"
-_BORDER_FOCUS= "#1A73E8"
-_BORDER_OK   = "#1DB954"
+# Neutrals — slate scale
+_SLATE_50   = "#F8FAFC"
+_SLATE_100  = "#F1F5F9"
+_SLATE_200  = "#E2E8F0"
+_SLATE_300  = "#CBD5E1"
+_SLATE_400  = "#94A3B8"
+_SLATE_500  = "#64748B"
+_SLATE_600  = "#475569"
+_SLATE_700  = "#334155"
+_SLATE_800  = "#1E293B"
+_SLATE_900  = "#0F172A"
 
-_TEXT_PRI    = "#0D1F3C"
-_TEXT_SEC    = "#4B5E7A"
-_TEXT_MUTED  = "#8A97AA"
+# Primary — indigo
+_INDIGO_50  = "#EEF2FF"
+_INDIGO_100 = "#E0E7FF"
+_INDIGO_400 = "#818CF8"
+_INDIGO_500 = "#0C0C0F"
+_INDIGO_600 = "#0B0B0C"
+_INDIGO_700 = "#111014"
 
-_BLUE        = "#1A73E8"
-_GREEN       = "#1DB954"
-_ORANGE      = "#F59E0B"
-_RED         = "#E53E3E"
-_WHITE       = "#FFFFFF"
-_PURPLE      = "#8B5CF6"
+# Accent — emerald (success / confirm)
+_EMERALD_50  = "#ECFDF5"
+_EMERALD_400 = "#34D399"
+_EMERALD_500 = "#10B981"
+_EMERALD_600 = "#059669"
+
+# Semantic
+_AMBER_400  = "#FBBF24"
+_AMBER_500  = "#F59E0B"
+_RED_400    = "#F87171"
+_RED_500    = "#EF4444"
+_WHITE      = "#FFFFFF"
+
+# Aliases for readability
+_BG_APP     = _SLATE_100
+_BG_CARD    = _WHITE
+_BG_INPUT   = _WHITE
+_BG_RDONLY  = _SLATE_50
+_BG_HEADER  = _SLATE_900
+_BORDER     = _SLATE_200
+_TEXT_PRI   = _SLATE_800
+_TEXT_SEC   = _SLATE_500
+_TEXT_MUTED = _SLATE_400
+_PRIMARY    = _INDIGO_500
+_PRIMARY_DK = _INDIGO_600
+_PRIMARY_PR = _INDIGO_700
+_SUCCESS    = _EMERALD_500
+_SUCCESS_DK = _EMERALD_600
 
 
+# ───────────────────────────────────────────────────────────
+def _s(px: int) -> int:
+    try:
+        screen = QApplication.primaryScreen()
+        if screen:
+            dpi_ratio = screen.logicalDotsPerInch() / 96.0
+            return max(1, round(px * min(dpi_ratio, 1.5)))
+    except Exception:
+        pass
+    return px
 
 
-
+# ═══════════════════════════════════════════════════════════
+#  GLOBAL QSS — coherent 3-color system
+# ═══════════════════════════════════════════════════════════
 GLOBAL_QSS = f"""
+/* ─── Base ─────────────────────────────────────────────── */
 QWidget {{
     background-color: {_BG_APP};
-    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-    font-size: 13px;
+    font-family: 'Segoe UI', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 12px;
     color: {_TEXT_PRI};
 }}
 
-/* ── Group boxes (used inside tab content) ── */
+/* ─── Cards / GroupBoxes ───────────────────────────────── */
 QGroupBox {{
     background-color: {_BG_CARD};
-    border: 1.5px solid {_BORDER};
-    border-radius: 7px;
-    margin-top: 16px;
-    padding: 16px 14px 12px 14px;
-    font-size: 10px;
+    border: 1px solid {_BORDER};
+    border-radius: 8px;
+    margin-top: 20px;
+    padding: 16px 14px 14px 14px;
+    font-size: 9px;
     font-weight: 700;
-    color: {_BLUE};
-    letter-spacing: 0.9px;
+    color: {_TEXT_MUTED};
+    letter-spacing: 1.2px;
     text-transform: uppercase;
 }}
 QGroupBox::title {{
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 14px;
-    top: 0px;
-    padding: 0 8px;
+    left: 12px;
+    top: -1px;
+    padding: 2px 8px;
     background-color: {_BG_CARD};
-    color: {_BLUE};
+    color: {_PRIMARY};
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 1.3px;
+    border-radius: 3px;
 }}
 
-/* ── All editable inputs ── */
+/* ─── Text inputs ──────────────────────────────────────── */
 QLineEdit {{
     background-color: {_BG_INPUT};
     border: 1.5px solid {_BORDER};
-    border-radius: 5px;
+    border-radius: 6px;
     padding: 7px 10px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     color: {_TEXT_PRI};
-    min-width: 130px;
-    min-height: 34px;
-    selection-background-color: {_BLUE};
-    selection-color: {_WHITE};
+    min-width: 80px;
+    min-height: 32px;
+    selection-background-color: {_INDIGO_100};
+    selection-color: {_PRIMARY_DK};
 }}
 QLineEdit:focus {{
-    border: 2px solid {_BORDER_FOCUS};
-    background-color: #F0F7FF;
+    border: 2px solid {_PRIMARY};
+    background-color: {_INDIGO_50};
+    padding: 6px 9px;
 }}
 QLineEdit:read-only {{
-    background-color: {_BG_READONLY};
+    background-color: {_BG_RDONLY};
     color: {_TEXT_SEC};
     font-weight: 600;
     border-color: {_BORDER};
 }}
 QLineEdit:disabled {{
-    background-color: #ECEEF2;
+    background-color: {_SLATE_100};
     color: {_TEXT_MUTED};
-    border-color: #E2E8F0;
+    border-color: {_SLATE_200};
 }}
 
-/* ── Labels ── */
+/* ─── Labels ───────────────────────────────────────────── */
 QLabel {{
     color: {_TEXT_SEC};
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     min-width: 0;
     background: transparent;
 }}
 
-/* ── Buttons ── */
+/* ─── Buttons ──────────────────────────────────────────── */
 QPushButton {{
-    background-color: {_BLUE};
+    background-color: {_PRIMARY};
     color: {_WHITE};
     border: none;
-    padding: 9px 20px;
+    padding: 8px 18px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
-    min-width: 90px;
+    min-width: 80px;
     letter-spacing: 0.2px;
 }}
-QPushButton:hover   {{ background-color: #1558C0; }}
-QPushButton:pressed {{ background-color: #0D449A; }}
-QPushButton:disabled {{ background-color: #CBD5E1; color: #94A3B8; }}
+QPushButton:hover   {{ background-color: {_PRIMARY_DK}; }}
+QPushButton:pressed {{ background-color: {_PRIMARY_PR}; }}
+QPushButton:disabled {{
+    background-color: {_SLATE_200};
+    color: {_TEXT_MUTED};
+}}
 
-/* ── Tabs ── */
+/* ─── Tab widget ───────────────────────────────────────── */
 QTabWidget::pane {{
-    border: 1.5px solid {_BORDER};
+    border: 1px solid {_BORDER};
     background-color: {_BG_CARD};
-    border-radius: 0 6px 6px 6px;
+    border-radius: 0 8px 8px 8px;
+    top: -1px;
 }}
 QTabBar::tab {{
-    background-color: #E4EAF3;
+    background-color: {_SLATE_100};
     color: {_TEXT_SEC};
-    border: 1.5px solid {_BORDER};
+    border: 1px solid {_BORDER};
     border-bottom: none;
-    padding: 9px 22px;
-    margin-right: 3px;
+    padding: 8px 22px;
+    margin-right: 2px;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
+    min-width: 100px;
 }}
 QTabBar::tab:selected {{
     background-color: {_BG_CARD};
-    color: {_BLUE};
+    color: {_PRIMARY};
     font-weight: 700;
+    border-bottom: 2px solid {_BG_CARD};
 }}
 QTabBar::tab:hover:!selected {{
-    background-color: #D0DAE8;
+    background-color: {_SLATE_200};
     color: {_TEXT_PRI};
 }}
 
-/* ── Scroll bars ── */
+/* ─── Scrollbars ───────────────────────────────────────── */
 QScrollArea {{ border: none; background: transparent; }}
 QScrollBar:vertical {{
-    background: #EDF0F5; width: 7px;
-    border-radius: 4px; margin: 0;
+    background: transparent; width: 5px; border-radius: 3px; margin: 2px 0;
 }}
 QScrollBar::handle:vertical {{
-    background: #B0BEC8; border-radius: 4px; min-height: 28px;
+    background: {_SLATE_300}; border-radius: 3px; min-height: 24px;
 }}
+QScrollBar::handle:vertical:hover {{ background: {_SLATE_400}; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
 QScrollBar:horizontal {{
-    background: #EDF0F5; height: 7px; border-radius: 4px;
+    background: transparent; height: 5px; border-radius: 3px;
 }}
 QScrollBar::handle:horizontal {{
-    background: #B0BEC8; border-radius: 4px;
+    background: {_SLATE_300}; border-radius: 3px;
 }}
+QScrollBar::handle:horizontal:hover {{ background: {_SLATE_400}; }}
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
 
-/* ── Date edit ── */
+/* ─── DateEdit ─────────────────────────────────────────── */
 QDateEdit {{
     background-color: {_BG_INPUT};
     border: 1.5px solid {_BORDER};
-    border-radius: 5px;
-    padding: 6px 10px;
-    font-size: 13px;
-    font-weight: 500;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 600;
     color: {_TEXT_PRI};
-    min-height: 34px;
+    min-height: 32px;
 }}
-QDateEdit:focus {{ border: 2px solid {_BORDER_FOCUS}; }}
-QDateEdit::drop-down {{ border: none; width: 20px; }}
+QDateEdit:focus {{ border: 2px solid {_PRIMARY}; padding: 6px 9px; }}
+QDateEdit::drop-down {{ border: none; width: 22px; }}
 
-/* ── ComboBox ── */
+/* ─── ComboBox ─────────────────────────────────────────── */
 QComboBox {{
     background-color: {_BG_INPUT};
     border: 1.5px solid {_BORDER};
-    border-radius: 5px;
+    border-radius: 6px;
     padding: 7px 10px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 600;
     color: {_TEXT_PRI};
-    min-height: 34px;
-    min-width: 140px;
+    min-height: 32px;
+    min-width: 120px;
 }}
 QComboBox:focus {{
-    border: 2px solid {_BORDER_FOCUS};
-    background-color: #F0F7FF;
+    border: 2px solid {_PRIMARY};
+    background-color: {_INDIGO_50};
 }}
-QComboBox::drop-down {{
-    border: none;
-    width: 30px;
-}}
+QComboBox::drop-down {{ border: none; width: 28px; }}
 QComboBox::down-arrow {{
-    image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgdmlld0JveD0iMCAwIDEyIDgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgMUw2IDZMMTEgMSIgc3Ryb2tlPSIjNEI1RTdBIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==);
-    width: 12px;
-    height: 8px;
+    image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgdmlld0JveD0iMCAwIDEyIDgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgMUw2IDZMMTEgMSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);
+    width: 12px; height: 8px;
 }}
 QComboBox QAbstractItemView {{
     background-color: {_BG_CARD};
-    border: 1.5px solid {_BORDER};
-    border-radius: 5px;
-    selection-background-color: {_BLUE};
-    selection-color: {_WHITE};
-    padding: 4px;
+    border: 1px solid {_BORDER};
+    border-radius: 6px;
+    selection-background-color: {_INDIGO_100};
+    selection-color: {_PRIMARY_DK};
+    padding: 3px;
 }}
 QComboBox QAbstractItemView::item {{
-    padding: 8px 12px;
+    padding: 7px 12px;
     border-radius: 3px;
-}}
-QComboBox QAbstractItemView::item:hover {{
-    background-color: #E8F2FE;
     color: {_TEXT_PRI};
 }}
+QComboBox QAbstractItemView::item:hover {{
+    background-color: {_INDIGO_50};
+}}
 """
+
 
 def _hline():
     f = QFrame()
@@ -249,16 +305,28 @@ def _hline():
     return f
 
 
-def _vline():
+def _vline(dark=False):
     f = QFrame()
     f.setFrameShape(QFrame.VLine)
     f.setFrameShadow(QFrame.Plain)
-    f.setStyleSheet("color: #2A4D78; max-width: 1px;")
+    col = "#1E293B" if dark else _BORDER
+    f.setStyleSheet(f"color: {col}; max-width: 1px; background: {col};")
     return f
 
+
+def _micro_label(text, color=_TEXT_MUTED):
+    lbl = QLabel(text.upper())
+    lbl.setStyleSheet(
+        f"font-size: 9px; font-weight: 700; color: {color}; "
+        f"letter-spacing: 1.1px; background: transparent;"
+    )
+    return lbl
+
+
+# ═══════════════════════════════════════════════════════════
 class ClientDashboard(QWidget):
     logout_requested = pyqtSignal()
-    brand_changed = pyqtSignal(str)  # Signal to notify tabs about brand change
+    brand_changed    = pyqtSignal(str)
 
     def __init__(self, username, branch, corporation, db_manager):
         super().__init__()
@@ -266,497 +334,496 @@ class ClientDashboard(QWidget):
         self.corporation = corporation
         self.branch      = branch
         self.db_manager  = db_manager
-        self._update_checker_threads = []  # Store update checker threads
-        
-        # Session management - 30 minute timeout (1800 seconds)
+        self._update_checker_threads = []
+
         self.session = SessionManager(inactivity_timeout=1800)
         self._session_timer = QTimer(self)
         self._session_timer.timeout.connect(self._check_session_timeout)
-        self._session_timer.start(60000)  # Check every minute
+        self._session_timer.start(60_000)
 
-        # Brand selection - Brand A is default
-        self.current_brand = "Brand A"
+        self.beginning_balance_auto_filled_a = False
+        self.beginning_balance_auto_filled_b = False
+        self.previous_day_balance_a = None
+        self.previous_day_date_a    = None
+        self.previous_day_balance_b = None
+        self.previous_day_date_b    = None
 
         self.setWindowTitle("Daily Cash Report")
-        self.setMinimumSize(1100, 700)
-
-        self.beginning_balance_auto_filled = False
-        self.previous_day_balance = None
-        self.previous_day_date    = None
-
+        self.setMinimumSize(960, 600)
         self.setStyleSheet(GLOBAL_QSS)
 
-        # ── Outer scroll ────────────────────────────────────────────
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-
-        body = QWidget()
-        scroll.setWidget(body)
-
-        lay = QVBoxLayout(body)
-        lay.setSpacing(10)
-        lay.setContentsMargins(18, 18, 18, 18)
+        lay = QVBoxLayout(self)
+        lay.setSpacing(6)
+        lay.setContentsMargins(12, 10, 12, 8)
 
         lay.addWidget(self._build_header(username, branch, corporation))
         lay.addWidget(self._build_toolbar())
-        lay.addWidget(self._build_tabs(), stretch=1)   # tabs get all free space
+        lay.addWidget(self._build_tabs(), stretch=1)
         lay.addWidget(self._build_summary_strip())
         lay.addWidget(self._build_footer())
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.addWidget(scroll)
-
         self.on_date_changed()
+        self._connect_shared_fields()
+
+        from PyQt5.QtCore import QTimer as _QT
+        _QT.singleShot(300, self._load_draft)
         self.showMaximized()
-        
-        # Check if the app was just updated and show success message
+
         if AUTO_UPDATE_ENABLED and check_update_success:
             check_update_success(parent=self)
 
+    # ───────────────────────────────────────────────────────
+    #  HEADER
+    # ───────────────────────────────────────────────────────
     def _build_header(self, username, branch, corporation):
         bar = QFrame()
-        bar.setFixedHeight(66)
+        bar.setFixedHeight(48)
         bar.setStyleSheet(f"""
             QFrame {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {_BG_HEADER}, stop:0.55 #0E3460, stop:1 #1A5276
-                );
+                background-color: {_SLATE_900};
                 border-radius: 8px;
             }}
             QLabel {{ background: transparent; border: none; }}
         """)
 
         h = QHBoxLayout(bar)
-        h.setContentsMargins(20, 0, 16, 0)
-        h.setSpacing(0)
+        h.setContentsMargins(16, 0, 12, 0)
+        h.setSpacing(10)
 
-        left = QVBoxLayout()
-        left.setSpacing(2)
+        # App name
+        app_lbl = QLabel("Daily Cash Report")
+        app_lbl.setStyleSheet(
+            f"font-size: 13px; font-weight: 800; color: {_WHITE}; "
+            f"letter-spacing: 0.2px; background: transparent;"
+        )
+        h.addWidget(app_lbl)
 
-        name_lbl = QLabel(f"\u2002{username}")
-        name_lbl.setStyleSheet(
-            f"font-size: 16px; font-weight: 800; color: {_WHITE}; letter-spacing: 0.3px;"
-        )
-        sub_lbl = QLabel(
-            f"\u2002Daily Cash Report  \u00b7  {branch}  \u00b7  {corporation}"
-        )
-        sub_lbl.setStyleSheet(
-            "font-size: 11px; font-weight: 500; color: #90B8D8; letter-spacing: 0.4px;"
-        )
-        left.addWidget(name_lbl)
-        left.addWidget(sub_lbl)
+        # Separator dot
+        dot = QLabel("·")
+        dot.setStyleSheet(f"font-size: 16px; color: {_SLATE_600}; background: transparent;")
+        h.addWidget(dot)
 
-        # Version/Update button
+        # User info
+        info_lbl = QLabel(f"{username}  ·  {branch}  ·  {corporation}")
+        info_lbl.setStyleSheet(
+            f"font-size: 12px; font-weight: 400; color: {_SLATE_400}; background: transparent;"
+        )
+        h.addWidget(info_lbl)
+        h.addStretch()
+
         if AUTO_UPDATE_ENABLED:
-            update_btn = QPushButton(f"ℹ️ v{__version__}")
-            update_btn.setFixedSize(88, 36)
-            update_btn.setStyleSheet(f"""
+            upd_btn = QPushButton(f"v{__version__}")
+            upd_btn.setFixedSize(68, 28)
+            upd_btn.setStyleSheet(f"""
                 QPushButton {{
-                    background-color: rgba(22,160,133,0.85);
-                    color: {_WHITE};
-                    border: 1px solid rgba(22,160,133,0.4);
-                    border-radius: 6px;
-                    font-size: 11px; font-weight: 700;
+                    background: rgba(99,102,241,0.15);
+                    color: {_INDIGO_400};
+                    border: 1px solid rgba(99,102,241,0.3);
+                    border-radius: 5px;
+                    font-size: 10px; font-weight: 700;
                 }}
-                QPushButton:hover   {{ background-color: #16A085; }}
-                QPushButton:pressed {{ background-color: #138D75; }}
+                QPushButton:hover {{ background: rgba(99,102,241,0.25); }}
             """)
-            update_btn.clicked.connect(self.check_for_updates)
-            update_btn.setToolTip("Check for updates")
+            upd_btn.clicked.connect(self.check_for_updates)
+            upd_btn.setToolTip("Check for updates")
+            h.addWidget(upd_btn, alignment=Qt.AlignVCenter)
+            h.addSpacing(8)
 
-        logout_btn = QPushButton("\u2302  Logout")
-        logout_btn.setFixedSize(108, 36)
+        logout_btn = QPushButton("Sign out")
+        logout_btn.setFixedSize(82, 28)
         logout_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: rgba(220,38,38,0.85);
-                color: {_WHITE};
-                border: 1px solid rgba(220,38,38,0.4);
-                border-radius: 6px;
-                font-size: 12px; font-weight: 700;
+                background: transparent;
+                color: {_SLATE_400};
+                border: 1px solid {_SLATE_700};
+                border-radius: 5px;
+                font-size: 11px; font-weight: 600;
             }}
-            QPushButton:hover   {{ background-color: #DC2626; }}
-            QPushButton:pressed {{ background-color: #991B1B; }}
+            QPushButton:hover {{
+                background: rgba(248,113,113,0.1);
+                color: {_RED_400};
+                border-color: rgba(248,113,113,0.3);
+            }}
         """)
         logout_btn.clicked.connect(self.handle_logout)
-
-        h.addLayout(left)
-        h.addStretch()
-        if AUTO_UPDATE_ENABLED:
-            h.addWidget(update_btn, alignment=Qt.AlignVCenter)
-            h.addSpacing(8)
         h.addWidget(logout_btn, alignment=Qt.AlignVCenter)
+
         return bar
 
-    def handle_logout(self):
-        r = QMessageBox.question(
-            self, "Confirm Logout", "Log out of the current session?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if r == QMessageBox.Yes:
-            self.session.logout()
-            self.logout_requested.emit()
-            self.close()
-    
-    def _check_session_timeout(self):
-        """Check if session has timed out due to inactivity"""
-        if self.session.check_timeout():
-            self._session_timer.stop()
-            QMessageBox.warning(
-                self,
-                "Session Expired",
-                "Your session has expired due to inactivity.\nPlease log in again.",
-                QMessageBox.Ok
-            )
-            self.logout_requested.emit()
-            self.close()
-    
-    def mousePressEvent(self, event):
-        """Reset session timer on mouse activity"""
-        self.session.update_activity()
-        super().mousePressEvent(event)
-    
-    def keyPressEvent(self, event):
-        """Reset session timer on keyboard activity"""
-        self.session.update_activity()
-        super().keyPressEvent(event)
-    
-    def check_for_updates(self):
-        """Manually check for application updates"""
-        if AUTO_UPDATE_ENABLED:
-            check_for_updates(parent=self, silent=False)
-        else:
-            QMessageBox.information(
-                self,
-                "Auto-Updater",
-                "Auto-updater is not enabled.\n\n"
-                "To enable it, install required dependencies:\n"
-                "pip install requests packaging"
-            )
-    
-    def closeEvent(self, event):
-        """Clean up threads before closing"""
-        # Wait for update checker threads to finish (max 2 seconds)
-        if hasattr(self, '_update_checker_threads'):
-            for thread in self._update_checker_threads[:]:
-                if thread.isRunning():
-                    thread.quit()
-                    thread.wait(2000)  # Wait up to 2 seconds
-        event.accept()
-
+    # ───────────────────────────────────────────────────────
+    #  TOOLBAR  — date + both beginning balances (redesigned)
+    # ───────────────────────────────────────────────────────
     def _build_toolbar(self):
         bar = QFrame()
-        bar.setFixedHeight(56)
+        bar.setObjectName("toolbar")
         bar.setStyleSheet(f"""
-            QFrame {{
+            QFrame#toolbar {{
                 background-color: {_BG_CARD};
                 border: 1px solid {_BORDER};
                 border-radius: 8px;
             }}
-            QLabel {{
-                font-size: 12px; font-weight: 600;
-                color: {_TEXT_SEC};
-                background: transparent;
-                min-width: 0;
-            }}
         """)
 
-        h = QHBoxLayout(bar)
-        h.setContentsMargins(18, 0, 18, 0)
-        h.setSpacing(12)
+        outer = QHBoxLayout(bar)
+        outer.setContentsMargins(16, 10, 16, 10)
+        outer.setSpacing(0)
 
-        # Brand Selector
-        h.addWidget(QLabel("Brand"))
-        self.brand_selector = QComboBox()
-        self.brand_selector.addItems(["Brand A", "Brand B"])
-        self.brand_selector.setCurrentText("Brand A")  # Default to Brand A
-        self.brand_selector.setFixedWidth(140)
-        self.brand_selector.setStyleSheet(f"""
-            QComboBox {{
-                background-color: {_BG_INPUT};
-                border: 2px solid {_PURPLE};
-                font-weight: 700;
-                color: {_PURPLE};
-            }}
-            QComboBox:focus {{
-                border: 2px solid {_PURPLE};
-                background-color: #F5F3FF;
-            }}
-        """)
-        self.brand_selector.currentTextChanged.connect(self.on_brand_changed)
-        h.addWidget(self.brand_selector)
+        # ── Date ──────────────────────────────────────────────
+        date_col = QVBoxLayout()
+        date_col.setSpacing(5)
 
-        h.addWidget(_vline())
+        date_title = QLabel("Report Date")
+        date_title.setStyleSheet(
+            f"font-size: 11px; font-weight: 700; color: {_TEXT_PRI}; background: transparent;"
+        )
+        date_col.addWidget(date_title)
 
-        h.addWidget(QLabel("Report Date"))
         self.date_picker = QDateEdit()
         self.date_picker.setCalendarPopup(True)
         self.date_picker.setDate(QDate.currentDate())
-        self.date_picker.setFixedWidth(148)
+        self.date_picker.setFixedWidth(150)
+        self.date_picker.setFixedHeight(36)
         self.date_picker.dateChanged.connect(self.on_date_changed)
-        h.addWidget(self.date_picker)
+        date_col.addWidget(self.date_picker)
+        date_col.addStretch(1)
 
-        h.addWidget(_vline())
+        outer.addLayout(date_col)
+        outer.addSpacing(18)
 
-        h.addWidget(QLabel("Beginning Balance"))
-        self.beginning_balance_input = self._money_input("Loaded from previous day")
-        self.beginning_balance_input.setReadOnly(True)
-        self.beginning_balance_input.setFixedWidth(170)
-        h.addWidget(self.beginning_balance_input)
+        # ── Brand A ───────────────────────────────────────────
+        outer.addLayout(self._build_balance_column("A"), stretch=1)
 
-        self.balance_status_label = QLabel("")
-        self.balance_status_label.setStyleSheet(
-            f"font-size: 11px; font-weight: 600; color: {_TEXT_MUTED}; min-width: 180px;"
-        )
-        h.addWidget(self.balance_status_label)
+        outer.addSpacing(18)
 
-        self.auto_fill_button = QPushButton("\u2193  Load Prev Day")
-        self.auto_fill_button.setFixedHeight(34)
-        self.auto_fill_button.setFixedWidth(148)
-        self.auto_fill_button.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {_GREEN};
-                font-size: 12px; font-weight: 700;
-                border-radius: 6px;
-            }}
-            QPushButton:hover   {{ background-color: #17A349; }}
-            QPushButton:pressed {{ background-color: #138C3D; }}
-            QPushButton:disabled {{ background-color: #CBD5E1; color: #94A3B8; }}
-        """)
-        self.auto_fill_button.clicked.connect(self.auto_fill_beginning_balance)
-        h.addWidget(self.auto_fill_button)
-        h.addStretch()
+        # ── Brand B ───────────────────────────────────────────
+        outer.addLayout(self._build_balance_column("B"), stretch=1)
+
+        # Back-compat
+        self.beginning_balance_input = self.beginning_balance_input_a
+        self.balance_status_label    = self.balance_status_label_a
+        self.auto_fill_button        = self.auto_fill_button_a
+
         return bar
 
-    def on_brand_changed(self, brand_name):
-        """Handle brand switching"""
-        if brand_name == self.current_brand:
-            return
-        
-        # Check if there's unsaved data
-        if self._has_unsaved_data():
-            reply = QMessageBox.question(
-                self,
-                "Switch Brand",
-                f"Switching to {brand_name} will clear all current data.\n\nDo you want to continue?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
-            )
-            
-            if reply == QMessageBox.No:
-                # Revert the combo box selection
-                self.brand_selector.blockSignals(True)
-                self.brand_selector.setCurrentText(self.current_brand)
-                self.brand_selector.blockSignals(False)
-                return
-        
-        # Update current brand
-        old_brand = self.current_brand
-        self.current_brand = brand_name
-        
-        # Clear all fields
-        self.clear_all_fields_silent()
-        
-        # Notify tabs about brand change
-        self.brand_changed.emit(brand_name)
-        
-        # Show confirmation
-        self._msg(
-            "Brand Switched",
-            f"Successfully switched from {old_brand} to {brand_name}.\n\nAll fields have been cleared.",
-            QMessageBox.Information
+    def _build_balance_column(self, brand: str) -> QVBoxLayout:
+        """
+        Redesigned beginning balance panel.
+
+        Layout:
+          [Label: "Brand A — Opening Balance"]
+          ┌──────────────────────────────┐   <- read-only amount field (full-width)
+          │  Loaded from previous day    │
+          └──────────────────────────────┘
+          [ ↓ Load Previous Day ]  ← subdued text-style button
+          status text below
+        """
+        is_a  = brand == "A"
+        label = "Brand A" if is_a else "Brand B"
+
+        col = QVBoxLayout()
+        col.setSpacing(5)
+
+        # ── Section label ──────────────────────────────────
+        title = QLabel(f"{label}  —  Opening Balance")
+        title.setStyleSheet(
+            f"font-size: 11px; font-weight: 700; color: {_TEXT_PRI}; background: transparent;"
         )
+        col.addWidget(title)
 
-    def _has_unsaved_data(self):
-        """Check if there's any data entered in the form"""
-        if self.beginning_balance_input.text().strip():
-            return True
-        if self.cash_count_input.text().strip():
-            return True
-        
-        # Check tabs for data
-        try:
-            if hasattr(self, 'cash_flow_tab'):
-                cf_data = self.cash_flow_tab.get_data()
-                if any(v != 0 and v != 0.0 for section in cf_data.values() 
-                       for v in (section.values() if isinstance(section, dict) else [section])):
-                    return True
-        except:
-            pass
-        
-        try:
-            if hasattr(self, 'palawan_tab'):
-                pal_data = self.palawan_tab.get_data()
-                if any(v != 0 and v != 0.0 for v in pal_data.values()):
-                    return True
-        except:
-            pass
-        
-        try:
-            if hasattr(self, 'mc_currency_tab'):
-                mc_data = self.mc_currency_tab.get_data()
-                if any(v != 0 and v != 0.0 for v in mc_data.values()):
-                    return True
-        except:
-            pass
-        
-        return False
+        # ── Amount field (full width, clearly read-only) ───
+        bb_input = QLineEdit()
+        bb_input.setValidator(QDoubleValidator(0.0, 1e12, 2))
+        bb_input.setPlaceholderText("—")
+        bb_input.setReadOnly(True)
+        bb_input.setFixedHeight(36)
+        bb_input.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: {_SLATE_100};
+                border: 1.5px solid {_SLATE_200};
+                border-radius: 6px;
+                padding: 7px 12px;
+                font-size: 14px;
+                font-weight: 700;
+                color: {_TEXT_PRI};
+            }}
+        """)
+        bb_input.textChanged.connect(self.recalculate_all)
+        col.addWidget(bb_input)
 
-    def get_current_brand(self):
-        """Get the currently selected brand"""
-        return self.current_brand
+        # ── Action row: load button + status text ──────────
+        action_row = QHBoxLayout()
+        action_row.setSpacing(10)
+        action_row.setContentsMargins(0, 0, 0, 0)
 
+        load_btn = QPushButton("↓  Load Previous Day")
+        load_btn.setFixedHeight(26)
+        load_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {_PRIMARY};
+                border: 1.5px solid {_INDIGO_100};
+                border-radius: 5px;
+                font-size: 10px;
+                font-weight: 700;
+                padding: 4px 12px;
+                min-width: 0;
+            }}
+            QPushButton:hover {{
+                background-color: {_INDIGO_50};
+                border-color: {_PRIMARY};
+            }}
+            QPushButton:pressed {{
+                background-color: {_INDIGO_100};
+            }}
+            QPushButton:disabled {{
+                color: {_TEXT_MUTED};
+                border-color: {_SLATE_200};
+                background-color: transparent;
+            }}
+        """)
+        load_btn.clicked.connect(lambda checked, b=brand: self.auto_fill_beginning_balance(b))
+        action_row.addWidget(load_btn)
+
+        status_lbl = QLabel("")
+        status_lbl.setStyleSheet(
+            f"font-size: 10px; color: {_TEXT_MUTED}; background: transparent;"
+        )
+        status_lbl.setWordWrap(True)
+        action_row.addWidget(status_lbl, stretch=1)
+
+        col.addLayout(action_row)
+
+        # Store references
+        if is_a:
+            self.beginning_balance_input_a = bb_input
+            self.auto_fill_button_a        = load_btn
+            self.balance_status_label_a    = status_lbl
+        else:
+            self.beginning_balance_input_b = bb_input
+            self.auto_fill_button_b        = load_btn
+            self.balance_status_label_b    = status_lbl
+
+        return col
+
+    # ───────────────────────────────────────────────────────
+    #  TABS
+    # ───────────────────────────────────────────────────────
     def _build_tabs(self):
         tw = QTabWidget()
         tw.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        self.cash_flow_tab   = CashFlowTab(self)
+        self.cash_flow_tab_a = CashFlowTab(self, "Brand A")
+        self.cash_flow_tab_b = CashFlowTab(self, "Brand B")
         self.palawan_tab     = PalawanDetailsTab(self)
         self.mc_currency_tab = MCCurrencyTab(self)
 
-        tw.addTab(self.cash_flow_tab,   "  Cash Flow  ")
-        tw.addTab(self.palawan_tab,     "  Palawan Details  ")
-        tw.addTab(self.mc_currency_tab, "  MC Currency  ")
+        self.cash_flow_tab = self.cash_flow_tab_a
+
+        tw.addTab(self.cash_flow_tab_a,  "Brand A — Cash Flow")
+        tw.addTab(self.cash_flow_tab_b,  "Brand B — Cash Flow")
+        tw.addTab(self.palawan_tab,      "Palawan Details")
+        tw.addTab(self.mc_currency_tab,  "MC Currency")
 
         return tw
-    
+
+    # ───────────────────────────────────────────────────────
+    #  SUMMARY STRIP
+    # ───────────────────────────────────────────────────────
     def _build_summary_strip(self):
         strip = QFrame()
-        strip.setFixedHeight(86)
+        strip.setFixedHeight(96)
         strip.setStyleSheet(f"""
             QFrame {{
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 {_BG_SUMMARY}, stop:1 #0E3A68
-                );
+                background-color: {_SLATE_900};
                 border-radius: 8px;
             }}
         """)
 
         h = QHBoxLayout(strip)
-        h.setContentsMargins(24, 10, 24, 10)
+        h.setContentsMargins(16, 8, 16, 8)
         h.setSpacing(0)
 
-        # helper: metric widget (display label)
-        def _metric(caption):
-            outer = QWidget()
-            outer.setStyleSheet("background: transparent;")
-            col = QVBoxLayout(outer)
-            col.setSpacing(4)
-            col.setContentsMargins(14, 0, 14, 0)
+        col_a, self.ending_balance_display_a, self.cash_count_input_a, \
+            self.cash_result_display_a, self.variance_status_label_a = \
+            self._build_brand_summary("A")
 
-            cap = QLabel(caption.upper())
-            cap.setAlignment(Qt.AlignCenter)
-            cap.setStyleSheet(
-                "font-size: 9px; font-weight: 700; "
-                "color: #6A8FAE; letter-spacing: 1px; background: transparent;"
-            )
+        col_b, self.ending_balance_display_b, self.cash_count_input_b, \
+            self.cash_result_display_b, self.variance_status_label_b = \
+            self._build_brand_summary("B")
 
-            val = QLabel("0.00")
-            val.setAlignment(Qt.AlignCenter)
-            val.setStyleSheet(
-                f"font-size: 17px; font-weight: 800; color: {_WHITE}; background: transparent;"
-            )
+        # Back-compat
+        self.ending_balance_display  = self.ending_balance_display_a
+        self.cash_count_input        = self.cash_count_input_a
+        self.cash_result_display     = self.cash_result_display_a
+        self.variance_status_label   = self.variance_status_label_a
 
-            col.addWidget(cap)
-            col.addWidget(val)
-            return outer, val
+        self.cash_count_input_a.textChanged.connect(self.recalculate_all)
+        self.cash_count_input_a.textChanged.connect(self.update_cash_result)
+        self.cash_count_input_b.textChanged.connect(self.recalculate_all)
+        self.cash_count_input_b.textChanged.connect(self.update_cash_result)
 
-        # Ending balance
-        w_eb, self.ending_balance_display = _metric("Ending Balance")
-
-        w_cc = QWidget()
-        w_cc.setStyleSheet("background: transparent;")
-        cc_col = QVBoxLayout(w_cc)
-        cc_col.setSpacing(4)
-        cc_col.setContentsMargins(14, 0, 14, 0)
-
-        cc_cap = QLabel("ACTUAL CASH COUNT")
-        cc_cap.setAlignment(Qt.AlignCenter)
-        cc_cap.setStyleSheet(
-            "font-size: 9px; font-weight: 700; "
-            "color: #6A8FAE; letter-spacing: 1px; background: transparent;"
-        )
-
-        self.cash_count_input = QLineEdit()
-        self.cash_count_input.setValidator(QDoubleValidator(0.0, 1e12, 2))
-        self.cash_count_input.setPlaceholderText("0.00")
-        self.cash_count_input.setAlignment(Qt.AlignCenter)
-        self.cash_count_input.setFixedWidth(178)
-        self.cash_count_input.setFixedHeight(36)
-        self.cash_count_input.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: #152840;
-                border: 1.5px solid #2E5A8A;
-                border-radius: 5px;
-                color: {_WHITE};
-                font-size: 16px;
-                font-weight: 700;
-                padding: 4px 10px;
-                letter-spacing: 0.5px;
-            }}
-            QLineEdit:focus {{
-                border: 2px solid #5BA4E6;
-                background-color: #1A3654;
-            }}
-            QLineEdit::placeholder {{ color: #5080A0; }}
-        """)
-        self.cash_count_input.textChanged.connect(self.recalculate_all)
-        self.cash_count_input.textChanged.connect(self.update_cash_result)
-
-        cc_col.addWidget(cc_cap)
-        cc_col.addWidget(self.cash_count_input, alignment=Qt.AlignCenter)
-
-        # Variance
-        w_var, self.cash_result_display = _metric("Variance")
-
-        # Status label
-        self.variance_status_label = QLabel("—")
-        self.variance_status_label.setAlignment(Qt.AlignCenter)
-        self.variance_status_label.setStyleSheet(
-            "font-size: 13px; font-weight: 700; color: #8AADCC; "
-            "min-width: 230px; background: transparent;"
-        )
-
-        h.addWidget(w_eb,  stretch=2)
-        h.addWidget(_vline())
-        h.addWidget(w_cc,  stretch=2)
-        h.addWidget(_vline())
-        h.addWidget(w_var, stretch=2)
-        h.addWidget(_vline())
-        h.addWidget(self.variance_status_label, stretch=3)
+        h.addLayout(col_a, stretch=1)
+        h.addSpacing(16)
+        h.addLayout(col_b, stretch=1)
 
         return strip
 
+    def _build_brand_summary(self, brand: str):
+        is_a   = brand == "A"
+        accent = _INDIGO_400 if is_a else _EMERALD_400
+
+        def _cap(t):
+            l = QLabel(t)
+            l.setAlignment(Qt.AlignCenter)
+            l.setStyleSheet(
+                f"font-size: 8px; font-weight: 700; color: {_SLATE_500}; "
+                f"letter-spacing: 1.1px; background: transparent; text-transform: uppercase;"
+            )
+            return l
+
+        def _val(init="0.00"):
+            l = QLabel(init)
+            l.setAlignment(Qt.AlignCenter)
+            l.setStyleSheet(
+                f"font-size: 15px; font-weight: 800; color: {_WHITE}; background: transparent;"
+            )
+            return l
+
+        def _cc_inp():
+            inp = QLineEdit()
+            inp.setValidator(QDoubleValidator(0.0, 1e12, 2))
+            inp.setPlaceholderText("0.00")
+            inp.setAlignment(Qt.AlignCenter)
+            inp.setFixedHeight(28)
+            inp.setStyleSheet(f"""
+                QLineEdit {{
+                    background: rgba(255,255,255,0.06);
+                    border: 1.5px solid {_SLATE_700};
+                    border-radius: 5px;
+                    color: {_WHITE};
+                    font-size: 13px;
+                    font-weight: 700;
+                    padding: 2px 8px;
+                }}
+                QLineEdit:focus {{
+                    border: 2px solid {accent};
+                    background: rgba(255,255,255,0.1);
+                }}
+            """)
+            return inp
+
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        col.setContentsMargins(6, 0, 6, 0)
+
+        # Brand pill
+        pill_row = QHBoxLayout()
+        pill_row.setAlignment(Qt.AlignCenter)
+        pill = QLabel(f"BRAND {'A' if is_a else 'B'}")
+        pill.setAlignment(Qt.AlignCenter)
+        pill.setStyleSheet(
+            f"font-size: 8px; font-weight: 800; color: {accent}; letter-spacing: 1.5px; "
+            f"background: transparent; padding: 1px 0;"
+        )
+        pill_row.addWidget(pill)
+        col.addLayout(pill_row)
+
+        # Metrics row
+        row = QHBoxLayout()
+        row.setSpacing(3)
+
+        def _metric(cap_w, val_w):
+            mc = QVBoxLayout()
+            mc.setSpacing(1)
+            mc.addWidget(cap_w)
+            mc.addWidget(val_w, alignment=Qt.AlignCenter)
+            return mc
+
+        eb_val  = _val()
+        cc_inp  = _cc_inp()
+        var_val = _val()
+
+        status_lbl = QLabel("—")
+        status_lbl.setAlignment(Qt.AlignCenter)
+        status_lbl.setStyleSheet(
+            f"font-size: 10px; font-weight: 700; color: {_SLATE_500}; "
+            f"min-width: 90px; background: transparent;"
+        )
+
+        row.addLayout(_metric(_cap("Ending Bal"),  eb_val),  stretch=2)
+        row.addWidget(_vline(dark=True))
+        row.addLayout(_metric(_cap("Cash Count"),  cc_inp),  stretch=2)
+        row.addWidget(_vline(dark=True))
+        row.addLayout(_metric(_cap("Variance"),    var_val), stretch=2)
+        row.addWidget(_vline(dark=True))
+        row.addLayout(_metric(_cap("Status"),      status_lbl), stretch=3)
+
+        col.addLayout(row)
+        return col, eb_val, cc_inp, var_val, status_lbl
+
+    # ───────────────────────────────────────────────────────
+    #  FOOTER
+    # ───────────────────────────────────────────────────────
     def _build_footer(self):
         bar = QFrame()
-        bar.setFixedHeight(52)
+        bar.setFixedHeight(48)
         row = QHBoxLayout(bar)
-        row.setContentsMargins(0, 5, 0, 5)
+        row.setContentsMargins(0, 6, 0, 2)
+        row.setSpacing(10)
         row.addStretch()
 
-        self.post_button = QPushButton("  Post Report")
-        self.post_button.setFixedSize(162, 42)
+        self.draft_button = QPushButton("Save Draft")
+        self.draft_button.setFixedSize(120, 34)
+        self.draft_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                color: {_SLATE_600};
+                font-size: 11px;
+                font-weight: 700;
+                border: 1.5px solid {_SLATE_300};
+                border-radius: 6px;
+            }}
+            QPushButton:hover {{
+                background-color: {_SLATE_100};
+                border-color: {_SLATE_400};
+                color: {_TEXT_PRI};
+            }}
+            QPushButton:pressed {{ background-color: {_SLATE_200}; }}
+        """)
+        self.draft_button.clicked.connect(self.save_draft)
+        self.draft_button.setToolTip(
+            "Save all current fields as a draft.\n"
+            "Your data will be restored next time you log in."
+        )
+
+        self.post_button = QPushButton("Post Both Brands")
+        self.post_button.setFixedSize(158, 34)
         self.post_button.setStyleSheet(f"""
             QPushButton {{
-                background-color: {_GREEN};
+                background-color: {_SUCCESS};
                 color: {_WHITE};
-                font-size: 13px; font-weight: 800;
-                border-radius: 7px; letter-spacing: 0.3px;
+                font-size: 12px;
+                font-weight: 800;
+                border-radius: 6px;
+                letter-spacing: 0.2px;
             }}
-            QPushButton:hover   {{ background-color: #17A349; }}
-            QPushButton:pressed {{ background-color: #138C3D; }}
-            QPushButton:disabled {{ background-color: #CBD5E1; color: #94A3B8; }}
+            QPushButton:hover   {{ background-color: {_SUCCESS_DK}; }}
+            QPushButton:pressed {{ background-color: #047857; }}
+            QPushButton:disabled {{
+                background-color: {_SLATE_200};
+                color: {_TEXT_MUTED};
+            }}
         """)
         self.post_button.clicked.connect(self.handle_post)
         self.post_button.setEnabled(False)
 
+        row.addWidget(self.draft_button)
         row.addWidget(self.post_button)
         return bar
 
+    # ───────────────────────────────────────────────────────
+    #  HELPERS
+    # ───────────────────────────────────────────────────────
     def _money_input(self, placeholder=""):
         f = QLineEdit()
         f.setValidator(QDoubleValidator(0.0, 1e12, 2))
@@ -764,7 +831,6 @@ class ClientDashboard(QWidget):
         f.textChanged.connect(self.recalculate_all)
         return f
 
-    # Public aliases used by child tabs
     def create_money_input(self, placeholder=""):
         return self._money_input(placeholder)
 
@@ -786,139 +852,284 @@ class ClientDashboard(QWidget):
                 pass
         return total
 
-    def get_previous_day_ending_balance(self, selected_date):
+    # ───────────────────────────────────────────────────────
+    #  SESSION / AUTH
+    # ───────────────────────────────────────────────────────
+    def handle_logout(self):
+        r = QMessageBox.question(
+            self, "Confirm Sign Out", "Sign out of the current session?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if r == QMessageBox.Yes:
+            self.session.logout()
+            self.logout_requested.emit()
+            self.close()
+
+    def _check_session_timeout(self):
+        if self.session.check_timeout():
+            self._session_timer.stop()
+            QMessageBox.warning(
+                self, "Session Expired",
+                "Your session has expired due to inactivity.\nPlease log in again.",
+                QMessageBox.Ok
+            )
+            self.logout_requested.emit()
+            self.close()
+
+    def mousePressEvent(self, event):
+        self.session.update_activity()
+        super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        self.session.update_activity()
+        super().keyPressEvent(event)
+
+    def check_for_updates(self):
+        if AUTO_UPDATE_ENABLED:
+            check_for_updates(parent=self, silent=False)
+        else:
+            QMessageBox.information(
+                self, "Auto-Updater",
+                "Auto-updater is not enabled.\n\n"
+                "To enable it, install required dependencies:\n"
+                "pip install requests packaging"
+            )
+
+    def closeEvent(self, event):
+        if hasattr(self, '_update_checker_threads'):
+            for thread in self._update_checker_threads[:]:
+                if thread.isRunning():
+                    thread.quit()
+                    thread.wait(2000)
+        event.accept()
+
+    # ───────────────────────────────────────────────────────
+    #  DATA / DB HELPERS
+    # ───────────────────────────────────────────────────────
+    def get_current_brand(self):
+        return "Both"
+
+    def get_previous_day_ending_balance(self, selected_date, brand="Brand A"):
         try:
-            current = datetime.datetime.strptime(selected_date, "%Y-%m-%d")
-            
-            # Determine which table to query based on current brand
-            table_name = "daily_reports_brand_a" if self.current_brand == "Brand A" else "daily_reports"
-            
+            current    = datetime.datetime.strptime(selected_date, "%Y-%m-%d")
+            table_name = "daily_reports_brand_a" if brand == "Brand A" else "daily_reports"
             for days_back in range(1, 11):
                 prev_str = (current - datetime.timedelta(days=days_back)).strftime("%Y-%m-%d")
                 try:
-                    query = f"""SELECT ending_balance FROM {table_name} 
-                                WHERE date=%s AND branch=%s AND corporation=%s 
-                                ORDER BY id DESC LIMIT 1"""
-                    result = self.db_manager.execute_query(query, (prev_str, self.branch, self.corporation))
-                    
+                    q = f"""SELECT ending_balance FROM {table_name}
+                            WHERE date=%s AND branch=%s AND corporation=%s
+                            ORDER BY id DESC LIMIT 1"""
+                    result = self.db_manager.execute_query(
+                        q, (prev_str, self.branch, self.corporation))
                     if result and len(result) > 0:
                         val = result[0].get('ending_balance')
                         if val is not None:
                             return float(val), prev_str
                 except Exception as e:
                     print(f"Query error for {prev_str}: {e}")
-                    continue
         except Exception as e:
-            print(f"get_previous_day_ending_balance: {e}")
+            print(f"get_previous_day_ending_balance({brand}): {e}")
         return None, None
 
-    def check_existing_entry(self, selected_date):
+    def check_existing_entry(self, selected_date, brand="Brand A"):
         try:
-            # Determine which table to query based on current brand
-            table_name = "daily_reports_brand_a" if self.current_brand == "Brand A" else "daily_reports"
-            
-            query = f"""SELECT COUNT(*) as count FROM {table_name} 
-                        WHERE date=%s AND branch=%s AND corporation=%s"""
-            result = self.db_manager.execute_query(query, (selected_date, self.branch, self.corporation))
-            
+            table_name = "daily_reports_brand_a" if brand == "Brand A" else "daily_reports"
+            q = f"""SELECT COUNT(*) as count FROM {table_name}
+                    WHERE date=%s AND branch=%s AND corporation=%s"""
+            result = self.db_manager.execute_query(
+                q, (selected_date, self.branch, self.corporation))
             if result and len(result) > 0:
-                cnt = result[0].get('count', 0)
-                return cnt > 0
+                return result[0].get('count', 0) > 0
         except Exception as e:
-            print(f"check_existing_entry: {e}")
+            print(f"check_existing_entry({brand}): {e}")
         return False
 
+    # ───────────────────────────────────────────────────────
+    #  DATE CHANGED
+    # ───────────────────────────────────────────────────────
     def on_date_changed(self):
         sd = self.date_picker.date().toString("yyyy-MM-dd")
-        self.beginning_balance_auto_filled = False
-        self.previous_day_balance = None
-        self.previous_day_date    = None
-        self.beginning_balance_input.clear()
-        self.beginning_balance_input.setReadOnly(True)
-        self.beginning_balance_input.setStyleSheet("")
-        self.cash_count_input.clear()
 
-        if self.check_existing_entry(sd):
-            self._set_status(
-                f"\u26a0  Entry already submitted for {self.current_brand} on this date. Cannot submit again.", _RED, bold=True
-            )
-            self.auto_fill_button.setEnabled(False)
+        for bb in (self.beginning_balance_input_a, self.beginning_balance_input_b):
+            bb.clear()
+            bb.setReadOnly(True)
+            bb.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: {_SLATE_100};
+                    border: 1.5px solid {_SLATE_200};
+                    border-radius: 6px;
+                    padding: 7px 12px;
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: {_TEXT_PRI};
+                }}
+            """)
+        for cc in (self.cash_count_input_a, self.cash_count_input_b):
+            cc.clear()
+
+        self.beginning_balance_auto_filled_a = False
+        self.beginning_balance_auto_filled_b = False
+        self.previous_day_balance_a = self.previous_day_date_a = None
+        self.previous_day_balance_b = self.previous_day_date_b = None
+
+        exists_a = self.check_existing_entry(sd, "Brand A")
+        exists_b = self.check_existing_entry(sd, "Brand B")
+
+        if exists_a and exists_b:
+            for brand in ("A", "B"):
+                self._set_status_brand(brand, "Already submitted", _RED_500, bold=True)
+            self.auto_fill_button_a.setEnabled(False)
+            self.auto_fill_button_b.setEnabled(False)
             self.post_button.setEnabled(False)
             self._toggle_inputs(False)
             return
 
         self._toggle_inputs(True)
-        self.auto_fill_button.setEnabled(True)
 
-        prev_bal, prev_date = self.get_previous_day_ending_balance(sd)
-        if prev_bal is not None:
-            self.previous_day_balance = prev_bal
-            self.previous_day_date    = prev_date
-            self._set_status(
-                f"Previous  {prev_date}  \u2192  {prev_bal:,.2f}", _BLUE
-            )
-        else:
-            self._set_status("No previous record — first entry", _ORANGE)
-            self.beginning_balance_input.setReadOnly(False)
-            self.beginning_balance_input.setPlaceholderText("Enter opening balance")
-            self.beginning_balance_input.setStyleSheet(
-                f"background-color: {_BG_INPUT}; color: {_TEXT_PRI};"
-            )
+        for brand, exists, bf in [("A", exists_a, "Brand A"), ("B", exists_b, "Brand B")]:
+            bb_input = self.beginning_balance_input_a if brand == "A" else self.beginning_balance_input_b
+            af_btn   = self.auto_fill_button_a        if brand == "A" else self.auto_fill_button_b
+            cf_tab   = self.cash_flow_tab_a           if brand == "A" else self.cash_flow_tab_b
+            cc_input = self.cash_count_input_a        if brand == "A" else self.cash_count_input_b
+
+            if exists:
+                self._set_status_brand(brand, "Already submitted", _RED_500, bold=True)
+                af_btn.setEnabled(False)
+                bb_input.setEnabled(False)
+                cc_input.setEnabled(False)
+                if hasattr(cf_tab, 'set_enabled'):
+                    cf_tab.set_enabled(False)
+            else:
+                af_btn.setEnabled(True)
+                prev_bal, prev_date = self.get_previous_day_ending_balance(sd, bf)
+                if prev_bal is not None:
+                    if brand == "A":
+                        self.previous_day_balance_a, self.previous_day_date_a = prev_bal, prev_date
+                    else:
+                        self.previous_day_balance_b, self.previous_day_date_b = prev_bal, prev_date
+                    self._set_status_brand(brand,
+                        f"Found: {prev_date}  ·  {prev_bal:,.2f}", _TEXT_MUTED)
+                else:
+                    self._set_status_brand(brand, "No previous record — enter manually", _AMBER_500)
+                    bb_input.setReadOnly(False)
+                    bb_input.setPlaceholderText("Enter opening balance")
+                    bb_input.setStyleSheet(f"""
+                        QLineEdit {{
+                            background-color: {_BG_INPUT};
+                            border: 1.5px solid {_BORDER};
+                            border-radius: 6px;
+                            padding: 7px 12px;
+                            font-size: 14px;
+                            font-weight: 700;
+                            color: {_TEXT_PRI};
+                        }}
+                        QLineEdit:focus {{
+                            border: 2px solid {_PRIMARY};
+                            background-color: {_INDIGO_50};
+                        }}
+                    """)
 
         self.recalculate_all()
 
     def _set_status(self, text, color, bold=False):
-        w = "700" if bold else "600"
-        self.balance_status_label.setText(text)
-        self.balance_status_label.setStyleSheet(
-            f"font-size: 11px; font-weight: {w}; color: {color};"
+        self._set_status_brand("A", text, color, bold)
+
+    def _set_status_brand(self, brand, text, color, bold=False):
+        lbl = self.balance_status_label_a if brand == "A" else self.balance_status_label_b
+        w   = "700" if bold else "500"
+        lbl.setText(text)
+        lbl.setStyleSheet(
+            f"font-size: 10px; font-weight: {w}; color: {color}; background: transparent;"
         )
 
-    def auto_fill_beginning_balance(self):
-        sd = self.date_picker.date().toString("yyyy-MM-dd")
-        if self.check_existing_entry(sd):
-            self._msg("Entry Exists", f"An entry already exists for {self.current_brand} on {sd}.", QMessageBox.Warning)
+    # ───────────────────────────────────────────────────────
+    #  AUTO-FILL BEGINNING BALANCE
+    # ───────────────────────────────────────────────────────
+    def auto_fill_beginning_balance(self, brand="A"):
+        sd        = self.date_picker.date().toString("yyyy-MM-dd")
+        brand_full = "Brand A" if brand == "A" else "Brand B"
+
+        if self.check_existing_entry(sd, brand_full):
+            self._msg("Entry Exists",
+                      f"An entry already exists for {brand_full} on {sd}.",
+                      QMessageBox.Warning)
             return
-        if self.previous_day_balance is not None:
-            self.beginning_balance_input.setText(f"{self.previous_day_balance:.2f}")
-            self.beginning_balance_auto_filled = True
-            self.beginning_balance_input.setReadOnly(True)
-            self.beginning_balance_input.setStyleSheet(f"""
+
+        prev_bal  = self.previous_day_balance_a if brand == "A" else self.previous_day_balance_b
+        prev_date = self.previous_day_date_a    if brand == "A" else self.previous_day_date_b
+        bb_input  = self.beginning_balance_input_a if brand == "A" else self.beginning_balance_input_b
+        af_btn    = self.auto_fill_button_a        if brand == "A" else self.auto_fill_button_b
+
+        if prev_bal is not None:
+            bb_input.setText(f"{prev_bal:.2f}")
+            bb_input.setReadOnly(True)
+            bb_input.setStyleSheet(f"""
                 QLineEdit {{
-                    border: 2px solid {_BORDER_OK};
-                    background-color: #F0FFF6;
-                    color: #145C2F;
+                    background-color: {_SLATE_50};
+                    border: 2px solid {_INDIGO_500};
+                    border-radius: 6px;
+                    padding: 7px 12px;
+                    font-size: 14px;
                     font-weight: 700;
+                    color: #065F46;
                 }}
             """)
-            self._set_status(
-                f"\u2713  Loaded from {self.previous_day_date}  \u2192  {self.previous_day_balance:,.2f}",
-                _GREEN, bold=True
-            )
-            self.auto_fill_button.setText("\u2713  Loaded")
-            self.auto_fill_button.setEnabled(False)
-            self._msg(
-                "Balance Loaded",
-                f"Beginning balance set to {self.previous_day_balance:,.2f}",
-                QMessageBox.Information
-            )
+            self._set_status_brand(brand,
+                f"Loaded from {prev_date}",
+                _EMERALD_500, bold=True)
+            af_btn.setText("✓  Loaded")
+            af_btn.setEnabled(False)
+            af_btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {_EMERALD_500};
+                    border: 1.5px solid {_INDIGO_500};
+                    border-radius: 5px;
+                    font-size: 10px;
+                    font-weight: 700;
+                    padding: 4px 12px;
+                    min-width: 0;
+                }}
+            """)
+            if brand == "A":
+                self.beginning_balance_auto_filled_a = True
+            else:
+                self.beginning_balance_auto_filled_b = True
+            self._msg("Balance Loaded",
+                      f"{brand_full} opening balance set to {prev_bal:,.2f}",
+                      QMessageBox.Information)
         else:
-            self._msg(
-                "No Previous Record",
-                "No previous day record found. Enter the opening balance manually.",
-                QMessageBox.Information
-            )
-            self.beginning_balance_input.setReadOnly(False)
-            self.beginning_balance_input.setPlaceholderText("Enter opening balance")
-            self.beginning_balance_input.setStyleSheet(
-                f"background-color: {_BG_INPUT}; color: {_TEXT_PRI};"
-            )
-            self.beginning_balance_auto_filled = True
+            self._msg("No Previous Record",
+                      f"No previous record for {brand_full}. Enter the opening balance manually.",
+                      QMessageBox.Information)
+            bb_input.setReadOnly(False)
+            bb_input.setPlaceholderText("Enter opening balance")
+            bb_input.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: {_BG_INPUT};
+                    border: 1.5px solid {_BORDER};
+                    border-radius: 6px;
+                    padding: 7px 12px;
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: {_TEXT_PRI};
+                }}
+                QLineEdit:focus {{
+                    border: 2px solid {_PRIMARY};
+                    background-color: {_INDIGO_50};
+                }}
+            """)
+            if brand == "A":
+                self.beginning_balance_auto_filled_a = True
+            else:
+                self.beginning_balance_auto_filled_b = True
 
     def _toggle_inputs(self, enabled):
-        self.beginning_balance_input.setEnabled(enabled)
-        self.cash_count_input.setEnabled(enabled)
-        for tab in (self.cash_flow_tab, self.palawan_tab, self.mc_currency_tab):
+        for w in (self.beginning_balance_input_a, self.beginning_balance_input_b,
+                  self.cash_count_input_a, self.cash_count_input_b):
+            w.setEnabled(enabled)
+        for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b,
+                    self.palawan_tab, self.mc_currency_tab):
             if hasattr(tab, 'set_enabled'):
                 tab.set_enabled(enabled)
 
@@ -928,440 +1139,628 @@ class ClientDashboard(QWidget):
     def enable_all_inputs(self):
         self._toggle_inputs(True)
 
+    # ───────────────────────────────────────────────────────
+    #  RECALCULATE
+    # ───────────────────────────────────────────────────────
     def recalculate_all(self):
-        try:
-            beginning = float(self.beginning_balance_input.text().strip() or 0)
-        except ValueError:
-            beginning = 0.0
+        for brand in ("a", "b"):
+            bb  = getattr(self, f"beginning_balance_input_{brand}")
+            cft = getattr(self, f"cash_flow_tab_{brand}")
+            eb  = getattr(self, f"ending_balance_display_{brand}")
+            try:
+                beg = float(bb.text().strip() or 0)
+            except ValueError:
+                beg = 0.0
+            deb  = cft.get_debit_total()
+            cred = cft.get_credit_total()
+            cft.update_totals(beg, deb, cred)
+            end = beg + deb - cred
+            eb.setText(f"{end:,.2f}")
+            c = _EMERALD_400 if end > 0 else (_RED_400 if end < 0 else _WHITE)
+            eb.setStyleSheet(
+                f"font-size: 15px; font-weight: 800; color: {c}; background: transparent;"
+            )
 
-        debit  = self.cash_flow_tab.get_debit_total()
-        credit = self.cash_flow_tab.get_credit_total()
-        self.cash_flow_tab.update_totals(beginning, debit, credit)
-
-        ending = beginning + debit - credit
-        self.ending_balance_display.setText(f"{ending:,.2f}")
-
-        color = "#58D68D" if ending > 0 else ("#EC7063" if ending < 0 else _WHITE)
-        self.ending_balance_display.setStyleSheet(
-            f"font-size: 17px; font-weight: 800; color: {color}; background: transparent;"
-        )
-
-        self.update_cash_result()
         self.palawan_tab.calculate_palawan_totals()
         self.mc_currency_tab.calculate_mc_totals()
+        self.update_cash_result()
 
     def update_cash_result(self):
-        try:
-            cc = float(self.cash_count_input.text().strip() or 0)
-            eb = float(
-                (self.ending_balance_display.text() or "0").replace(",", "")
-            )
-            diff = cc - eb
-            self.cash_result_display.setText(f"{diff:,.2f}")
+        ready_a = self._update_brand_variance("A")
+        ready_b = self._update_brand_variance("B")
+        self.post_button.setEnabled(ready_a and ready_b)
 
-            has_req = (
-                bool(self.beginning_balance_input.text().strip())
-                and bool(self.cash_count_input.text().strip())
-            )
+    def _update_brand_variance(self, brand):
+        bb  = self.beginning_balance_input_a if brand == "A" else self.beginning_balance_input_b
+        cc  = self.cash_count_input_a        if brand == "A" else self.cash_count_input_b
+        eb  = self.ending_balance_display_a  if brand == "A" else self.ending_balance_display_b
+        var = self.cash_result_display_a     if brand == "A" else self.cash_result_display_b
+        stl = self.variance_status_label_a   if brand == "A" else self.variance_status_label_b
+        try:
+            cc_val  = float(cc.text().strip() or 0)
+            eb_val  = float((eb.text() or "0").replace(",", ""))
+            diff    = cc_val - eb_val
+            var.setText(f"{diff:,.2f}")
+            has_req = bool(bb.text().strip()) and bool(cc.text().strip())
+            font    = "font-size: 15px; font-weight: 800; background: transparent;"
 
             if abs(diff) < 0.01:
-                self.cash_result_display.setStyleSheet(
-                    "font-size: 17px; font-weight: 800; color: #58D68D; background: transparent;"
-                )
+                var.setStyleSheet(font + f"color: {_EMERALD_400};")
                 if has_req:
-                    self._set_var_status(
-                        "\u2713  No Variance \u2014 Ready to Post", "#58D68D"
+                    stl.setText("✓  Balanced")
+                    stl.setStyleSheet(
+                        f"font-size: 10px; font-weight: 700; color: {_EMERALD_400}; background: transparent;"
                     )
-                    self.post_button.setEnabled(True)
                 else:
-                    self._set_var_status(
-                        "\u26a0  Fill required fields to post", _ORANGE
+                    stl.setText("Fill required fields")
+                    stl.setStyleSheet(
+                        f"font-size: 10px; font-weight: 600; color: {_SLATE_500}; background: transparent;"
                     )
-                    self.post_button.setEnabled(False)
             elif diff > 0:
-                self.cash_result_display.setStyleSheet(
-                    f"font-size: 17px; font-weight: 800; color: {_ORANGE}; background: transparent;"
+                var.setStyleSheet(font + f"color: {_AMBER_400};")
+                stl.setText(f"Over  +{diff:,.2f}")
+                stl.setStyleSheet(
+                    f"font-size: 10px; font-weight: 700; color: {_AMBER_400}; background: transparent;"
                 )
-                self._set_var_status(f"\u26a0  OVER by {diff:,.2f} \u2014 Will be tagged", _ORANGE)
-                if has_req:
-                    self.post_button.setEnabled(True)
-                else:
-                    self.post_button.setEnabled(False)
             else:
-                self.cash_result_display.setStyleSheet(
-                    f"font-size: 17px; font-weight: 800; color: {_RED}; background: transparent;"
+                var.setStyleSheet(font + f"color: {_RED_400};")
+                stl.setText(f"Short  {diff:,.2f}")
+                stl.setStyleSheet(
+                    f"font-size: 10px; font-weight: 700; color: {_RED_400}; background: transparent;"
                 )
-                self._set_var_status(
-                    f"\u2715  SHORT by {abs(diff):,.2f} \u2014 Will be tagged", _RED
-                )
-                if has_req:
-                    self.post_button.setEnabled(True)
-                else:
-                    self.post_button.setEnabled(False)
 
+            return has_req
         except ValueError:
-            self.cash_result_display.setText("\u2014")
-            self._set_var_status("\u26a0  Invalid input", _RED)
-            self.post_button.setEnabled(False)
+            var.setText("—")
+            stl.setText("Invalid input")
+            stl.setStyleSheet(
+                f"font-size: 10px; font-weight: 600; color: {_RED_500}; background: transparent;"
+            )
+            return False
 
     def _set_var_status(self, text, color):
-        self.variance_status_label.setText(text)
-        self.variance_status_label.setStyleSheet(
-            f"font-size: 13px; font-weight: 700; color: {color}; background: transparent;"
+        self.variance_status_label_a.setText(text)
+        self.variance_status_label_a.setStyleSheet(
+            f"font-size: 10px; font-weight: 700; color: {color}; background: transparent;"
         )
 
-    def _sync_palawan_mc_to_other_brand(self, date, palawan_data, mc_data):
-        """Sync Palawan Details and MC Currency data to the other brand's table"""
-        try:
-            # Determine the OTHER table (opposite of current brand)
-            other_table = "daily_reports" if self.current_brand == "Brand A" else "daily_reports_brand_a"
-            
-            # Combine Palawan and MC data
-            shared_data = {**palawan_data, **mc_data}
-            
-            # Check if entry exists in other table
-            check_query = f"""SELECT COUNT(*) as count FROM {other_table} 
-                             WHERE date=%s AND branch=%s AND corporation=%s"""
-            result = self.db_manager.execute_query(check_query, (date, self.branch, self.corporation))
-            exists = result and len(result) > 0 and result[0].get('count', 0) > 0
-            
-            if exists:
-                # Update existing record with Palawan and MC data only
-                update_parts = [f"{col}=%s" for col in shared_data.keys()]
-                update_sql = f"UPDATE {other_table} SET {', '.join(update_parts)} " \
-                           "WHERE date=%s AND branch=%s AND corporation=%s"
-                update_vals = list(shared_data.values()) + [date, self.branch, self.corporation]
-                
-                self.db_manager.execute_query(update_sql, tuple(update_vals))
-                print(f"Synced Palawan/MC data to existing {other_table} entry")
-            else:
-                # Insert new record with only Palawan and MC data (other fields will be NULL/default)
-                cols = ['date', 'username', 'branch', 'corporation'] + list(shared_data.keys())
-                vals = [date, self.user_email, self.branch, self.corporation] + list(shared_data.values())
-                
-                ph = ', '.join(['%s'] * len(cols))
-                cs = ', '.join(cols)
-                insert_sql = f"INSERT INTO {other_table} ({cs}) VALUES ({ph})"
-                
-                self.db_manager.execute_query(insert_sql, tuple(vals))
-                print(f"Created new {other_table} entry with Palawan/MC data")
-                
-        except Exception as e:
-            print(f"Error syncing Palawan/MC to other brand: {e}")
-            # Don't fail the main post operation if this sync fails
-
+    # ───────────────────────────────────────────────────────
+    #  OPTIONAL TABS CHECK
+    # ───────────────────────────────────────────────────────
     def _check_optional_tabs_empty(self):
         empty_tabs = []
         try:
-            pal_data = self.palawan_tab.get_data()
-            if all(v == 0 or v == 0.0 for v in pal_data.values()):
+            if all(v == 0 or v == 0.0 for v in self.palawan_tab.get_data().values()):
                 empty_tabs.append("Palawan Details")
         except Exception:
             empty_tabs.append("Palawan Details")
         try:
-            mc_data = self.mc_currency_tab.get_data()
-            if all(v == 0 or v == 0.0 for v in mc_data.values()):
+            if all(v == 0 or v == 0.0 for v in self.mc_currency_tab.get_data().values()):
                 empty_tabs.append("MC Currency")
         except Exception:
             empty_tabs.append("MC Currency")
 
         if not empty_tabs:
             return True
-        tab_list = "\n".join(f"   •  {t}" for t in empty_tabs)
 
         dlg = QMessageBox(self)
         dlg.setWindowTitle("Incomplete Report")
         dlg.setIcon(QMessageBox.Warning)
         dlg.setText(
             f"<b>The following tabs have no data:</b><br><br>"
-            f"{'<br>'.join(f'&nbsp;&nbsp;&nbsp;&#8226;&nbsp; <b>{t}</b>' for t in empty_tabs)}"
-            f"<br><br>"
-            f"Are you sure you want to post without filling them in?"
+            + "<br>".join(f"&nbsp;&nbsp;&#8226;&nbsp; <b>{t}</b>" for t in empty_tabs)
+            + "<br><br>Are you sure you want to post without filling them in?"
         )
         dlg.setInformativeText(
-            "You can click <b>Go Back</b> to add the missing details, "
+            "Click <b>Go Back</b> to add missing details, "
             "or <b>Post Anyway</b> to submit with zeros."
         )
-        btn_post   = dlg.addButton("Post Anyway",  QMessageBox.AcceptRole)
-        btn_back   = dlg.addButton("Go Back",       QMessageBox.RejectRole)
+        btn_post = dlg.addButton("Post Anyway",  QMessageBox.AcceptRole)
+        btn_back = dlg.addButton("Go Back",       QMessageBox.RejectRole)
         dlg.setDefaultButton(btn_back)
-        dlg.setStyleSheet(f"""
-            QMessageBox {{
-                background-color: {_BG_CARD};
-                font-family: 'Segoe UI', Arial, sans-serif;
-                font-size: 13px;
-            }}
-            QMessageBox QLabel {{
-                color: {_TEXT_PRI};
-                font-size: 13px;
-                min-width: 0;
-                line-height: 1.5;
-            }}
-            QPushButton {{
-                border-radius: 6px;
-                padding: 9px 22px;
-                font-size: 12px;
-                font-weight: 700;
-                min-width: 110px;
-            }}
-        """)
-        btn_post.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {_ORANGE};
-                color: {_WHITE};
-                border: none;
-            }}
-            QPushButton:hover   {{ background-color: #D97706; }}
-            QPushButton:pressed {{ background-color: #B45309; }}
-        """)
-        btn_back.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {_BLUE};
-                color: {_WHITE};
-                border: none;
-            }}
-            QPushButton:hover   {{ background-color: #1558C0; }}
-            QPushButton:pressed {{ background-color: #0D449A; }}
-        """)
+        dlg.setStyleSheet(self._MSG_QSS)
+        btn_post.setStyleSheet(f"background-color:{_AMBER_500};color:{_WHITE};border:none;")
+        btn_back.setStyleSheet(f"background-color:{_PRIMARY};color:{_WHITE};border:none;")
         dlg.exec_()
         return dlg.clickedButton() == btn_post
 
+    # ───────────────────────────────────────────────────────
+    #  POST
+    # ───────────────────────────────────────────────────────
     def handle_post(self):
         try:
             sd = self.date_picker.date().toString("yyyy-MM-dd")
+            if not self._check_optional_tabs_empty():
+                return
             if not self.validate_all_requirements():
                 return
-            # ── Optional-tab warning ──────────────────────────────────
-            if not self._check_optional_tabs_empty():
-                return   # user chose "Go Back"
-            if self.check_existing_entry(sd):
-                self._msg("Duplicate Entry", f"Entry for {self.current_brand} on {sd} already exists.", QMessageBox.Critical)
-                return
 
-            beginning = float(self.beginning_balance_input.text().strip())
-            cf  = self.cash_flow_tab.get_data()
             pal = self.palawan_tab.get_data()
             mcc = self.mc_currency_tab.get_data()
 
-            deb = sum(v for k, v in cf['debit'].items()  if not k.endswith('_lotes'))
-            cre = sum(v for k, v in cf['credit'].items() if not k.endswith('_lotes'))
+            brand_specs = [
+                ("Brand A", self.cash_flow_tab_a,
+                 self.beginning_balance_input_a, self.cash_count_input_a,
+                 "daily_reports_brand_a"),
+                ("Brand B", self.cash_flow_tab_b,
+                 self.beginning_balance_input_b, self.cash_count_input_b,
+                 "daily_reports"),
+            ]
 
-            debit_total  = beginning + deb
-            credit_total = cre
-            ending       = beginning + deb - cre
-            cash_count   = float(self.cash_count_input.text().strip())
-            cash_result  = cash_count - ending
-            
-            # Determine variance status
-            if abs(cash_result) < 0.01:
-                variance_status = "balanced"
-            elif cash_result > 0:
-                variance_status = "over"
-            else:
-                variance_status = "short"
+            results = []
+            for brand_full, cf_tab, bb_input, cc_input, table_name in brand_specs:
+                if self.check_existing_entry(sd, brand_full):
+                    results.append((brand_full, "skipped", None))
+                    continue
 
-            all_vals = {**cf['debit'], **cf['credit'], **pal, **mcc}
-            
-            # Determine which table to insert into based on current brand
-            table_name = "daily_reports_brand_a" if self.current_brand == "Brand A" else "daily_reports"
-            
-            cols = [
-                'date', 'username', 'branch', 'corporation',
-                'beginning_balance', 'debit_total', 'credit_total',
-                'ending_balance', 'cash_count', 'cash_result', 'variance_status'
-            ] + list(all_vals.keys())
-            vals = [
-                sd, self.user_email, self.branch, self.corporation,
-                beginning, debit_total, credit_total,
-                ending, cash_count, cash_result, variance_status
-            ] + list(all_vals.values())
-
-            ph    = ', '.join(['%s'] * len(cols))
-            cs    = ', '.join(cols)
-            query = f"INSERT INTO {table_name} ({cs}) VALUES ({ph})"
-            upd   = ', '.join(f"{c}=VALUES({c})" for c in cols if c not in ('date', 'username'))
-            if upd:
-                query += " ON DUPLICATE KEY UPDATE " + upd
-
-            rows, last_err = None, None
-            for attempt in range(1, 5):
-                res, err = self.db_manager.execute_query_with_exception(query, vals)
-                if err is None:
-                    rows = res
-                    break
-                last_err = err
-                is_dl = (
-                    hasattr(err, 'args') and isinstance(err.args, tuple)
-                    and len(err.args) > 0 and err.args[0] == 1213
+                cf        = cf_tab.get_data()
+                beginning = float(bb_input.text().strip())
+                deb = sum(v for k, v in cf['debit'].items()  if not k.endswith('_lotes'))
+                cre = sum(v for k, v in cf['credit'].items() if not k.endswith('_lotes'))
+                ending      = beginning + deb - cre
+                cash_count  = float(cc_input.text().strip())
+                cash_result = cash_count - ending
+                variance_status = (
+                    "balanced" if abs(cash_result) < 0.01
+                    else "over"  if cash_result > 0
+                    else "short"
                 )
-                try:
-                    self.db_manager.logger.error(f"DB attempt {attempt}: {err}")
-                    with open('db_deadlock_retries.log', 'a') as lf:
-                        lf.write(
-                            f"{datetime.datetime.now().isoformat()} "
-                            f"| attempt={attempt} | dl={is_dl} | {err}\n"
-                        )
-                except Exception:
-                    pass
-                if is_dl and attempt < 4:
-                    time.sleep(0.5 * attempt)
-                else:
-                    break
 
-            if isinstance(rows, int) and rows > 0:
-                # Also insert Palawan and MC Currency data into the OTHER table
-                self._sync_palawan_mc_to_other_brand(sd, pal, mcc)
-                
-                self._msg_success(f"Report for {self.current_brand} on {sd} posted successfully.")
-                
-                # Refresh to show entry exists and prevent duplicate submissions
+                all_vals = {**cf['debit'], **cf['credit'], **pal, **mcc}
+                cols = [
+                    'date', 'username', 'branch', 'corporation',
+                    'beginning_balance', 'debit_total', 'credit_total',
+                    'ending_balance', 'cash_count', 'cash_result', 'variance_status'
+                ] + list(all_vals.keys())
+                vals = [
+                    sd, self.user_email, self.branch, self.corporation,
+                    beginning, beginning + deb, cre,
+                    ending, cash_count, cash_result, variance_status
+                ] + list(all_vals.values())
+
+                ph    = ', '.join(['%s'] * len(cols))
+                query = f"INSERT INTO {table_name} ({', '.join(cols)}) VALUES ({ph})"
+                upd   = ', '.join(f"{c}=VALUES({c})" for c in cols
+                                  if c not in ('date', 'username'))
+                if upd:
+                    query += " ON DUPLICATE KEY UPDATE " + upd
+
+                rows, last_err = None, None
+                for attempt in range(1, 5):
+                    res, err = self.db_manager.execute_query_with_exception(query, vals)
+                    if err is None:
+                        rows = res
+                        break
+                    last_err = err
+                    is_dl = (hasattr(err, 'args') and isinstance(err.args, tuple)
+                             and len(err.args) > 0 and err.args[0] == 1213)
+                    try:
+                        self.db_manager.logger.error(f"DB attempt {attempt}: {err}")
+                    except Exception:
+                        pass
+                    if is_dl and attempt < 4:
+                        time.sleep(0.5 * attempt)
+                    else:
+                        break
+
+                if isinstance(rows, int) and rows > 0:
+                    results.append((brand_full, "success", None))
+                elif rows is None:
+                    results.append((brand_full, "error",
+                                    str(last_err) if last_err else "Unknown error"))
+                else:
+                    results.append((brand_full, "no_rows", None))
+
+            successes = [b for b, s, _ in results if s == "success"]
+            errors    = [(b, e) for b, s, e in results if s == "error"]
+            skipped   = [b for b, s, _ in results if s == "skipped"]
+
+            if errors:
+                self._msg("Database Error",
+                          "Some brands failed:\n\n" +
+                          "\n".join(f"{b}: {e}" for b, e in errors),
+                          QMessageBox.Critical)
+                return
+
+            if successes:
+                parts = f"Posted: {', '.join(successes)}"
+                if skipped:
+                    parts += f"\nSkipped (already exists): {', '.join(skipped)}"
+                self._msg_success(f"Report for {sd}\n\n{parts}")
+                self._delete_draft()
                 self.on_date_changed()
-                
-                # Ask if user wants to move to next day
                 self.clear_all_fields()
-            elif rows is None:
-                detail = f"\n\n{last_err}" if last_err else ""
-                self._msg("Database Error", f"Insert failed. Please retry.{detail}", QMessageBox.Critical)
-            else:
-                self._msg("Warning", "No rows were inserted.", QMessageBox.Warning)
+            elif skipped and not successes:
+                self._msg("Nothing to Post",
+                          "All brands already have entries for this date.",
+                          QMessageBox.Information)
 
         except Exception as e:
             self._msg("Error", f"Failed to post: {e}", QMessageBox.Critical)
 
+    # ───────────────────────────────────────────────────────
+    #  VALIDATE
+    # ───────────────────────────────────────────────────────
     def validate_all_requirements(self):
         sd = self.date_picker.date().toString("yyyy-MM-dd")
+        brand_specs = [
+            ("A", "Brand A",
+             self.beginning_balance_input_a, self.cash_count_input_a,
+             self.beginning_balance_auto_filled_a,
+             self.previous_day_balance_a, self.previous_day_date_a,
+             self.ending_balance_display_a),
+            ("B", "Brand B",
+             self.beginning_balance_input_b, self.cash_count_input_b,
+             self.beginning_balance_auto_filled_b,
+             self.previous_day_balance_b, self.previous_day_date_b,
+             self.ending_balance_display_b),
+        ]
 
-        if self.check_existing_entry(sd):
-            self._msg("Duplicate Entry", f"An entry for {self.current_brand} on {sd} already exists.", QMessageBox.Critical)
-            return False
+        for ltr, brand_full, bb_input, cc_input, bb_filled, prev_bal, prev_date, eb_disp in brand_specs:
+            if self.check_existing_entry(sd, brand_full):
+                continue
 
-        if not self.beginning_balance_auto_filled:
-            if self.previous_day_balance is not None:
-                self._msg(
-                    "Beginning Balance Required",
-                    f"Click '\u2193 Load Prev Day' to set the opening balance.\n"
-                    f"Expected:  {self.previous_day_balance:,.2f}  ({self.previous_day_date})",
-                    QMessageBox.Critical
-                )
+            if not bb_filled:
+                if prev_bal is not None:
+                    self._msg("Opening Balance Required",
+                              f"{brand_full}: Click 'Load Previous Day' to set the opening balance.\n"
+                              f"Expected: {prev_bal:,.2f}  ({prev_date})",
+                              QMessageBox.Critical)
+                    return False
+                elif not bb_input.text().strip():
+                    self._msg("Opening Balance Required",
+                              f"{brand_full}: First entry — please type the opening balance.",
+                              QMessageBox.Critical)
+                    bb_input.setFocus()
+                    return False
+
+            if not bb_input.text().strip():
+                self._msg("Validation Error",
+                          f"{brand_full}: Opening balance is empty.",
+                          QMessageBox.Warning)
                 return False
-            elif not self.beginning_balance_input.text().strip():
-                self._msg(
-                    "Beginning Balance Required",
-                    "First entry: please type the opening balance.",
-                    QMessageBox.Critical
-                )
-                self.beginning_balance_input.setFocus()
+
+            if not cc_input.text().strip():
+                self._msg("Validation Error",
+                          f"{brand_full}: Enter the actual cash count.",
+                          QMessageBox.Warning)
+                cc_input.setFocus()
                 return False
 
-        if not self.beginning_balance_input.text().strip():
-            self._msg("Validation Error", "Beginning balance is empty.", QMessageBox.Warning)
-            return False
+            if prev_bal is not None:
+                try:
+                    cur_beg = float(bb_input.text().strip())
+                    if abs(cur_beg - prev_bal) > 0.01:
+                        self._msg("Balance Mismatch",
+                                  f"{brand_full}: Opening balance does not match previous day.\n\n"
+                                  f"Expected : {prev_bal:,.2f}  ({prev_date})\n"
+                                  f"Current  : {cur_beg:,.2f}\n\n"
+                                  f"Use 'Load Previous Day' to correct this.",
+                                  QMessageBox.Critical)
+                        return False
+                except ValueError:
+                    self._msg("Validation Error",
+                              f"{brand_full}: Invalid opening balance.",
+                              QMessageBox.Warning)
+                    return False
 
-        if not self.cash_count_input.text().strip():
-            self._msg("Validation Error", "Enter the actual cash count.", QMessageBox.Warning)
-            self.cash_count_input.setFocus()
-            return False
-
-        if self.previous_day_balance is not None:
             try:
-                cur_beg = float(self.beginning_balance_input.text().strip())
-                if abs(cur_beg - self.previous_day_balance) > 0.01:
-                    self._msg(
-                        "Balance Mismatch",
-                        f"Beginning balance does not match previous day.\n\n"
-                        f"Expected : {self.previous_day_balance:,.2f}  ({self.previous_day_date})\n"
-                        f"Current  : {cur_beg:,.2f}\n\n"
-                        f"Use 'Load Prev Day' to correct this.",
-                        QMessageBox.Critical
+                cc_val = float(cc_input.text().strip())
+                eb_val = float((eb_disp.text() or "0").replace(",", ""))
+                diff   = cc_val - eb_val
+                if abs(diff) >= 0.01:
+                    vtype = "OVER" if diff > 0 else "SHORT"
+                    reply = QMessageBox.question(
+                        self,
+                        f"Variance Warning ({brand_full})",
+                        f"{brand_full} has a cash variance ({vtype} by {abs(diff):,.2f}).\n\n"
+                        f"Ending Balance : {eb_val:,.2f}\n"
+                        f"Cash Count     : {cc_val:,.2f}\n"
+                        f"Variance       : {diff:,.2f}\n\n"
+                        f"This entry will be tagged for admin review.\n\n"
+                        f"Do you want to continue posting?",
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.No
                     )
-                    return False
+                    if reply == QMessageBox.No:
+                        return False
             except ValueError:
-                self._msg("Validation Error", "Invalid beginning balance.", QMessageBox.Warning)
+                self._msg("Validation Error",
+                          f"{brand_full}: Invalid cash count.",
+                          QMessageBox.Warning)
                 return False
-
-        try:
-            cc = float(self.cash_count_input.text().strip())
-            eb = float(
-                (self.ending_balance_display.text() or "0").replace(",", "")
-            )
-            diff = cc - eb
-            # Allow posting with variance but warn user
-            if abs(diff) >= 0.01:
-                variance_type = "OVER" if diff > 0 else "SHORT"
-                reply = QMessageBox.question(
-                    self,
-                    "Variance Warning",
-                    f"You have a cash variance ({variance_type} by {abs(diff):,.2f}).\n\n"
-                    f"Ending Balance : {eb:,.2f}\n"
-                    f"Cash Count     : {cc:,.2f}\n"
-                    f"Variance       : {diff:,.2f}\n\n"
-                    f"This entry will be tagged for admin review.\n\n"
-                    f"Do you want to continue posting?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
-                )
-                if reply == QMessageBox.No:
-                    return False
-        except ValueError:
-            self._msg("Validation Error", "Invalid cash count.", QMessageBox.Warning)
-            return False
 
         return True
-    
+
+    # ───────────────────────────────────────────────────────
+    #  CLEAR / RESET
+    # ───────────────────────────────────────────────────────
     def clear_all_fields(self):
         r = QMessageBox.question(
             self, "Advance Date", "Report posted! Move to the next day?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
         )
         if r == QMessageBox.Yes:
-            # Clear tabs first
             for tab, meth in [
-                (self.cash_flow_tab,   'clear_fields'),
+                (self.cash_flow_tab_a, 'clear_fields'),
+                (self.cash_flow_tab_b, 'clear_fields'),
                 (self.palawan_tab,     'clear_fields'),
                 (self.mc_currency_tab, 'clear_fields'),
             ]:
                 if hasattr(tab, meth):
                     getattr(tab, meth)()
-            
-            # Move to next day - on_date_changed() will be triggered automatically
-            # and will load the previous day's ending balance
             self.date_picker.setDate(self.date_picker.date().addDays(1))
 
     def clear_all_fields_silent(self):
-        """Clear all fields without showing dialogs (used when switching brands)"""
-        self.beginning_balance_input.clear()
-        self.cash_count_input.clear()
-        self.beginning_balance_auto_filled = False
-        self.previous_day_balance = None
-        self.previous_day_date    = None
-        self.auto_fill_button.setText("\u2193  Load Prev Day")
-        self.auto_fill_button.setEnabled(True)
-        self.beginning_balance_input.setStyleSheet("")
-        self.balance_status_label.setText("")
-        
+        for bb in (self.beginning_balance_input_a, self.beginning_balance_input_b):
+            bb.clear()
+            bb.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: {_SLATE_100};
+                    border: 1.5px solid {_SLATE_200};
+                    border-radius: 6px;
+                    padding: 7px 12px;
+                    font-size: 14px;
+                    font-weight: 700;
+                    color: {_TEXT_PRI};
+                }}
+            """)
+        for cc in (self.cash_count_input_a, self.cash_count_input_b):
+            cc.clear()
+        self.beginning_balance_auto_filled_a = False
+        self.beginning_balance_auto_filled_b = False
+        self.previous_day_balance_a = self.previous_day_date_a = None
+        self.previous_day_balance_b = self.previous_day_date_b = None
+        for btn in (self.auto_fill_button_a, self.auto_fill_button_b):
+            btn.setText("↓  Load Previous Day")
+            btn.setEnabled(True)
+            btn.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: transparent;
+                    color: {_PRIMARY};
+                    border: 1.5px solid {_INDIGO_100};
+                    border-radius: 5px;
+                    font-size: 10px;
+                    font-weight: 700;
+                    padding: 4px 12px;
+                    min-width: 0;
+                }}
+                QPushButton:hover {{
+                    background-color: {_INDIGO_50};
+                    border-color: {_PRIMARY};
+                }}
+            """)
+        for lbl in (self.balance_status_label_a, self.balance_status_label_b):
+            lbl.setText("")
         for tab, meth in [
-            (self.cash_flow_tab,   'clear_fields'),
+            (self.cash_flow_tab_a, 'clear_fields'),
+            (self.cash_flow_tab_b, 'clear_fields'),
             (self.palawan_tab,     'clear_fields'),
             (self.mc_currency_tab, 'clear_fields'),
         ]:
             if hasattr(tab, meth):
                 getattr(tab, meth)()
-        
         self.on_date_changed()
 
+    # ───────────────────────────────────────────────────────
+    #  SHARED FIELD CARRY (Brand A → Brand B)
+    # ───────────────────────────────────────────────────────
+    def _connect_shared_fields(self):
+        try:
+            import json as _json, re as _re, os as _os, sys as _sys
+            if getattr(_sys, 'frozen', False):
+                _base = _os.path.dirname(_sys.executable)
+            else:
+                _base = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+            _cfg_path = _os.path.join(_base, "field_config.json")
+            with open(_cfg_path, "r", encoding="utf-8") as _f:
+                cfg = _json.load(_f)
+
+            def _col(entry):
+                return entry[2] if len(entry) >= 3 else \
+                    _re.sub(r"[^a-z0-9]+", "_", entry[0].lower()).strip("_")
+
+            a_col_widget, b_col_widget = {}, {}
+            for section in ("debit", "credit"):
+                for brand, col_w in [("Brand A", a_col_widget), ("Brand B", b_col_widget)]:
+                    tab = self.cash_flow_tab_a if brand == "Brand A" else self.cash_flow_tab_b
+                    tab_d   = tab.debit_inputs   if section == "debit" else tab.credit_inputs
+                    lotes_d = (tab.debit_lotes_inputs if section == "debit"
+                               else tab.credit_lotes_inputs)
+                    for entry in cfg.get(brand, {}).get(section, []):
+                        label = entry[0]
+                        c     = _col(entry)
+                        if label in tab_d:
+                            col_w[c] = (tab_d[label], lotes_d.get(label))
+
+            shared = set(a_col_widget) & set(b_col_widget)
+            self._shared_carry_map = []
+
+            for col in shared:
+                a_w, a_l = a_col_widget[col]
+                b_w, b_l = b_col_widget[col]
+
+                def _amt_carry(bw):
+                    def _carry(text):
+                        if not bw.hasFocus():
+                            bw.blockSignals(True); bw.setText(text); bw.blockSignals(False)
+                            self.recalculate_all()
+                    return _carry
+
+                def _lot_carry(bw):
+                    def _carry(text):
+                        if bw and not bw.hasFocus():
+                            bw.blockSignals(True); bw.setText(text); bw.blockSignals(False)
+                    return _carry
+
+                fn = _amt_carry(b_w)
+                a_w.textChanged.connect(fn)
+                self._shared_carry_map.append(fn)
+
+                if a_l and b_l:
+                    fl = _lot_carry(b_l)
+                    a_l.textChanged.connect(fl)
+                    self._shared_carry_map.append(fl)
+
+        except Exception as e:
+            print(f"_connect_shared_fields error (non-fatal): {e}")
+
+    # ───────────────────────────────────────────────────────
+    #  DRAFT SAVE / LOAD / DELETE
+    # ───────────────────────────────────────────────────────
+    def _get_draft_path(self):
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        drafts_dir = os.path.join(base, "drafts")
+        os.makedirs(drafts_dir, exist_ok=True)
+        def _safe(s):
+            return "".join(c if c.isalnum() or c in "_-" else "_" for c in str(s))
+        return os.path.join(
+            drafts_dir,
+            f"{_safe(self.user_email)}_{_safe(self.branch)}_{_safe(self.corporation)}.json"
+        )
+
+    def save_draft(self):
+        try:
+            sd = self.date_picker.date().toString("yyyy-MM-dd")
+            draft = {
+                "saved_at": datetime.datetime.now().isoformat(),
+                "date": sd,
+                "brand_a": {
+                    "beginning_balance": self.beginning_balance_input_a.text(),
+                    "beginning_balance_auto_filled": self.beginning_balance_auto_filled_a,
+                    "cash_count": self.cash_count_input_a.text(),
+                    "cash_flow": self.cash_flow_tab_a.get_raw_field_values(),
+                },
+                "brand_b": {
+                    "beginning_balance": self.beginning_balance_input_b.text(),
+                    "beginning_balance_auto_filled": self.beginning_balance_auto_filled_b,
+                    "cash_count": self.cash_count_input_b.text(),
+                    "cash_flow": self.cash_flow_tab_b.get_raw_field_values(),
+                },
+                "palawan":     self._collect_palawan_for_draft(),
+                "mc_currency": self._collect_mc_for_draft(),
+            }
+            with open(self._get_draft_path(), "w", encoding="utf-8") as f:
+                json.dump(draft, f, indent=2, ensure_ascii=False)
+            self._msg_success(
+                f"Draft saved for {sd}.\n\n"
+                "Your data will be automatically restored when you return."
+            )
+        except Exception as e:
+            self._msg("Save Draft Error", f"Could not save draft:\n{e}", QMessageBox.Warning)
+
+    def _collect_palawan_for_draft(self):
+        d = {}
+        for section in ("sendout", "payout", "international"):
+            for k, w in getattr(self.palawan_tab, f"{section}_inputs", {}).items():
+                d[f"{section}:{k}"] = w.text()
+        for k, w in getattr(self.palawan_tab, "lotes_inputs", {}).items():
+            d[f"lotes:{k}"] = w.text()
+        return d
+
+    def _collect_mc_for_draft(self):
+        return [
+            {
+                "currency_index": e['currency_combo'].currentIndex(),
+                "quantity": e['quantity_input'].text(),
+                "rate": e['rate_input'].text(),
+            }
+            for e in self.mc_currency_tab.currency_entries
+        ]
+
+    def _load_draft(self):
+        try:
+            path = self._get_draft_path()
+            if not os.path.exists(path):
+                return
+            with open(path, "r", encoding="utf-8") as f:
+                draft = json.load(f)
+
+            saved_date = draft.get("date", "")
+            saved_at   = draft.get("saved_at", "")[:19].replace("T", " ")
+
+            reply = QMessageBox.question(
+                self, "Restore Draft",
+                f"A saved draft was found:\n\n"
+                f"  Date : {saved_date}\n"
+                f"  Saved: {saved_at}\n\n"
+                f"Do you want to restore it?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
+            )
+            if reply != QMessageBox.Yes:
+                return
+
+            qdate = QDate.fromString(saved_date, "yyyy-MM-dd")
+            if qdate.isValid():
+                self.date_picker.setDate(qdate)
+
+            for letter, key in [("a", "brand_a"), ("b", "brand_b")]:
+                bd      = draft.get(key, {})
+                bb_inp  = getattr(self, f"beginning_balance_input_{letter}")
+                cc_inp  = getattr(self, f"cash_count_input_{letter}")
+                cf_tab  = getattr(self, f"cash_flow_tab_{letter}")
+                if bd.get("beginning_balance"):
+                    bb_inp.setReadOnly(False)
+                    bb_inp.setText(bd["beginning_balance"])
+                    setattr(self, f"beginning_balance_auto_filled_{letter}",
+                            bd.get("beginning_balance_auto_filled", True))
+                if bd.get("cash_count"):
+                    cc_inp.setText(bd["cash_count"])
+                if bd.get("cash_flow"):
+                    cf_tab.set_raw_field_values(bd["cash_flow"])
+
+            for key, val in draft.get("palawan", {}).items():
+                section, label = key.split(":", 1)
+                w = (self.palawan_tab.lotes_inputs.get(label) if section == "lotes"
+                     else getattr(self.palawan_tab, f"{section}_inputs", {}).get(label))
+                if w:
+                    w.blockSignals(True); w.setText(val); w.blockSignals(False)
+            self.palawan_tab.calculate_palawan_totals()
+            self.palawan_tab.calculate_lotes_total()
+
+            mc_entries = draft.get("mc_currency", [])
+            while len(self.mc_currency_tab.currency_entries) < len(mc_entries):
+                self.mc_currency_tab.add_currency_entry()
+            for i, ed in enumerate(mc_entries):
+                if i < len(self.mc_currency_tab.currency_entries):
+                    e = self.mc_currency_tab.currency_entries[i]
+                    e['currency_combo'].setCurrentIndex(ed.get("currency_index", 0))
+                    e['quantity_input'].setText(ed.get("quantity", ""))
+                    e['rate_input'].setText(ed.get("rate", ""))
+            self.mc_currency_tab.calculate_totals()
+            self.recalculate_all()
+
+        except Exception as e:
+            print(f"_load_draft error (non-fatal): {e}")
+
+    def _delete_draft(self):
+        try:
+            path = self._get_draft_path()
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+
+    # ───────────────────────────────────────────────────────
+    #  MESSAGE DIALOGS
+    # ───────────────────────────────────────────────────────
     _MSG_QSS = f"""
         QMessageBox {{
             background-color: {_BG_CARD};
-            font-family: 'Segoe UI', Arial, sans-serif;
-            font-size: 13px;
+            font-family: 'Segoe UI', 'SF Pro Text', Arial, sans-serif;
+            font-size: 12px;
         }}
-        QMessageBox QLabel {{ color: {_TEXT_PRI}; font-size: 13px; min-width: 0; }}
+        QMessageBox QLabel {{ color: {_TEXT_PRI}; font-size: 12px; min-width: 0; }}
         QMessageBox QPushButton {{
-            background-color: {_BLUE}; color: {_WHITE};
-            border-radius: 5px; padding: 8px 22px;
-            font-weight: 700; font-size: 12px; min-width: 80px;
+            background-color: {_PRIMARY};
+            color: {_WHITE};
+            border-radius: 6px;
+            padding: 8px 20px;
+            font-weight: 700;
+            font-size: 11px;
+            min-width: 80px;
         }}
-        QMessageBox QPushButton:hover {{ background-color: #1558C0; }}
+        QMessageBox QPushButton:hover {{ background-color: {_PRIMARY_DK}; }}
     """
 
     def _msg(self, title, text, icon):
@@ -1376,12 +1775,14 @@ class ClientDashboard(QWidget):
         m.setText(text)
         m.setStyleSheet(
             self._MSG_QSS
-            .replace(_BLUE, _GREEN)
-            .replace("#1558C0", "#17A349")
+            .replace(_PRIMARY, _SUCCESS)
+            .replace(_PRIMARY_DK, _SUCCESS_DK)
         )
         m.exec_()
 
-    # Legacy aliases
+    # ───────────────────────────────────────────────────────
+    #  LEGACY ALIASES
+    # ───────────────────────────────────────────────────────
     def show_message(self, title, message, icon):
         self._msg(title, message, icon)
 
@@ -1389,10 +1790,13 @@ class ClientDashboard(QWidget):
         self._msg_success(message)
 
     def validate_beginning_balance(self):
-        return self.beginning_balance_auto_filled
+        return self.beginning_balance_auto_filled_a
 
     def validate_required_fields(self):
         return self.validate_all_requirements()
 
     def check_duplicate_entry(self, selected_date):
-        return self.check_existing_entry(selected_date)
+        return self.check_existing_entry(selected_date, "Brand A")
+
+    def _sync_palawan_mc_to_other_brand(self, date, palawan_data, mc_data):
+        pass  # Deprecated; kept for backward compatibility

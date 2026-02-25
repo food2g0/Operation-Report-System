@@ -74,16 +74,12 @@ def build_secure(create_installer=False):
         
         print("      Credentials embedded (hidden from output for security)")
         
-        # Run PyInstaller WITHOUT .env
+        # Run PyInstaller WITHOUT .env  (uses main.spec so field_config.json is bundled)
         print("[3/5] Running PyInstaller (no .env bundled)...")
         cmd = [
             sys.executable, '-m', 'PyInstaller',
-            '--onefile',
-            '--windowed',
-            '--icon=assets/logo.ico',
-            '--name=main',  # Match installer.iss expectation
             '--clean',
-            'main.py'
+            'main.spec'
         ]
         
         result = subprocess.run(cmd, check=True)

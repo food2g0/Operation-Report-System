@@ -1894,3 +1894,86 @@ Params: None
 2026-02-19 10:13:33,504 - INFO - Idle monitor started (timeout: 300s)
 2026-02-19 10:14:07,039 - INFO - MySQL connection pool created successfully
 2026-02-19 10:14:07,041 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:31:18,390 - INFO - MySQL connection pool created successfully
+2026-02-21 09:31:18,392 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:31:27,045 - INFO - MySQL connection pool created successfully
+2026-02-21 09:31:27,046 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:31:36,100 - INFO - MySQL connection pool created successfully
+2026-02-21 09:31:36,101 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:31:54,657 - INFO - MySQL connection pool created successfully
+2026-02-21 09:31:54,659 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:32:26,154 - INFO - MySQL connection pool created successfully
+2026-02-21 09:32:26,155 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:34:29,142 - INFO - MySQL connection pool created successfully
+2026-02-21 09:34:29,143 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:35:20,794 - INFO - MySQL connection pool created successfully
+2026-02-21 09:35:20,796 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:37:06,441 - INFO - MySQL connection pool created successfully
+2026-02-21 09:37:06,443 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:40:41,541 - INFO - MySQL connection pool created successfully
+2026-02-21 09:40:41,543 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:41:33,300 - INFO - MySQL connection pool created successfully
+2026-02-21 09:41:33,301 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:41:33,328 - ERROR - Query failed: (pymysql.err.OperationalError) (1267, "Illegal mix of collations (utf8mb4_unicode_ci,IMPLICIT) and (utf8mb4_general_ci,IMPLICIT) for operation '='")
+[SQL: SELECT SUM(p.sendout_capital) AS total_sendout_capital FROM payable_tbl p INNER JOIN branches b ON p.branch = b.name INNER JOIN corporations c ON b.corporation_id = c.id AND p.corporation = c.name WHERE p.corporation = %(param0)s AND p.date = %(param1)s AND b.is_registered = 1]
+[parameters: {'param0': 'SAN RAMON CORP', 'param1': '2026-02-21'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: SELECT SUM(p.sendout_capital) AS total_sendout_capital FROM payable_tbl p INNER JOIN branches b ON p.branch = b.name INNER JOIN corporations c ON b.corporation_id = c.id AND p.corporation = c.name WHERE p.corporation = %s AND p.date = %s AND b.is_registered = 1
+Params: ('SAN RAMON CORP', '2026-02-21')
+2026-02-21 09:42:23,147 - INFO - MySQL connection pool created successfully
+2026-02-21 09:42:23,148 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:43:54,951 - INFO - MySQL connection pool created successfully
+2026-02-21 09:43:54,953 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:44:11,334 - INFO - MySQL connection pool created successfully
+2026-02-21 09:44:11,334 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:45:11,228 - INFO - MySQL connection pool created successfully
+2026-02-21 09:45:11,230 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:47:50,371 - INFO - MySQL connection pool created successfully
+2026-02-21 09:47:50,373 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:56:23,698 - INFO - MySQL connection pool created successfully
+2026-02-21 09:56:23,699 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 09:57:06,064 - INFO - MySQL connection pool created successfully
+2026-02-21 09:57:06,066 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 10:01:26,849 - INFO - MySQL connection pool created successfully
+2026-02-21 10:01:26,849 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 10:01:38,667 - INFO - MySQL connection pool created successfully
+2026-02-21 10:01:38,668 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 10:01:48,780 - INFO - MySQL connection pool created successfully
+2026-02-21 10:01:48,782 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 10:01:58,051 - INFO - MySQL connection pool created successfully
+2026-02-21 10:01:58,052 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 10:02:09,822 - INFO - MySQL connection pool created successfully
+2026-02-21 10:02:09,823 - INFO - Idle monitor started (timeout: 300s)
+2026-02-21 10:55:53,275 - INFO - MySQL connection pool created successfully
+2026-02-21 10:55:53,277 - INFO - Idle monitor started (timeout: 300s)
+2026-02-24 11:44:53,726 - INFO - MySQL connection pool created successfully
+2026-02-24 11:44:53,728 - INFO - Idle monitor started (timeout: 300s)
+2026-02-24 14:01:30,149 - INFO - MySQL connection pool created successfully
+2026-02-24 14:01:30,150 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 12:02:37,143 - INFO - MySQL connection pool created successfully
+2026-02-25 12:02:37,145 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:20:23,657 - INFO - MySQL connection pool created successfully
+2026-02-25 14:20:23,658 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:20:44,749 - INFO - MySQL connection pool created successfully
+2026-02-25 14:20:44,750 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:20:56,458 - INFO - MySQL connection pool created successfully
+2026-02-25 14:20:56,458 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:23:17,668 - INFO - MySQL connection pool created successfully
+2026-02-25 14:23:17,669 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:23:17,694 - ERROR - Query failed: (pymysql.err.OperationalError) (1305, 'FUNCTION operation_db.chr does not exist')
+[SQL: SELECT username, role, account_type FROM users WHERE role IN (chr(34)+chr(97)+chr(100)+chr(109)+chr(105)+chr(110)+chr(34), chr(34)+chr(115)+chr(117)+chr(112)+chr(101)+chr(114)+chr(95)+chr(97)+chr(100)+chr(109)+chr(105)+chr(110)+chr(34))]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: SELECT username, role, account_type FROM users WHERE role IN (chr(34)+chr(97)+chr(100)+chr(109)+chr(105)+chr(110)+chr(34), chr(34)+chr(115)+chr(117)+chr(112)+chr(101)+chr(114)+chr(95)+chr(97)+chr(100)+chr(109)+chr(105)+chr(110)+chr(34))
+Params: None
+2026-02-25 14:24:25,054 - INFO - MySQL connection pool created successfully
+2026-02-25 14:24:25,056 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:27:08,523 - INFO - MySQL connection pool created successfully
+2026-02-25 14:27:08,524 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:27:16,210 - INFO - MySQL connection pool created successfully
+2026-02-25 14:27:16,211 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:34:18,371 - INFO - MySQL connection pool created successfully
+2026-02-25 14:34:18,372 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 14:38:22,362 - INFO - MySQL connection pool created successfully
+2026-02-25 14:38:22,363 - INFO - Idle monitor started (timeout: 300s)
+2026-02-25 15:24:26,877 - INFO - MySQL connection pool created successfully
+2026-02-25 15:24:26,879 - INFO - Idle monitor started (timeout: 300s)

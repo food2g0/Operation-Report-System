@@ -11,8 +11,11 @@ import datetime
 
 
 class MCPage(QWidget):
-    def __init__(self):
+    def __init__(self, account_type=2):
         super().__init__()
+        self.account_type = account_type
+        # Set correct table based on brand: Brand A -> daily_reports_brand_a, Brand B -> daily_reports
+        self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
         self.setWindowTitle("MC Transactions")
         self.resize(900, 600)
 
@@ -74,17 +77,20 @@ class MCPage(QWidget):
         self.load_corporations()
 
     def load_corporations(self):
-        """Load unique corporations from the daily_reports table"""
+        """Load unique corporations from the daily reports table"""
         self.corp_selector.clear()
         try:
-            # Get distinct corporations from daily_reports table
-            query = "SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation"
+            # Get distinct corporations from appropriate table
+            query = f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation"
             corporations = db_manager.execute_query(query)
 
+            self.corp_selector.blockSignals(True)
             for corp in corporations:
                 self.corp_selector.addItem(corp['corporation'])
+            self.corp_selector.blockSignals(False)
 
         except Exception as e:
+            self.corp_selector.blockSignals(False)
             QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
 
     def populate_table(self):
@@ -97,11 +103,11 @@ class MCPage(QWidget):
 
         try:
             # Query to get MC data for the selected corporation and date
-            query = """
+            query = f"""
                     SELECT branch, 
                            COALESCE(mc_out, 0) as mc_buying, 
                            COALESCE(mc_in, 0) as mc_selling
-                    FROM daily_reports
+                    FROM {self.daily_table}
                     WHERE corporation = %s 
                       AND date = %s
                     ORDER BY branch
@@ -112,7 +118,7 @@ class MCPage(QWidget):
             self.table.setRowCount(0)
 
             if not results:
-                QMessageBox.information(self, "No Data", f"No data found for {selected_date}.")
+                self.table.setRowCount(0)
                 return
 
             total_buying = 0.0

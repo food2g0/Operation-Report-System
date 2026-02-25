@@ -70,16 +70,27 @@ class PalawanDetailsTab(QWidget):
         """Create a Palawan section group with improved styling"""
         group = QGroupBox(title)
         group.setStyleSheet(f"""
+            QGroupBox {{
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                margin-top: 18px;
+                padding: 18px 16px 14px 16px;
+                background-color: #FFFFFF;
+            }}
             QGroupBox::title {{
                 color: {color};
-                font-weight: bold;
-                font-size: 12px;
+                font-weight: 800;
+                font-size: 11px;
+                letter-spacing: 1.2px;
+                padding: 2px 10px;
+                background-color: #FFFFFF;
+                border-radius: 4px;
             }}
         """)
 
         form = QFormLayout()
-        form.setSpacing(8)
-        form.setContentsMargins(15, 20, 15, 15)
+        form.setSpacing(10)
+        form.setContentsMargins(16, 24, 16, 16)
 
         # Create input dictionary
         inputs = {}
@@ -90,13 +101,21 @@ class PalawanDetailsTab(QWidget):
         for label_text, placeholder in fields:
             field = self.create_money_input(placeholder)
             field.textChanged.connect(self.calculate_palawan_totals)
-            form.addRow(QLabel(label_text + ":"), field)
+            label = QLabel(label_text + ":")
+            label.setStyleSheet("font-size: 12px; font-weight: 600; color: #334155;")
+            form.addRow(label, field)
             inputs[label_text] = field
 
         # Section total
         total_display = self.parent.create_display_field("0.00")
-        total_display.setStyleSheet(total_display.styleSheet() + f"color: {color}; font-weight: bold;")
-        form.addRow(QLabel("TOTAL:"), total_display)
+        total_display.setStyleSheet(
+            f"font-weight: 800; font-size: 14px; color: {color}; "
+            f"background-color: #F0F9FF; border: 1px solid #BAE6FD; "
+            f"border-radius: 8px; padding: 8px 12px;"
+        )
+        total_lbl = QLabel("TOTAL:")
+        total_lbl.setStyleSheet(f"font-weight: 700; color: {color}; font-size: 12px;")
+        form.addRow(total_lbl, total_display)
 
         group.setLayout(form)
 
@@ -110,16 +129,27 @@ class PalawanDetailsTab(QWidget):
         """Create the Lotes section with fields for each Palawan type"""
         lotes_group = QGroupBox("LOTES TRANSACTIONS")
         lotes_group.setStyleSheet("""
+            QGroupBox {
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                margin-top: 18px;
+                padding: 18px 16px 14px 16px;
+                background-color: #FFFFFF;
+            }
             QGroupBox::title {
-                color: #8e44ad;
-                font-weight: bold;
-                font-size: 12px;
+                color: #8B5CF6;
+                font-weight: 800;
+                font-size: 11px;
+                letter-spacing: 1.2px;
+                padding: 2px 10px;
+                background-color: #FFFFFF;
+                border-radius: 4px;
             }
         """)
 
         form = QFormLayout()
-        form.setSpacing(8)
-        form.setContentsMargins(15, 20, 15, 15)
+        form.setSpacing(10)
+        form.setContentsMargins(16, 24, 16, 16)
 
         # Create lotes input dictionary
         self.lotes_inputs = {}
@@ -134,14 +164,21 @@ class PalawanDetailsTab(QWidget):
         for label_text, placeholder in lotes_fields:
             field = self.create_money_input(placeholder)
             field.textChanged.connect(self.calculate_lotes_total)
-            form.addRow(QLabel(label_text + ":"), field)
+            label = QLabel(label_text + ":")
+            label.setStyleSheet("font-size: 12px; font-weight: 600; color: #334155;")
+            form.addRow(label, field)
             self.lotes_inputs[label_text] = field
 
         # Lotes total
         self.lotes_total_display = self.parent.create_display_field("0.00")
         self.lotes_total_display.setStyleSheet(
-            self.lotes_total_display.styleSheet() + "color: #8e44ad; font-weight: bold;")
-        form.addRow(QLabel("LOTES TOTAL:"), self.lotes_total_display)
+            "font-weight: 800; font-size: 14px; color: #8B5CF6; "
+            "background-color: #F5F3FF; border: 1px solid #DDD6FE; "
+            "border-radius: 8px; padding: 8px 12px;"
+        )
+        total_lbl = QLabel("LOTES TOTAL:")
+        total_lbl.setStyleSheet("font-weight: 700; color: #8B5CF6; font-size: 12px;")
+        form.addRow(total_lbl, self.lotes_total_display)
 
         lotes_group.setLayout(form)
         return lotes_group

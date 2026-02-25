@@ -30,27 +30,28 @@ class MCCurrencyTab(QWidget):
         instructions_frame = QFrame()
         instructions_frame.setStyleSheet("""
             QFrame {
-                background-color: #e8f5e8;
-                border-left: 4px solid #28a745;
-                border-radius: 4px;
-                padding: 15px;
+                background-color: #F0FDF4;
+                border: 1px solid #BBF7D0;
+                border-left: 4px solid #22C55E;
+                border-radius: 8px;
+                padding: 16px;
                 margin: 10px 0;
             }
         """)
         instructions_layout = QVBoxLayout(instructions_frame)
 
-        note_label = QLabel("💱 MC CURRENCY EXCHANGE")
-        note_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #155724;")
+        note_label = QLabel("\U0001F4B1 MC CURRENCY EXCHANGE")
+        note_label.setStyleSheet("font-weight: 800; font-size: 14px; color: #166534; letter-spacing: 0.5px;")
 
         instruction_label = QLabel(
             "INSTRUCTIONS:\n"
-            "• Select currency type from dropdown\n"
-            "• Enter quantity (pieces)\n"
-            "• Enter rate per unit\n"
-            "• PHP Total will be calculated automatically\n"
-            "• Example: 100 USD × 53.00 = ₱5,300.00"
+            "\u2022 Select currency type from dropdown\n"
+            "\u2022 Enter quantity (pieces)\n"
+            "\u2022 Enter rate per unit\n"
+            "\u2022 PHP Total will be calculated automatically\n"
+            "\u2022 Example: 100 USD \u00d7 53.00 = \u20b15,300.00"
         )
-        instruction_label.setStyleSheet("font-size: 11px; color: #155724; margin-top: 8px;")
+        instruction_label.setStyleSheet("font-size: 11px; color: #166534; margin-top: 8px; line-height: 1.6;")
         instruction_label.setWordWrap(True)
 
         instructions_layout.addWidget(note_label)
@@ -71,34 +72,42 @@ class MCCurrencyTab(QWidget):
         buttons_frame = QFrame()
         buttons_layout = QHBoxLayout(buttons_frame)
 
-        add_btn = QPushButton("➕ Add Currency Entry")
+        add_btn = QPushButton("\u2795 Add Currency Entry")
         add_btn.setStyleSheet("""
             QPushButton {
-                background-color: #28a745;
+                background-color: #22C55E;
                 color: white;
                 border: none;
-                padding: 8px 15px;
-                border-radius: 4px;
-                font-weight: bold;
+                padding: 10px 18px;
+                border-radius: 8px;
+                font-weight: 700;
+                font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #218838;
+                background-color: #16A34A;
+            }
+            QPushButton:pressed {
+                background-color: #15803D;
             }
         """)
         add_btn.clicked.connect(self.add_currency_entry)
 
-        remove_btn = QPushButton("➖ Remove Last Entry")
+        remove_btn = QPushButton("\u2796 Remove Last Entry")
         remove_btn.setStyleSheet("""
             QPushButton {
-                background-color: #dc3545;
-                color: white;
-                border: none;
-                padding: 8px 15px;
-                border-radius: 4px;
-                font-weight: bold;
+                background-color: #FFFFFF;
+                color: #EF4444;
+                border: 2px solid #EF4444;
+                padding: 10px 18px;
+                border-radius: 8px;
+                font-weight: 700;
+                font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #c82333;
+                background-color: #FEF2F2;
+            }
+            QPushButton:pressed {
+                background-color: #FEE2E2;
             }
         """)
         remove_btn.clicked.connect(self.remove_currency_entry)
@@ -126,11 +135,11 @@ class MCCurrencyTab(QWidget):
         entry_frame = QFrame()
         entry_frame.setStyleSheet("""
             QFrame {
-                background-color: #f8f9fa;
-                border: 1px solid #dee2e6;
-                border-radius: 5px;
-                padding: 10px;
-                margin: 5px 0;
+                background-color: #F8FAFC;
+                border: 1px solid #E2E8F0;
+                border-radius: 10px;
+                padding: 12px;
+                margin: 4px 0;
             }
         """)
 
@@ -138,7 +147,7 @@ class MCCurrencyTab(QWidget):
 
         # Entry number label
         num_label = QLabel(f"#{entry_num}")
-        num_label.setStyleSheet("font-weight: bold; font-size: 12px; color: #495057; min-width: 30px;")
+        num_label.setStyleSheet("font-weight: 800; font-size: 13px; color: #3B82F6; min-width: 32px;")
 
         # Currency dropdown
         currency_combo = QComboBox()
@@ -164,44 +173,53 @@ class MCCurrencyTab(QWidget):
             "VND - Vietnamese Dong",
             "TWD - Taiwan Dollar"
         ])
-        currency_combo.setStyleSheet("min-width: 180px; padding: 5px;")
+        currency_combo.setStyleSheet("min-width: 180px; padding: 6px;")
         currency_combo.currentTextChanged.connect(self.calculate_totals)
 
         # Quantity input
         quantity_input = QLineEdit()
         quantity_input.setValidator(QIntValidator(0, 999999))
         quantity_input.setPlaceholderText("Pieces")
-        quantity_input.setStyleSheet("min-width: 80px; padding: 5px;")
+        quantity_input.setStyleSheet("min-width: 80px; padding: 6px;")
         quantity_input.textChanged.connect(self.calculate_totals)
 
         # Rate input
         rate_input = QLineEdit()
         rate_input.setValidator(QDoubleValidator(0.0, 999999.99, 2))
         rate_input.setPlaceholderText("Rate")
-        rate_input.setStyleSheet("min-width: 100px; padding: 5px;")
+        rate_input.setStyleSheet("min-width: 100px; padding: 6px;")
         rate_input.textChanged.connect(self.calculate_totals)
 
         # PHP Total display
-        php_total_display = QLabel("₱0.00")
+        php_total_display = QLabel("\u20b10.00")
         php_total_display.setStyleSheet("""
-            background-color: white;
-            border: 1px solid #ced4da;
-            padding: 5px 10px;
-            border-radius: 3px;
-            min-width: 100px;
-            font-weight: bold;
-            color: #28a745;
+            background-color: #F0FDF4;
+            border: 1px solid #BBF7D0;
+            padding: 6px 12px;
+            border-radius: 8px;
+            min-width: 110px;
+            font-weight: 800;
+            font-size: 13px;
+            color: #22C55E;
         """)
 
         # Layout
         entry_layout.addWidget(num_label)
-        entry_layout.addWidget(QLabel("Currency:"))
+        cur_lbl = QLabel("Currency:")
+        cur_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #64748B;")
+        entry_layout.addWidget(cur_lbl)
         entry_layout.addWidget(currency_combo)
-        entry_layout.addWidget(QLabel("Qty:"))
+        qty_lbl = QLabel("Qty:")
+        qty_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #64748B;")
+        entry_layout.addWidget(qty_lbl)
         entry_layout.addWidget(quantity_input)
-        entry_layout.addWidget(QLabel("Rate:"))
+        rate_lbl = QLabel("Rate:")
+        rate_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #64748B;")
+        entry_layout.addWidget(rate_lbl)
         entry_layout.addWidget(rate_input)
-        entry_layout.addWidget(QLabel("PHP Total:"))
+        php_lbl = QLabel("PHP Total:")
+        php_lbl.setStyleSheet("font-size: 11px; font-weight: 600; color: #64748B;")
+        entry_layout.addWidget(php_lbl)
         entry_layout.addWidget(php_total_display)
 
         # Store entry data
@@ -246,10 +264,10 @@ class MCCurrencyTab(QWidget):
         summary_frame = QFrame()
         summary_frame.setStyleSheet("""
             QFrame {
-                background-color: white;
-                border: 2px solid #28a745;
-                border-radius: 8px;
-                padding: 15px;
+                background-color: #F0FDF4;
+                border: 1px solid #BBF7D0;
+                border-radius: 12px;
+                padding: 16px;
                 margin: 10px 0;
             }
         """)
@@ -257,19 +275,19 @@ class MCCurrencyTab(QWidget):
         summary_layout = QHBoxLayout(summary_frame)
 
         # Summary title
-        summary_title = QLabel("💰 TOTAL MC CURRENCY:")
-        summary_title.setStyleSheet("font-size: 14px; font-weight: bold; color: #28a745;")
+        summary_title = QLabel("\U0001F4B0 TOTAL MC CURRENCY:")
+        summary_title.setStyleSheet("font-size: 14px; font-weight: 800; color: #166534; letter-spacing: 0.3px;")
 
         # Grand total display
-        self.grand_total_display = QLabel("₱0.00")
+        self.grand_total_display = QLabel("\u20b10.00")
         self.grand_total_display.setStyleSheet("""
-            font-size: 18px;
-            font-weight: bold;
-            color: #28a745;
-            background-color: #e8f5e8;
-            padding: 10px 20px;
-            border-radius: 5px;
-            border: 2px solid #28a745;
+            font-size: 20px;
+            font-weight: 800;
+            color: #22C55E;
+            background-color: #FFFFFF;
+            padding: 10px 24px;
+            border-radius: 10px;
+            border: 1px solid #BBF7D0;
         """)
 
         summary_layout.addWidget(summary_title)
