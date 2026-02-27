@@ -641,14 +641,36 @@ class AdminDashboard(QWidget):
         header_frame.setStyleSheet("background-color: white; border-radius: 8px; padding: 10px;")
         header_layout = QVBoxLayout(header_frame)
 
+        # Filter Type Selection (Corporation or OS)
+        filter_type_layout = QHBoxLayout()
+        filter_type_label = QLabel("Filter By:")
+        filter_type_label.setProperty("class", "header")
+        self.filter_type_selector = QComboBox()
+        self.filter_type_selector.addItem("Corporation", "corporation")
+        self.filter_type_selector.addItem("OS", "os")
+        self.filter_type_selector.currentIndexChanged.connect(self.on_filter_type_changed)
+        filter_type_layout.addWidget(filter_type_label)
+        filter_type_layout.addWidget(self.filter_type_selector)
+        filter_type_layout.addStretch()
+        header_layout.addLayout(filter_type_layout)
+
         # Corporation and Branch Selection
         selection_layout = QHBoxLayout()
         selection_layout.setSpacing(15)
 
-        corp_label = QLabel("Corporation:")
-        corp_label.setProperty("class", "header")
+        # Corporation selector
+        self.corp_label = QLabel("Corporation:")
+        self.corp_label.setProperty("class", "header")
         self.corp_selector = QComboBox()
         self.corp_selector.currentTextChanged.connect(self.load_branches)
+
+        # OS selector (hidden by default)
+        self.os_label = QLabel("OS:")
+        self.os_label.setProperty("class", "header")
+        self.os_selector = QComboBox()
+        self.os_selector.currentTextChanged.connect(self.load_branches_by_os)
+        self.os_label.setVisible(False)
+        self.os_selector.setVisible(False)
 
         branch_label = QLabel("Branch:")
         branch_label.setProperty("class", "header")
@@ -665,8 +687,10 @@ class AdminDashboard(QWidget):
         self.load_button.setObjectName("loadButton")
         self.load_button.clicked.connect(self.load_entry_by_date)
 
-        selection_layout.addWidget(corp_label)
+        selection_layout.addWidget(self.corp_label)
         selection_layout.addWidget(self.corp_selector, 1)
+        selection_layout.addWidget(self.os_label)
+        selection_layout.addWidget(self.os_selector, 1)
         selection_layout.addWidget(branch_label)
         selection_layout.addWidget(self.branch_selector, 1)
         selection_layout.addWidget(date_label)
@@ -870,9 +894,23 @@ class AdminDashboard(QWidget):
         """)
         export_button.clicked.connect(self.export_daily_cash_to_excel)
         
+        generate_report_button = QPushButton("📋 Generate Report")
+        generate_report_button.setObjectName("generateReportButton")
+        generate_report_button.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #2980b9;
+            }
+        """)
+        generate_report_button.clicked.connect(self.show_generate_report_dialog)
+        
         action_layout.addWidget(save_button)
         action_layout.addWidget(delete_button)
         action_layout.addWidget(export_button)
+        action_layout.addWidget(generate_report_button)
         layout.addLayout(action_layout)
 
         # Return scroll area instead of main widget
@@ -1279,14 +1317,52 @@ class AdminDashboard(QWidget):
      
         try:
             self.corp_selector.clear()
-            result = self.db.execute_query(f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation")
+            # Query all corporations from corporations table
+            result = self.db.execute_query("SELECT name as corporation FROM corporations ORDER BY name")
             if result:
                 for row in result:
                     if row['corporation']:
                         self.corp_selector.addItem(row['corporation'])
+            # Also load OS options
+            self.load_os_options()
         except Exception as e:
             print(f"Error loading corporations: {e}")
             QMessageBox.critical(self, "Database Error", f"Failed to load corporations: {e}")
+
+    def load_os_options(self):
+        """Load OS names for the OS selector"""
+        try:
+            self.os_selector.clear()
+            result = self.db.execute_query("""
+                SELECT DISTINCT os_name FROM branches 
+                WHERE os_name IS NOT NULL AND os_name != '' 
+                ORDER BY os_name
+            """)
+            if result:
+                for row in result:
+                    os_name = row['os_name'] if isinstance(row, dict) else row[0]
+                    if os_name:
+                        self.os_selector.addItem(os_name)
+        except Exception as e:
+            print(f"Error loading OS options: {e}")
+
+    def on_filter_type_changed(self):
+        """Toggle between Corporation and OS filtering"""
+        filter_type = self.filter_type_selector.currentData()
+        if filter_type == "corporation":
+            self.corp_label.setVisible(True)
+            self.corp_selector.setVisible(True)
+            self.os_label.setVisible(False)
+            self.os_selector.setVisible(False)
+            # Reload branches for current corporation
+            self.load_branches()
+        else:
+            self.corp_label.setVisible(False)
+            self.corp_selector.setVisible(False)
+            self.os_label.setVisible(True)
+            self.os_selector.setVisible(True)
+            # Load branches for current OS
+            self.load_branches_by_os()
 
     def load_branches(self):
     
@@ -1294,11 +1370,13 @@ class AdminDashboard(QWidget):
             self.branch_selector.clear()
             corp_name = self.corp_selector.currentText()
             if corp_name:
-                query = f"""
-                    SELECT DISTINCT branch
-                    FROM {self.daily_table}
-                    WHERE corporation = %s
-                    ORDER BY branch
+                # Query all branches belonging to this corporation
+                query = """
+                    SELECT b.name as branch
+                    FROM branches b
+                    INNER JOIN corporations c ON b.corporation_id = c.id
+                    WHERE c.name = %s
+                    ORDER BY b.name
                 """
                 result = self.db.execute_query(query, [corp_name])
                 if result:
@@ -1307,6 +1385,28 @@ class AdminDashboard(QWidget):
                             self.branch_selector.addItem(row['branch'])
         except Exception as e:
             print(f"Error loading branches: {e}")
+            QMessageBox.critical(self, "Database Error", f"Failed to load branches: {e}")
+
+    def load_branches_by_os(self):
+        """Load branches filtered by OS name"""
+        try:
+            self.branch_selector.clear()
+            os_name = self.os_selector.currentText()
+            if os_name:
+                # Query all branches belonging to this OS
+                query = """
+                    SELECT name as branch
+                    FROM branches
+                    WHERE os_name = %s
+                    ORDER BY name
+                """
+                result = self.db.execute_query(query, [os_name])
+                if result:
+                    for row in result:
+                        if row['branch']:
+                            self.branch_selector.addItem(row['branch'])
+        except Exception as e:
+            print(f"Error loading branches by OS: {e}")
             QMessageBox.critical(self, "Database Error", f"Failed to load branches: {e}")
 
     def _refresh_admin_corporations(self):
@@ -1408,19 +1508,17 @@ class AdminDashboard(QWidget):
     def delete_entry(self):
        
         try:
-            corp_name = self.corp_selector.currentText()
             branch_name = self.branch_selector.currentText()
             selected_date = self.date_picker.date().toString("yyyy-MM-dd")
 
-            if not corp_name or not branch_name:
-                QMessageBox.warning(self, "Selection Required", "Please select corporation and branch.")
+            if not branch_name:
+                QMessageBox.warning(self, "Selection Required", "Please select a branch.")
                 return
 
             reply = QMessageBox.question(
                 self,
                 "Confirm Delete",
                 f"Are you sure you want to delete the entry for:\n\n"
-                f"Corporation: {corp_name}\n"
                 f"Branch: {branch_name}\n"
                 f"Date: {selected_date}\n\n"
                 f"This will allow clients to re-enter data for that day.",
@@ -1433,15 +1531,15 @@ class AdminDashboard(QWidget):
 
             delete_query = f"""
                 DELETE FROM {self.daily_table}
-                WHERE corporation = %s AND branch = %s AND date = %s
+                WHERE branch = %s AND date = %s
             """
-            rows_affected = self.db.execute_query(delete_query, [corp_name, branch_name, selected_date])
+            rows_affected = self.db.execute_query(delete_query, [branch_name, selected_date])
 
             if rows_affected > 0:
                 QMessageBox.information(
                     self,
                     "Success",
-                    f"Entry for {corp_name} / {branch_name} on {selected_date} has been deleted.\n\n"
+                    f"Entry for {branch_name} on {selected_date} has been deleted.\n\n"
                     f"Clients can now re-enter data for that day."
                 )
                 self.clear_all_fields()
@@ -1449,7 +1547,7 @@ class AdminDashboard(QWidget):
                 QMessageBox.information(
                     self,
                     "No Entry Found",
-                    f"No entry found for {corp_name} / {branch_name} on {selected_date}."
+                    f"No entry found for {branch_name} on {selected_date}."
                 )
 
         except Exception as e:
@@ -1468,16 +1566,23 @@ class AdminDashboard(QWidget):
             )
             return
         
-        corp_name = self.corp_selector.currentText()
+        filter_type = self.filter_type_selector.currentData()
+        if filter_type == "corporation":
+            filter_label = "Corporation"
+            filter_value = self.corp_selector.currentText()
+        else:
+            filter_label = "OS"
+            filter_value = self.os_selector.currentText()
+        
         branch_name = self.branch_selector.currentText()
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
         
-        if not corp_name or not branch_name:
-            QMessageBox.warning(self, "Selection Required", "Please select corporation and branch.")
+        if not branch_name:
+            QMessageBox.warning(self, "Selection Required", "Please select a branch.")
             return
         
         # File dialog for save location
-        default_filename = f"DailyCashCount_{corp_name}_{branch_name}_{selected_date}.xlsx"
+        default_filename = f"DailyCashCount_{filter_value}_{branch_name}_{selected_date}.xlsx"
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Excel File",
@@ -1514,8 +1619,8 @@ class AdminDashboard(QWidget):
             ws['A1'].alignment = Alignment(horizontal='center')
             
             # Info section
-            ws['A3'] = "Corporation:"
-            ws['B3'] = corp_name
+            ws['A3'] = f"{filter_label}:"
+            ws['B3'] = filter_value
             ws['A4'] = "Branch:"
             ws['B4'] = branch_name
             ws['A5'] = "Date:"
@@ -1643,25 +1748,364 @@ class AdminDashboard(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Error exporting to Excel: {str(e)}")
 
+    def show_generate_report_dialog(self):
+        """Show dialog to choose between generating report by OS or by Corporation"""
+        from PyQt5.QtWidgets import QDialog, QRadioButton, QButtonGroup
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Generate Daily Cash Count Report")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Report Type Selection
+        type_group = QGroupBox("Report Type")
+        type_layout = QVBoxLayout(type_group)
+        
+        self.report_by_corp_radio = QRadioButton("By Corporation")
+        self.report_by_os_radio = QRadioButton("By OS")
+        self.report_by_corp_radio.setChecked(True)
+        
+        type_layout.addWidget(self.report_by_corp_radio)
+        type_layout.addWidget(self.report_by_os_radio)
+        layout.addWidget(type_group)
+        
+        # Selection Group
+        selection_group = QGroupBox("Select")
+        selection_layout = QVBoxLayout(selection_group)
+        
+        # Corporation selector
+        self.report_corp_label = QLabel("Corporation:")
+        self.report_corp_combo = QComboBox()
+        self.load_report_corporations()
+        
+        # OS selector
+        self.report_os_label = QLabel("OS:")
+        self.report_os_combo = QComboBox()
+        self.load_report_os_list()
+        self.report_os_label.setVisible(False)
+        self.report_os_combo.setVisible(False)
+        
+        selection_layout.addWidget(self.report_corp_label)
+        selection_layout.addWidget(self.report_corp_combo)
+        selection_layout.addWidget(self.report_os_label)
+        selection_layout.addWidget(self.report_os_combo)
+        
+        # Date selector
+        date_label = QLabel("Date:")
+        self.report_date_picker = QDateEdit()
+        self.report_date_picker.setDisplayFormat("yyyy-MM-dd")
+        self.report_date_picker.setCalendarPopup(True)
+        self.report_date_picker.setDate(QDate.currentDate())
+        selection_layout.addWidget(date_label)
+        selection_layout.addWidget(self.report_date_picker)
+        
+        layout.addWidget(selection_group)
+        
+        # Connect radio buttons to toggle visibility
+        self.report_by_corp_radio.toggled.connect(self.toggle_report_selection)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        generate_btn = QPushButton("Generate Report")
+        generate_btn.setStyleSheet("background-color: #217346; color: white; padding: 8px 16px;")
+        cancel_btn = QPushButton("Cancel")
+        
+        generate_btn.clicked.connect(lambda: self.generate_daily_cash_report(dialog))
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(generate_btn)
+        layout.addLayout(button_layout)
+        
+        dialog.exec_()
+
+    def toggle_report_selection(self):
+        """Toggle between Corporation and OS selection"""
+        by_corp = self.report_by_corp_radio.isChecked()
+        self.report_corp_label.setVisible(by_corp)
+        self.report_corp_combo.setVisible(by_corp)
+        self.report_os_label.setVisible(not by_corp)
+        self.report_os_combo.setVisible(not by_corp)
+
+    def load_report_corporations(self):
+        """Load corporations for report dialog"""
+        try:
+            # Query all corporations from corporations table
+            query = "SELECT name as corporation FROM corporations ORDER BY name"
+            result = db_manager.execute_query(query)
+            if result:
+                for row in result:
+                    self.report_corp_combo.addItem(row['corporation'])
+        except Exception as e:
+            print(f"Error loading corporations: {e}")
+
+    def load_report_os_list(self):
+        """Load OS list for report dialog"""
+        try:
+            query = """
+                SELECT DISTINCT os_name FROM branches 
+                WHERE os_name IS NOT NULL AND os_name != '' 
+                ORDER BY os_name
+            """
+            result = db_manager.execute_query(query)
+            if result:
+                for row in result:
+                    os_name = row['os_name'] if isinstance(row, dict) else row[0]
+                    self.report_os_combo.addItem(os_name)
+        except Exception as e:
+            print(f"Error loading OS list: {e}")
+
+    def generate_daily_cash_report(self, dialog):
+        """Generate Daily Cash Count report by Corporation or OS with all debit/credit fields"""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            QMessageBox.critical(self, "Missing Dependency", 
+                "The openpyxl package is required.\nInstall with: pip install openpyxl")
+            return
+        
+        by_corp = self.report_by_corp_radio.isChecked()
+        selected_date = self.report_date_picker.date().toString("yyyy-MM-dd")
+        
+        # Build list of all columns to select
+        debit_columns = list(self.debit_fields.values())
+        credit_columns = list(self.credit_fields.values())
+        all_columns = ['branch', 'beginning_balance'] + debit_columns + ['debit_total'] + credit_columns + ['credit_total', 'ending_balance', 'cash_count', 'cash_result']
+        
+        # Build SELECT clause
+        select_parts = []
+        for col in all_columns:
+            select_parts.append(f"COALESCE(dr.{col}, 0) as {col}" if col != 'branch' else "dr.branch")
+        select_clause = ", ".join(select_parts)
+        
+        if by_corp:
+            filter_value = self.report_corp_combo.currentText()
+            filter_label = "Corporation"
+            query = f"""
+                SELECT {select_clause}
+                FROM {self.daily_table} dr
+                WHERE dr.corporation = %s AND dr.date = %s
+                ORDER BY dr.branch
+            """
+            params = (filter_value, selected_date)
+        else:
+            filter_value = self.report_os_combo.currentText()
+            filter_label = "OS"
+            query = f"""
+                SELECT {select_clause}
+                FROM {self.daily_table} dr
+                INNER JOIN branches b ON dr.branch = b.name
+                WHERE b.os_name = %s AND dr.date = %s
+                ORDER BY dr.branch
+            """
+            params = (filter_value, selected_date)
+        
+        if not filter_value:
+            QMessageBox.warning(self, "Selection Required", f"Please select a {filter_label}.")
+            return
+        
+        results = db_manager.execute_query(query, params)
+        
+        if not results:
+            QMessageBox.warning(self, "No Data", f"No data found for {filter_value} on {selected_date}.")
+            return
+        
+        # File dialog
+        default_filename = f"DailyCashCount_{filter_label}_{filter_value}_{selected_date}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", default_filename, "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Daily Cash Count"
+            
+            # Styles
+            title_font = Font(bold=True, size=14)
+            header_font = Font(bold=True, size=9, color="FFFFFF")
+            debit_fill = PatternFill(start_color="27AE60", end_color="27AE60", fill_type="solid")
+            credit_fill = PatternFill(start_color="E74C3C", end_color="E74C3C", fill_type="solid")
+            summary_fill = PatternFill(start_color="F39C12", end_color="F39C12", fill_type="solid")
+            total_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+            thin = Side(style='thin')
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            
+            # Title
+            ws['A1'] = "Daily Cash Count Report"
+            ws['A1'].font = title_font
+            
+            # Info
+            ws['A3'] = f"{filter_label}:"
+            ws['B3'] = filter_value
+            ws['A4'] = "Date:"
+            ws['B4'] = selected_date
+            ws['A3'].font = Font(bold=True)
+            ws['A4'].font = Font(bold=True)
+            
+            # Build headers
+            header_row = 6
+            headers = ["Branch", "Beg. Balance"]
+            
+            # Debit headers
+            for label in self.debit_fields.keys():
+                headers.append(label)
+            headers.append("Debit Total")
+            
+            # Credit headers
+            for label in self.credit_fields.keys():
+                headers.append(label)
+            headers.append("Credit Total")
+            
+            # Summary headers
+            headers.extend(["Ending Balance", "Cash Count", "Short/Over"])
+            
+            # Calculate column positions for coloring
+            debit_start = 3  # Column C
+            debit_end = debit_start + len(self.debit_fields)  # Includes Debit Total
+            credit_start = debit_end + 1
+            credit_end = credit_start + len(self.credit_fields)  # Includes Credit Total
+            summary_start = credit_end + 1
+            
+            # Write headers with appropriate colors
+            for col_idx, header in enumerate(headers, 1):
+                cell = ws.cell(row=header_row, column=col_idx, value=header)
+                cell.font = header_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                
+                if col_idx >= debit_start and col_idx <= debit_end:
+                    cell.fill = debit_fill
+                elif col_idx >= credit_start and col_idx <= credit_end:
+                    cell.fill = credit_fill
+                elif col_idx >= summary_start:
+                    cell.fill = summary_fill
+                else:
+                    cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            
+            # Initialize totals
+            totals = {col: 0.0 for col in all_columns if col != 'branch'}
+            
+            # Write data rows
+            for row_idx, row_data in enumerate(results, header_row + 1):
+                col_idx = 1
+                
+                # Branch
+                ws.cell(row=row_idx, column=col_idx, value=row_data['branch']).border = border
+                col_idx += 1
+                
+                # Beginning Balance
+                val = float(row_data.get('beginning_balance', 0) or 0)
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                totals['beginning_balance'] = totals.get('beginning_balance', 0) + val
+                col_idx += 1
+                
+                # Debit fields
+                for db_col in debit_columns:
+                    val = float(row_data.get(db_col, 0) or 0)
+                    cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    totals[db_col] = totals.get(db_col, 0) + val
+                    col_idx += 1
+                
+                # Debit Total
+                val = float(row_data.get('debit_total', 0) or 0)
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True)
+                totals['debit_total'] = totals.get('debit_total', 0) + val
+                col_idx += 1
+                
+                # Credit fields
+                for db_col in credit_columns:
+                    val = float(row_data.get(db_col, 0) or 0)
+                    cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    totals[db_col] = totals.get(db_col, 0) + val
+                    col_idx += 1
+                
+                # Credit Total
+                val = float(row_data.get('credit_total', 0) or 0)
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True)
+                totals['credit_total'] = totals.get('credit_total', 0) + val
+                col_idx += 1
+                
+                # Summary fields
+                for summary_col in ['ending_balance', 'cash_count', 'cash_result']:
+                    val = float(row_data.get(summary_col, 0) or 0)
+                    cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    totals[summary_col] = totals.get(summary_col, 0) + val
+                    col_idx += 1
+            
+            # Total row
+            total_row = header_row + len(results) + 1
+            col_idx = 1
+            
+            cell = ws.cell(row=total_row, column=col_idx, value="TOTAL")
+            cell.font = Font(bold=True)
+            cell.fill = total_fill
+            cell.border = border
+            col_idx += 1
+            
+            # Write totals for all numeric columns
+            for col_key in ['beginning_balance'] + debit_columns + ['debit_total'] + credit_columns + ['credit_total', 'ending_balance', 'cash_count', 'cash_result']:
+                cell = ws.cell(row=total_row, column=col_idx, value=totals.get(col_key, 0))
+                cell.number_format = '#,##0.00'
+                cell.font = Font(bold=True)
+                cell.fill = total_fill
+                cell.border = border
+                col_idx += 1
+            
+            # Auto-adjust column widths
+            for col_idx in range(1, len(headers) + 1):
+                col_letter = get_column_letter(col_idx)
+                if col_idx == 1:
+                    ws.column_dimensions[col_letter].width = 20
+                else:
+                    ws.column_dimensions[col_letter].width = 12
+            
+            wb.save(file_path)
+            dialog.accept()
+            QMessageBox.information(self, "Export Successful", f"Report exported to:\n{file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Error exporting: {str(e)}")
+
     def load_entry_by_date(self):
-       
-        corp_name = self.corp_selector.currentText()
+        filter_type = self.filter_type_selector.currentData()
         branch_name = self.branch_selector.currentText()
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
 
-        if not corp_name or not branch_name:
-            QMessageBox.warning(self, "Missing Selection", "Please select corporation and branch.")
+        if not branch_name:
+            QMessageBox.warning(self, "Missing Selection", "Please select a branch.")
             return
 
         try:
+            # Query by branch and date (works for both Corporation and OS filtering)
             query = f"""
                 SELECT *
                 FROM {self.daily_table}
-                WHERE corporation = %s
-                  AND branch = %s
+                WHERE branch = %s
                   AND date = %s
             """
-            result = self.db.execute_query(query, [corp_name, branch_name, selected_date])
+            result = self.db.execute_query(query, [branch_name, selected_date])
 
             if not result:
                 QMessageBox.information(self, "No Entry", f"No entry found for {selected_date}.")
@@ -1764,19 +2208,17 @@ class AdminDashboard(QWidget):
             QMessageBox.warning(self, "No Entry Loaded", "Please load an entry first before saving.")
             return
 
-        corp_name = self.corp_selector.currentText()
         branch_name = self.branch_selector.currentText()
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
 
-        if not corp_name or not branch_name:
-            QMessageBox.warning(self, "Selection Required", "Please select corporation and branch.")
+        if not branch_name:
+            QMessageBox.warning(self, "Selection Required", "Please select a branch.")
             return
 
         reply = QMessageBox.question(
             self,
             "Confirm Save",
             f"Are you sure you want to save changes for:\n\n"
-            f"Corporation: {corp_name}\n"
             f"Branch: {branch_name}\n"
             f"Date: {selected_date}\n\n"
             f"This will update the existing entry.",
@@ -1862,12 +2304,12 @@ class AdminDashboard(QWidget):
                 set_clauses.append(f"`{col}` = %s")
                 values.append(val)
             
-            values.extend([corp_name, branch_name, selected_date])
+            values.extend([branch_name, selected_date])
             
             update_query = f"""
                 UPDATE {self.daily_table}
                 SET {', '.join(set_clauses)}
-                WHERE corporation = %s AND branch = %s AND date = %s
+                WHERE branch = %s AND date = %s
             """
             
             rows_affected = self.db.execute_query(update_query, values)

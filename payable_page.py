@@ -111,6 +111,10 @@ class PayablesPage(QWidget):
         # ── SET FLAG: stops on_item_changed from saving while we fill the table ──
         self._is_loading = True
 
+        # ── Disable UI updates during population for 600+ row performance ──
+        self.table.setUpdatesEnabled(False)
+        self.table.blockSignals(True)
+
         try:
             # ── Build SELECT columns (always the same) ────────────────────────
             select_cols = f"""
@@ -136,9 +140,9 @@ class PayablesPage(QWidget):
                            COALESCE(dr.palawan_pay_out_incentives, 0)          AS po_incentives,
                            dr.corporation                                      AS corp_name
                     FROM {self.daily_table} dr
-                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN branches b ON dr.branch = b.name
                     INNER JOIN corporations c ON b.corporation_id = c.id
-                           AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                           AND dr.corporation = c.name
             """
 
             # ── Build WHERE clauses dynamically ───────────────────────────────
@@ -166,14 +170,17 @@ class PayablesPage(QWidget):
 
             if not results:
                 self._is_loading = False
+                self.table.blockSignals(False)
+                self.table.setUpdatesEnabled(True)
                 QMessageBox.information(self, "No Data", f"No data found for {selected_date}.")
                 return
 
             column_totals = [0.0] * (self.table.columnCount() - 1)
-            row_count     = 0
+            
+            # ── Pre-allocate rows for better performance with 600+ branches ──
+            self.table.setRowCount(len(results))
 
-            for row_data in results:
-                self.table.insertRow(row_count)
+            for row_count, row_data in enumerate(results):
 
                 branch_name = row_data['branch'] if isinstance(row_data, dict) else row_data[0]
                 # Store the corporation this branch belongs to (for cross-corp OS filtering)
@@ -229,8 +236,6 @@ class PayablesPage(QWidget):
                 self.table.setItem(row_count, 19, item)
                 column_totals[18] += inc_val
 
-                row_count += 1
-
             self.add_totals_row(column_totals)
             self.add_group_headers_visual()
             QTimer.singleShot(200, self.adjust_responsive_widths)
@@ -243,15 +248,21 @@ class PayablesPage(QWidget):
             import traceback; traceback.print_exc()
 
         finally:
+            # ── RE-ENABLE UI updates and signals ──────────────────────────────
+            self.table.blockSignals(False)
+            self.table.setUpdatesEnabled(True)
             # ── CLEAR FLAG: user edits can now trigger auto-save again ──────
             self._is_loading = False
 
     # ─────────────────────────────────────────────────────────────────────────
     def _sync_inc_to_payable(self, selected_date):
         """Sync palawan_pay_out_incentives (INC) from daily_reports into payable_tbl
-        so that report_page can read them."""
+        so that report_page can read them. Uses batch execution for performance."""
         try:
             totals_row = self.table.rowCount() - 1
+            
+            # Collect all rows data first
+            batch_params = []
             for row in range(totals_row):
                 branch_item = self.table.item(row, 0)
                 if not branch_item:
@@ -271,7 +282,17 @@ class PayablesPage(QWidget):
                     except ValueError:
                         return 0.0
 
-                db_manager.execute_query("""
+                batch_params.append((
+                    row_corp, branch, selected_date,
+                    get(2),  get(3),  get(4),  get(5),
+                    get(7),  get(8),  get(9),  get(10),
+                    get(12), get(13), get(14), get(15),
+                    get(16), get(17), get(18), inc_val,
+                ))
+
+            # Execute batch upsert if we have data
+            if batch_params:
+                db_manager.execute_many("""
                     INSERT INTO payable_tbl (
                         corporation, branch, date,
                         sendout_capital, sendout_sc, sendout_commission, sendout_total,
@@ -289,13 +310,7 @@ class PayablesPage(QWidget):
                     ON DUPLICATE KEY UPDATE
                         inc        = VALUES(inc),
                         updated_at = CURRENT_TIMESTAMP
-                """, (
-                    row_corp, branch, selected_date,
-                    get(2),  get(3),  get(4),  get(5),
-                    get(7),  get(8),  get(9),  get(10),
-                    get(12), get(13), get(14), get(15),
-                    get(16), get(17), get(18), inc_val,
-                ))
+                """, batch_params)
         except Exception as e:
             print(f"INC auto-sync error: {e}")
 
@@ -331,7 +346,7 @@ class PayablesPage(QWidget):
 
     # ─────────────────────────────────────────────────────────────────────────
     def save_single_row_adjustments(self, row):
-        """Auto-save INC value for one row immediately after edit."""
+        """Auto-save INC value for one row immediately after edit using upsert."""
         if self._is_loading:
             return
         if row >= self.table.rowCount() - 1:  # skip totals row
@@ -364,57 +379,42 @@ class PayablesPage(QWidget):
             cancellation = get(18)  # From daily_reports (read-only in UI)
             inc          = get(19)  # Editable by user
 
-            # Check if a record already exists for this branch/date
-            check = db_manager.execute_query(
-                "SELECT id FROM payable_tbl "
-                "WHERE corporation = %s AND branch = %s AND date = %s LIMIT 1",
-                (corp, branch, selected_date)
-            )
-
-            if check:
-                # Record exists — update INC and also sync SKID/SKIR/CANCELLATION from daily_reports
-                db_manager.execute_query("""
-                    UPDATE payable_tbl
-                       SET skid         = %s,
-                           skir         = %s,
-                           cancellation = %s,
-                           inc          = %s,
-                           updated_at   = CURRENT_TIMESTAMP
-                     WHERE corporation = %s
-                       AND branch      = %s
-                       AND date        = %s
-                """, (skid, skir, cancellation, inc, corp, branch, selected_date))
-            else:
-                # No record yet — insert full row so all columns are populated
-                db_manager.execute_query("""
-                    INSERT INTO payable_tbl (
-                        corporation, branch, date,
-                        sendout_capital, sendout_sc, sendout_commission, sendout_total,
-                        payout_capital,  payout_sc,  payout_commission,  payout_total,
-                        international_capital, international_sc,
-                        international_commission, international_total,
-                        skid, skir, cancellation, inc
-                    ) VALUES (
-                        %s, %s, %s,
-                        %s, %s, %s, %s,
-                        %s, %s, %s, %s,
-                        %s, %s, %s, %s,
-                        %s, %s, %s, %s
-                    )
-                """, (
-                    corp, branch, selected_date,
-                    get(2),  get(3),  get(4),  get(5),
-                    get(7),  get(8),  get(9),  get(10),
-                    get(12), get(13), get(14), get(15),
-                    skid, skir, cancellation, inc,
-                ))
+            # Use upsert - no need for a separate SELECT check
+            db_manager.execute_query("""
+                INSERT INTO payable_tbl (
+                    corporation, branch, date,
+                    sendout_capital, sendout_sc, sendout_commission, sendout_total,
+                    payout_capital,  payout_sc,  payout_commission,  payout_total,
+                    international_capital, international_sc,
+                    international_commission, international_total,
+                    skid, skir, cancellation, inc
+                ) VALUES (
+                    %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s, %s, %s, %s
+                )
+                ON DUPLICATE KEY UPDATE
+                    skid         = VALUES(skid),
+                    skir         = VALUES(skir),
+                    cancellation = VALUES(cancellation),
+                    inc          = VALUES(inc),
+                    updated_at   = CURRENT_TIMESTAMP
+            """, (
+                corp, branch, selected_date,
+                get(2),  get(3),  get(4),  get(5),
+                get(7),  get(8),  get(9),  get(10),
+                get(12), get(13), get(14), get(15),
+                skid, skir, cancellation, inc,
+            ))
 
         except Exception as e:
             print(f"Auto-save error for branch '{branch}': {e}")
 
     # ─────────────────────────────────────────────────────────────────────────
     def save_to_database(self):
-        """Manual save — writes every row to payable_tbl."""
+        """Manual save — writes every row to payable_tbl using batch execution."""
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
 
         if self.table.rowCount() == 0:
@@ -422,9 +422,6 @@ class PayablesPage(QWidget):
             return
 
         try:
-            saved_count   = 0
-            updated_count = 0
-            error_count   = 0
             totals_row    = self.table.rowCount() - 1
 
             upsert = """
@@ -469,6 +466,8 @@ class PayablesPage(QWidget):
                 except ValueError:
                     return 0.0
 
+            # Collect all row data for batch execution
+            batch_params = []
             for row in range(totals_row):
                 branch_item = self.table.item(row, 0)
                 if not branch_item:
@@ -479,34 +478,26 @@ class PayablesPage(QWidget):
                 if not row_corp:
                     continue
 
-                try:
-                    check = db_manager.execute_query(
-                        "SELECT id FROM payable_tbl "
-                        "WHERE corporation=%s AND branch=%s AND date=%s LIMIT 1",
-                        (row_corp, branch, selected_date)
-                    )
-                    exists = bool(check)
+                batch_params.append((
+                    row_corp, branch, selected_date,
+                    get(row,2),  get(row,3),  get(row,4),  get(row,5),
+                    get(row,7),  get(row,8),  get(row,9),  get(row,10),
+                    get(row,12), get(row,13), get(row,14), get(row,15),
+                    get(row,16), get(row,17), get(row,18), get(row,19),
+                ))
 
-                    db_manager.execute_query(upsert, (
-                        row_corp, branch, selected_date,
-                        get(row,2),  get(row,3),  get(row,4),  get(row,5),
-                        get(row,7),  get(row,8),  get(row,9),  get(row,10),
-                        get(row,12), get(row,13), get(row,14), get(row,15),
-                        get(row,16), get(row,17), get(row,18), get(row,19),
-                    ))
+            # Execute batch upsert
+            if batch_params:
+                result = db_manager.execute_many(upsert, batch_params)
+                saved_count = len(batch_params) if result is not None else 0
+                error_count = 0 if result is not None else len(batch_params)
+            else:
+                saved_count = 0
+                error_count = 0
 
-                    updated_count += 1 if exists else 0
-                    saved_count   += 0 if exists else 1
-
-                except Exception as e:
-                    print(f"Save error for '{branch}': {e}")
-                    error_count += 1
-
-            msg = (f"Save Complete!\n\n"
-                   f"New records:     {saved_count}\n"
-                   f"Updated records: {updated_count}\n")
+            msg = f"Save Complete!\n\nRecords saved: {saved_count}\n"
             if error_count:
-                msg += f"Errors:          {error_count}\n"
+                msg += f"Errors:        {error_count}\n"
             corp_display = self.corp_selector.currentText() or "All Corporations"
             msg += f"\nCorporation: {corp_display}\nDate: {selected_date}"
             QMessageBox.information(self, "Save Successful", msg)

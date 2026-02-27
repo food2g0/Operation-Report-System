@@ -20,30 +20,41 @@ class FundTransferPage(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
 
+        # ── Report Type Selector (per Corporation or per OS) ─────────────────
+        report_type_layout = QHBoxLayout()
+        report_type_layout.addWidget(QLabel("Report Type:"))
+        self.report_type_selector = QComboBox()
+        self.report_type_selector.addItem("Corporation", "corporation")
+        self.report_type_selector.addItem("Group", "os")
+        self.report_type_selector.currentIndexChanged.connect(self.on_report_type_changed)
+        report_type_layout.addWidget(self.report_type_selector)
+        report_type_layout.addStretch()
+        self.layout.addLayout(report_type_layout)
 
+        # ── Corporation Selector ─────────────────────────────────────────────
+        self.corp_label = QLabel("Select Corporation:")
         self.corp_selector = QComboBox()
         self.corp_selector.currentTextChanged.connect(self.populate_table)
 
-        self.brand_selector = QComboBox()
-        self.brand_selector.addItem("Brand A", "daily_reports_brand_a")
-        self.brand_selector.addItem("Brand B", "daily_reports")
-        # Set default brand based on account_type
-        if account_type == 1:
-            self.brand_selector.setCurrentIndex(0)  # Brand A
-        else:
-            self.brand_selector.setCurrentIndex(1)  # Brand B
-        self.brand_selector.currentIndexChanged.connect(self.populate_table)
+        # ── OS Selector (hidden by default) ──────────────────────────────────
+        self.os_label = QLabel("Select Group:")
+        self.os_selector = QComboBox()
+        self.os_selector.currentTextChanged.connect(self.populate_table)
+        self.os_label.setVisible(False)
+        self.os_selector.setVisible(False)
+
+        # Brand is fixed to Brand A (daily_reports_brand_a)
+        self.daily_table = "daily_reports_brand_a"
 
         self.date_selector = QDateEdit(calendarPopup=True)
         self.date_selector.setDate(QDate.currentDate())
         self.date_selector.setDisplayFormat("yyyy-MM-dd")
         self.date_selector.dateChanged.connect(self.populate_table)
 
-
-        self.layout.addWidget(QLabel("Select Corporation:"))
+        self.layout.addWidget(self.corp_label)
         self.layout.addWidget(self.corp_selector)
-        self.layout.addWidget(QLabel("Select Brand:"))
-        self.layout.addWidget(self.brand_selector)
+        self.layout.addWidget(self.os_label)
+        self.layout.addWidget(self.os_selector)
         self.layout.addWidget(QLabel("Select Date:"))
         self.layout.addWidget(self.date_selector)
 
@@ -106,12 +117,28 @@ class FundTransferPage(QWidget):
         self.layout.addLayout(signature_layout)
 
         self.load_corporations()
+        self.load_os_list()
+
+    def on_report_type_changed(self):
+        """Toggle between Corporation and OS mode"""
+        report_type = self.report_type_selector.currentData()
+        if report_type == "corporation":
+            self.corp_label.setVisible(True)
+            self.corp_selector.setVisible(True)
+            self.os_label.setVisible(False)
+            self.os_selector.setVisible(False)
+        else:
+            self.corp_label.setVisible(False)
+            self.corp_selector.setVisible(False)
+            self.os_label.setVisible(True)
+            self.os_selector.setVisible(True)
+        self.populate_table()
 
     def load_corporations(self):
-        """Load unique corporations from the daily_reports table"""
+        """Load unique corporations from the daily_reports_brand_a table"""
         self.corp_selector.clear()
         try:
-            query = "SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation"
+            query = "SELECT DISTINCT corporation FROM daily_reports_brand_a ORDER BY corporation"
             corporations = db_manager.execute_query(query)
 
             if not corporations:
@@ -127,6 +154,31 @@ class FundTransferPage(QWidget):
             self.corp_selector.blockSignals(False)
             print(f"Error loading corporations: {e}")
             QMessageBox.critical(self, "Database Error", f"Error connecting to database: {str(e)}")
+
+    def load_os_list(self):
+        """Load unique OS names from the branches table"""
+        self.os_selector.clear()
+        try:
+            query = """
+                SELECT DISTINCT os_name FROM branches 
+                WHERE os_name IS NOT NULL AND os_name != '' 
+                ORDER BY os_name
+            """
+            os_list = db_manager.execute_query(query)
+
+            if not os_list:
+                print("No OS found in database")
+                return
+
+            self.os_selector.blockSignals(True)
+            for os_row in os_list:
+                os_name = os_row['os_name'] if isinstance(os_row, dict) else os_row[0]
+                self.os_selector.addItem(os_name)
+            self.os_selector.blockSignals(False)
+
+        except Exception as e:
+            self.os_selector.blockSignals(False)
+            print(f"Error loading OS list: {e}")
 
     def on_item_changed(self, item):
         """Handle when user edits a cell"""
@@ -182,37 +234,52 @@ class FundTransferPage(QWidget):
         self.table.itemChanged.connect(self.on_item_changed)
 
     def populate_table(self):
-        """Populate table with data from the selected brand's daily_reports table"""
-        corp = self.corp_selector.currentText()
+        """Populate table with data from daily_reports_brand_a based on report type"""
         selected_date = self.date_selector.date().toString("yyyy-MM-dd")
-        table_name = self.brand_selector.currentData() or "daily_reports"
+        report_type = self.report_type_selector.currentData()
 
-        if not corp:
-            return
+        # Determine filter based on report type
+        if report_type == "corporation":
+            filter_value = self.corp_selector.currentText()
+            if not filter_value:
+                return
+            query = f"""
+                SELECT dr.branch,
+                       COALESCE(dr.cash_count, 0) as cash_count
+                FROM {self.daily_table} dr
+                WHERE dr.corporation = %s
+                  AND dr.date = %s
+                ORDER BY dr.branch
+            """
+            params = (filter_value, selected_date)
+        else:  # OS mode
+            filter_value = self.os_selector.currentText()
+            if not filter_value:
+                return
+            query = f"""
+                SELECT dr.branch,
+                       COALESCE(dr.cash_count, 0) as cash_count
+                FROM {self.daily_table} dr
+                INNER JOIN branches b ON dr.branch = b.name
+                WHERE b.os_name = %s
+                  AND dr.date = %s
+                ORDER BY dr.branch
+            """
+            params = (filter_value, selected_date)
 
         try:
-            # Get all branches for the corporation and date with cash count
-            query = f"""
-                    SELECT branch,
-                           COALESCE(cash_count, 0) as cash_count
-                    FROM {table_name}
-                    WHERE corporation = %s
-                      AND date = %s
-                    ORDER BY branch
-                    """
-
-            results = db_manager.execute_query(query, (corp, selected_date))
+            results = db_manager.execute_query(query, params)
             self.table.setRowCount(0)
 
             if not results:
-                print(f"No data found for {corp} on {selected_date}")
+                print(f"No data found for {filter_value} on {selected_date}")
                 self.table.setRowCount(0)
                 return
 
             total_cash_count = 0.0
             row_count = 0
 
-            print(f"Loading data for corporation: {corp}, date: {selected_date}")  # Debug
+            print(f"Loading data for {report_type}: {filter_value}, date: {selected_date}")  # Debug
 
             for row_data in results:
                 branch_name = row_data['branch']
@@ -300,7 +367,14 @@ class FundTransferPage(QWidget):
             )
             return
         
-        corp = self.corp_selector.currentText()
+        report_type = self.report_type_selector.currentData()
+        if report_type == "corporation":
+            filter_name = self.corp_selector.currentText()
+            filter_label = "Corporation"
+        else:
+            filter_name = self.os_selector.currentText()
+            filter_label = "OS"
+        
         date = self.date_selector.date().toString("yyyy-MM-dd")
         
         rows = self.table.rowCount()
@@ -311,7 +385,7 @@ class FundTransferPage(QWidget):
             return
         
         # File dialog for save location
-        default_filename = f"Fund_Transfer_Report_{corp}_{date}.xlsx"
+        default_filename = f"Fund_Transfer_Report_{filter_label}_{filter_name}_{date}.xlsx"
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             "Save Excel File",
@@ -345,9 +419,9 @@ class FundTransferPage(QWidget):
             ws['A1'].font = title_font
             ws['A1'].alignment = Alignment(horizontal='center')
             
-            # Info
-            ws['A3'] = "Corporation:"
-            ws['B3'] = corp
+            # Info - show Corporation or OS based on report type
+            ws['A3'] = f"{filter_label}:"
+            ws['B3'] = filter_name
             ws['A4'] = "Date:"
             ws['B4'] = date
             ws['A3'].font = Font(bold=True)
@@ -416,9 +490,17 @@ class FundTransferPage(QWidget):
                 QMessageBox.warning(self, "No Data", "No data to print.")
                 return
 
+            report_type = self.report_type_selector.currentData()
+            if report_type == "corporation":
+                filter_name = self.corp_selector.currentText()
+                filter_label = "Corporation"
+            else:
+                filter_name = self.os_selector.currentText()
+                filter_label = "OS"
+
             doc = QTextDocument()
             html = "<h2>Fund Transfer Report</h2>"
-            html += f"<p><b>Corporation:</b> {self.corp_selector.currentText()}<br>"
+            html += f"<p><b>{filter_label}:</b> {filter_name}<br>"
             html += f"<b>Date:</b> {self.date_selector.date().toString('yyyy-MM-dd')}</p>"
             html += "<table border='1' cellspacing='0' cellpadding='4' style='border-collapse: collapse;'>"
 
