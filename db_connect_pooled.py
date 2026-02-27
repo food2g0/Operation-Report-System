@@ -282,6 +282,57 @@ class DatabaseManagerPooled:
         self.execute_cached_query.cache_clear()
         self.logger.info("Query cache cleared")
 
+    def execute_many(self, query: str, params_list: List[tuple], chunk_size: int = 100) -> Optional[int]:
+        """
+        Execute the same query with multiple parameter sets in batched transactions.
+        Much faster than calling execute_query() in a loop.
+        
+        Args:
+            query: SQL query with %s placeholders
+            params_list: List of tuples, each containing parameters for one execution
+            chunk_size: Number of operations per transaction (default 100, good for 600+ rows)
+            
+        Returns:
+            Total number of affected rows, or None on error
+        """
+        if not params_list:
+            return 0
+            
+        with self.lock:
+            if not self.reconnect_if_needed():
+                self.logger.error("Failed to connect to database")
+                return None
+            self.last_used = time.time()
+
+        try:
+            # Convert %s placeholders to :param0, :param1, etc.
+            modified_query = query
+            placeholder_count = query.count("%s")
+            for i in range(placeholder_count):
+                modified_query = modified_query.replace("%s", f":param{i}", 1)
+            
+            # Convert list of tuples to list of dicts
+            param_dicts = []
+            for params in params_list:
+                param_dict = {f"param{i}": val for i, val in enumerate(params)}
+                param_dicts.append(param_dict)
+            
+            # Execute in chunks to avoid timeouts with 600+ rows
+            total_rows = 0
+            for i in range(0, len(param_dicts), chunk_size):
+                chunk = param_dicts[i:i + chunk_size]
+                with self.engine.connect() as conn:
+                    for param_dict in chunk:
+                        result = conn.execute(text(modified_query), param_dict)
+                        total_rows += result.rowcount
+                    conn.commit()
+            
+            return total_rows
+
+        except Exception as e:
+            self.logger.error(f"Batch query failed: {e}\nQuery: {query}")
+            return None
+
     def test_connection(self) -> bool:
         """Test database connection (auto-reconnects if needed)"""
         with self.lock:

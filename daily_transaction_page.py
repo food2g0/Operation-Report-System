@@ -503,7 +503,7 @@ class DailyTransactionPage(QWidget):
         total_label = QTableWidgetItem("TOTAL")
         total_label.setFont(QFont("", 10, QFont.Bold))
         total_label.setData(Qt.BackgroundRole, QBrush(QColor("#343a40")))
-        total_label.setData(Qt.ForegroundRole, QBrush(QColor("#FFD700")))
+        total_label.setData(Qt.ForegroundRole, QBrush(QColor("#050505")))
         total_label.setFlags(total_label.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(r, 0, total_label)
 
@@ -517,7 +517,7 @@ class DailyTransactionPage(QWidget):
             item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             item.setFont(QFont("", 10, QFont.Bold))
             item.setData(Qt.BackgroundRole, QBrush(QColor("#343a40")))
-            item.setData(Qt.ForegroundRole, QBrush(QColor("#FFD700")))
+            item.setData(Qt.ForegroundRole, QBrush(QColor("#050505")))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             self.table.setItem(r, ci, item)
 
@@ -552,10 +552,28 @@ class DailyTransactionPage(QWidget):
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-        # Headers
+        # ── Report Header (Title, Date, OS) ───────────────────────────────
+        title_font = Font(bold=True, size=14)
+        info_font = Font(bold=True, size=11)
+        
+        # Row 1: Title "Daily Transaction"
+        ws.cell(row=1, column=1, value="Daily Transaction").font = title_font
+        
+        # Row 2: Date
+        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        ws.cell(row=2, column=1, value=f"Date: {selected_date}").font = info_font
+        
+        # Row 3: OS Name
+        os_name = self.os_filter_selector.currentText() or "All"
+        ws.cell(row=3, column=1, value=f"OS: {os_name}").font = info_font
+        
+        # Row 4: Empty row for spacing
+        header_row = 5  # Column headers start at row 5
+
+        # Column Headers
         for c in range(self.table.columnCount()):
             text = self.table.horizontalHeaderItem(c).text().replace("\n", " ")
-            cell = ws.cell(row=1, column=c + 1, value=text)
+            cell = ws.cell(row=header_row, column=c + 1, value=text)
             cell.font = header_font
             cell.fill = header_fill
             cell.border = border
@@ -569,10 +587,10 @@ class DailyTransactionPage(QWidget):
                 # Try to write as number
                 try:
                     num = float(val.replace(",", ""))
-                    cell = ws.cell(row=r + 2, column=c + 1, value=num)
+                    cell = ws.cell(row=r + header_row + 1, column=c + 1, value=num)
                     cell.number_format = '#,##0.00' if '.' in val else '#,##0'
                 except ValueError:
-                    cell = ws.cell(row=r + 2, column=c + 1, value=val)
+                    cell = ws.cell(row=r + header_row + 1, column=c + 1, value=val)
                 cell.border = border
 
         # Auto-width (cap at 18)
