@@ -1,4 +1,4 @@
-from db_connect import db_manager
+from db_connect_pooled import db_manager
 import re
 
 path = 'db_optimizations.sql'

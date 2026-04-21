@@ -6,10 +6,11 @@ Displays entries with short/over variance and allows viewing cashflow details
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QComboBox, QPushButton, QMessageBox, QDateEdit, QScrollArea, QFrame,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSplitter
+    QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QDate
 from db_connect_pooled import db_manager
+from date_range_widget import DateRangeWidget
 
 
 class VarianceReviewPage(QWidget):
@@ -95,19 +96,20 @@ class VarianceReviewPage(QWidget):
 
         # --- COMPACT FILTER SECTION ---
         filter_frame = QFrame()
+        filter_frame.setObjectName("varianceFilterFrame")
         filter_frame.setStyleSheet("""
-            QFrame {
+            QFrame#varianceFilterFrame {
                 background-color: #fff3cd;
                 border: 1px solid #ffc107;
                 border-radius: 6px;
-                padding: 8px;
+                padding: 4px;
             }
         """)
-        filter_frame.setMaximumHeight(50)
+        filter_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         
         filter_layout = QHBoxLayout(filter_frame)
-        filter_layout.setContentsMargins(10, 5, 10, 5)
-        filter_layout.setSpacing(10)
+        filter_layout.setContentsMargins(8, 4, 8, 4)
+        filter_layout.setSpacing(8)
 
         # Title
         title_label = QLabel("⚠️ Variance Review")
@@ -131,29 +133,10 @@ class VarianceReviewPage(QWidget):
         filter_layout.addWidget(self._filter_label("Corp:", lbl_style))
         filter_layout.addWidget(self.corp_filter)
 
-        # Date filter
-        self.date_filter = QDateEdit()
-        self.date_filter.setDisplayFormat("yyyy-MM-dd")
-        self.date_filter.setCalendarPopup(True)
-        self.date_filter.setDate(QDate.currentDate())
-        self.date_filter.setFixedWidth(110)
-        self.date_filter.setStyleSheet("font-size: 11px;")
-        filter_layout.addWidget(self._filter_label("Date:", lbl_style))
-        filter_layout.addWidget(self.date_filter)
-
-        # All dates toggle
-        self.all_dates_btn = QPushButton("All Dates")
-        self.all_dates_btn.setCheckable(True)
-        self.all_dates_btn.setChecked(True)
-        self.all_dates_btn.setFixedWidth(70)
-        self.all_dates_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #ffc107; color: #856404; border: none;
-                padding: 4px 8px; border-radius: 3px; font-size: 10px; font-weight: bold;
-            }
-            QPushButton:checked { background-color: #28a745; color: white; }
-        """)
-        filter_layout.addWidget(self.all_dates_btn)
+        # Date Range Widget (replaces single date + All Dates toggle)
+        self.date_range_widget = DateRangeWidget()
+        self.date_filter = self.date_range_widget  # backward-compat
+        filter_layout.addWidget(self.date_range_widget)
 
         # Variance type filter
         self.var_type_filter = QComboBox()
@@ -285,8 +268,8 @@ class VarianceReviewPage(QWidget):
         """Search for variance entries"""
         try:
             corp = self.corp_filter.currentData()
-            use_all_dates = self.all_dates_btn.isChecked()
-            selected_date = self.date_filter.date().toString("yyyy-MM-dd")
+            date_start, date_end = self.date_range_widget.get_date_range()
+            is_range = self.date_range_widget.is_range_mode()
             var_type = self.var_type_filter.currentText()
 
             query = f"""
@@ -300,9 +283,12 @@ class VarianceReviewPage(QWidget):
                 query += " AND corporation = %s"
                 params.append(corp)
 
-            if not use_all_dates:
+            if is_range:
+                query += " AND date >= %s AND date <= %s"
+                params.extend([date_start, date_end])
+            else:
                 query += " AND date = %s"
-                params.append(selected_date)
+                params.append(date_start)
 
             if var_type == "Short":
                 query += " AND variance_status = 'short'"
@@ -361,7 +347,9 @@ class VarianceReviewPage(QWidget):
             corp_val = self.variance_table.item(row, 1).text()
             branch_val = self.variance_table.item(row, 2).text()
 
-            query = f"SELECT * FROM {table_name} WHERE id = %s"
+            query = (f"SELECT beginning_balance, debit_total, credit_total, "
+                     f"ending_balance, cash_count, cash_result, variance_status "
+                     f"FROM {table_name} WHERE id = %s")
             result = self.db.execute_query(query, [entry_id])
 
             if not result:

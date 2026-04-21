@@ -47,7 +47,7 @@ def build_secure(create_installer=False):
     # Get credentials
     credentials = {
         '__MYSQL_HOST__': os.getenv('MYSQL_HOST'),
-        '__MYSQL_PORT__': os.getenv('MYSQL_PORT', '3306'),
+        '__MYSQL_PORT__': os.getenv('MYSQL_PORT', '33306'),
         '__MYSQL_USER__': os.getenv('MYSQL_USER'),
         '__MYSQL_PASSWORD__': os.getenv('MYSQL_PASSWORD'),
         '__MYSQL_DATABASE__': os.getenv('MYSQL_DATABASE')

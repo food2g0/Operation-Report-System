@@ -1,0 +1,652 @@
+{
+  "saved_at": "2026-03-03T09:01:54.143133",
+  "date": "2026-03-03",
+  "brand_a": {
+    "beginning_balance": "2797.00",
+    "beginning_balance_auto_filled": true,
+    "cash_count": "",
+    "cash_flow": {
+      "debit::Rescate Jewelry": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Interest": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Penalty": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Stamp": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Rescuardo/Affidavit": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::HABOL Renew/Tubos": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Habol R/T Interest&Stamp": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::CR STORAGE": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::CR Storage Int/Penalty": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Rescate Silver": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Silver int.": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Res Storage": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Res. Storage Int./Penalty": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Res. Motor": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Penalty Motor": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Jew. A.I": {
+        "amount": "25.25",
+        "lotes": ""
+      },
+      "debit::S.C": {
+        "amount": "10.00",
+        "lotes": ""
+      },
+      "debit::O.s.f Sto.": {
+        "amount": "0.01",
+        "lotes": ""
+      },
+      "debit::Sto. A.I": {
+        "amount": "0.40",
+        "lotes": ""
+      },
+      "debit::Silver A.I": {
+        "amount": "0.20",
+        "lotes": ""
+      },
+      "debit::O.s.f Silver": {
+        "amount": "0.01",
+        "lotes": ""
+      },
+      "debit::Motor A.I": {
+        "amount": "0.10",
+        "lotes": ""
+      },
+      "debit::O.s.f Motor": {
+        "amount": "0.01",
+        "lotes": ""
+      },
+      "debit::Miscellaneous Fee": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Insurance(20)": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Insurance PHILAM(php 30)": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Insurance PHILAM(php 60)": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Insurance PHILAM(php 90)": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Fund Transfer from BRANCH": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::AYANAH + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Sendah Load + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Smart Money + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::G-Cash In": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Gcash Out S.C": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Abra S.O + S.C": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::BDO S.C": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Pay Cash Out SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Ria In + S.C": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Paymaya In": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::I2I Remittance In": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::I2I Bills Payment": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::I2I Bank Transfer": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::I2I Pesonet": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::I2I Instapay": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Sendah Bills + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Send Out": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan S.C": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Suki Card": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Pay Cash-In +SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Load + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Pay Bills + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Change Receiver": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::MC In": {
+        "amount": "100.00",
+        "lotes": "1"
+      },
+      "debit::Handling fee": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Other Penalty": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Cash Overage": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Empeno JEW. (NEW)": {
+        "amount": "1000.00",
+        "lotes": "1"
+      },
+      "credit::Empeno JEW (RENEW)": {
+        "amount": "10.00",
+        "lotes": "1"
+      },
+      "credit::Empeno STO. (NEW)": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Fund Empeno STO. (RENEW)": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Empeno Motor/Car": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Empeno silver": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::G-Cash Out": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::G-Cash Padala (SENDAH)": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Abra P.o": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::BDO P.o": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::I2I Remittance Out": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Remitly": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Smart Money P.O.": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Fund Transfer to HEAD OFFICE": {
+        "amount": "10",
+        "lotes": ""
+      },
+      "credit::Fund Transfer to BRANCH": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::AYANAH OUT": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Pay Out": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Pay Out (incentives)": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Pay Cash Out": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::MC Out": {
+        "amount": "100.00",
+        "lotes": "1"
+      },
+      "credit::PC-Inc. Emp": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Inc. Motor": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Inc. Suki Card": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Inc. Insurance": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Inc. MC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Salary": {
+        "amount": "100.00",
+        "lotes": ""
+      },
+      "credit::PC-Rental": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Electric": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Water": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Internet": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Lbc/Jrs/Jnt": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Permits/BIR Payments": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Supplies/Xerox/Maintenance": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Transpo": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Transfast": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Paymaya Out": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Ria Out": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::FIXCO": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Moneygram": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Cancel": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Suki Discounts": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Suki Rebates": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Storage Rebates": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Silver Rebates": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::OTHERS": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Cash Shortage": {
+        "amount": "",
+        "lotes": ""
+      }
+    },
+    "bank_account": 6
+  },
+  "brand_b": {
+    "beginning_balance": "1318.00",
+    "beginning_balance_auto_filled": true,
+    "cash_count": "",
+    "cash_flow": {
+      "debit::Rescate Jewelry": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Interest": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Penalty": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Stamp": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Resguardo/Affidavit": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::HABOL Renew/Tubos": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Habol R/T Interest&Stamp": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Jew. A.I": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::S.C": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Fund Transfer from BRANCH": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Sendah Load + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::PPAY CO SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Send Out": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "debit::Palawan S.C": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "debit::Palawan Suki Card": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Pay Cash-In + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Pay Bills + SC": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Load": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Palawan Change Receiver": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::MC In": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Handling fee": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Other Penalty": {
+        "amount": "",
+        "lotes": ""
+      },
+      "debit::Cash Overage": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Empeno JEW. (NEW)": {
+        "amount": "1000.00",
+        "lotes": "1"
+      },
+      "credit::Empeno JEW (RENEW)": {
+        "amount": "10.00",
+        "lotes": "1"
+      },
+      "credit::Fund Transfer to HEAD OFFICE": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Fund Transfer to BRANCH": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Pay Out": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Palawan Pay Out (incentives)": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Palawan Pay Cash Out": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Inc. Emp": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Inc. Suki Card": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Inc. Insurance": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Salary": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Rental": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Electric": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Water": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Internet": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Lbc/Jrs/Jnt": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Permits/BIR Payments": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Supplies/Xerox/Maintenance": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::PC-Transpo": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Palawan Cancel": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Palawan Suki Discounts": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::Palawan Suki Rebates": {
+        "amount": "1",
+        "lotes": ""
+      },
+      "credit::OTHERS": {
+        "amount": "",
+        "lotes": ""
+      },
+      "credit::Cash Shortage": {
+        "amount": "",
+        "lotes": ""
+      }
+    },
+    "bank_account": null
+  },
+  "palawan": {
+    "sendout:Principal": "1",
+    "sendout:SC": "1",
+    "sendout:Commission": "1",
+    "payout:Principal": "1",
+    "payout:SC": "1",
+    "payout:Commission": "1",
+    "international:Principal": "1",
+    "international:SC": "1",
+    "international:Commission": "1",
+    "adjustments:Palawan Pay Out Incentives": "1",
+    "adjustments:Palawan Suki Discounts": "1",
+    "adjustments:Palawan Suki Rebates": "1",
+    "adjustments:Palawan Cancel": "1",
+    "lotes:Lotes Send-Out": "1",
+    "lotes:Lotes Pay-Out": "1",
+    "lotes:Lotes International": "1"
+  },
+  "mc_in": [
+    {
+      "currency_index": 0,
+      "currency": "USD - US Dollar",
+      "quantity": 10,
+      "rate": 10.0,
+      "total_php": 100.0
+    }
+  ],
+  "mc_out": [
+    {
+      "currency_index": 0,
+      "currency": "USD - US Dollar",
+      "quantity": 10,
+      "rate": 10.0,
+      "total_php": 100.0
+    }
+  ]
+}

@@ -7,6 +7,7 @@ from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from db_connect_pooled import db_manager
+from date_range_widget import DateRangeWidget
 from decimal import Decimal, ROUND_HALF_UP
 import datetime
 
@@ -23,8 +24,12 @@ def _mult_round2(a, b):
 
 
 class ReportPage(QWidget):
-    def __init__(self):
+    def __init__(self, account_type=2):
         super().__init__()
+        self.account_type = account_type
+        # Set correct tables based on brand
+        self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
+        self.payable_table = "payable_tbl_brand_a" if account_type == 1 else "payable_tbl"
         self.setWindowTitle("PEPP Reconciliation Report")
         self.setup_window_size()
 
@@ -44,7 +49,6 @@ class ReportPage(QWidget):
     def setup_window_size(self):
         desktop = QApplication.desktop()
         self.setMinimumSize(800, 600)
-        self.showMaximized()
 
     # ─────────────────────────────────────────────────────────────────────────
 
@@ -70,10 +74,10 @@ class ReportPage(QWidget):
 
         date_label = QLabel("Date:")
         date_label.setFont(QFont("Arial", 10, QFont.Bold))
-        self.date_selector = QDateEdit(calendarPopup=True)
-        self.date_selector.setDate(QDate.currentDate())
-        self.date_selector.setDisplayFormat("yyyy-MM-dd")
-        self.date_selector.dateChanged.connect(self.generate_report)
+        self.date_range_widget = DateRangeWidget()
+        self.date_range_widget.dateRangeChanged.connect(self.generate_report)
+        # Backward-compat alias
+        self.date_selector = self.date_range_widget
 
         registry_label = QLabel("Partner Registry No:")
         registry_label.setFont(QFont("Arial", 10, QFont.Bold))
@@ -96,7 +100,7 @@ class ReportPage(QWidget):
         controls_layout.addWidget(self.corp_selector)
         controls_layout.addSpacing(30)
         controls_layout.addWidget(date_label)
-        controls_layout.addWidget(self.date_selector)
+        controls_layout.addWidget(self.date_range_widget)
         controls_layout.addSpacing(30)
         controls_layout.addWidget(registry_label)
         controls_layout.addWidget(self.registry_input)
@@ -204,97 +208,89 @@ class ReportPage(QWidget):
 
     # ── Corporation → Partner Registry No. mapping ─────────────────────────
     REGISTRY_MAP = {
-        'ALEXITE CORP':       'P250683A',
-        'HOMENEEDS PAWNSHOP': 'P250677A',
-        'HOMENEEDS PAWNSHOP INC': 'P250677A',
-        'KRISTAL CLEAR':      'P250678A',
-        'SAFELOCK':           'P250680A',
-        'MEGAWORLD':          'P250679A',
-        'SAN RAMON CORP':     'P250681A',
-        'SILVERSTAR PAWNSHOP':'P250682A',
-        'GLOBAL RELIANCE':    'P250681A',
+        'SILVERSTAR JEWELRY PAWNSHOP INC':                  'P250682A',
+        'ALEXITE JEWELRY PAWNSHOP INC':                     'P250683A',
+        'SAN RAMON PLATINUM PAWNSHOP INC':                  'P250681A',
+        'HOMENEEDS PAWNSHOP INC':                           'P250677A',
+        'KRISTAL CLEAR DIAMOND AND GOLD PAWNSHOP INC':      'P250678A',
+        'SAFELOCK PAWNSHOP INC':                            'P250680A',
+        'MEGAWORLD DOMESTIC PAWNSHOP INC':                  'P250679A',
+        'GLOBAL RELIANCE MANAGEMENT & HOLDINGS CORP.':      'P210021A',
     }
 
     def _on_corp_changed(self, corp_name):
         """Auto-fill partner registry number when corporation changes."""
-        registry = self.REGISTRY_MAP.get(corp_name, '')
+        key = (corp_name or '').upper().strip().rstrip('.')
+        registry = ''
+        for k, v in self.REGISTRY_MAP.items():
+            if k.upper().strip().rstrip('.') == key:
+                registry = v
+                break
         self.registry_input.setText(registry)
         self.generate_report()
 
+    ALLOWED_CORPS = [
+        'SILVERSTAR JEWELRY AND PAWNSHOP INC.',
+        'ALLEXITE JEWELRY PAWNSHOP INC.',
+        'SAN RAMON PLATINUM PAWNSHOP INC.',
+        'HOMENEEDS PAWNSHOP INC.',
+        'KRISTAL CLEAR DIAMOND & GOLD PAWNSHOP INC.',
+        'SAFELOCK PAWNSHOP INC.',
+        'MEGAWORLD DOMESTIC PAWNSHOP INC',
+    ]
+
     def load_corporations(self):
         self.corp_selector.clear()
+        allowed = {c.upper().strip().rstrip('.') for c in self.ALLOWED_CORPS}
         try:
-            results = db_manager.execute_query(
-                "SELECT DISTINCT corporation FROM daily_reports ORDER BY corporation"
+            rows = db_manager.execute_query(
+                "SELECT name FROM corporations ORDER BY name"
             )
-            for corp in results:
-                self.corp_selector.addItem(
-                    corp['corporation'] if isinstance(corp, dict) else corp[0]
-                )
+            if rows:
+                for row in rows:
+                    name = row.get('name') or row[0]
+                    if name.upper().strip().rstrip('.') in allowed:
+                        self.corp_selector.addItem(name)
         except Exception as e:
-            QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
+            print(f"Error loading corporations: {e}")
+
+        self.corp_selector.addItem('Global Reliance Management & Holdings Corp.')
 
     # ─────────────────────────────────────────────────────────────────────────
 
     def get_totals_from_database(self):
-        """Fetch aggregated totals from payable_tbl. Returns None if no rows exist."""
+    
         corp          = self.corp_selector.currentText()
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        date_start, date_end = self.date_range_widget.get_date_range()
         reg_filter    = self.reg_filter_selector.currentData()
 
         if not corp:
             return None
 
+       
+        is_global_reliance = 'GLOBAL RELIANCE' in corp.upper()
+
         try:
-            # Build query based on registration filter
-            # SKID/SKIR/CANCELLATION come from daily_reports, INC from payable_tbl
-            if reg_filter == "registered":
-                # Only include branches that are registered
-                result = db_manager.execute_query("""
-                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
-                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
-                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
-                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
-                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
-                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
-                           SUM(dr.palawan_international_commission) AS total_international_commission,
-                           SUM(dr.palawan_suki_discounts)         AS total_skid,
-                           SUM(dr.palawan_suki_rebates)           AS total_skir,
-                           SUM(dr.palawan_cancel)                 AS total_cancellation,
-                           SUM(COALESCE(p.inc, 0))                AS total_inc
-                    FROM daily_reports dr
-                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
-                    LEFT JOIN payable_tbl p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
-                    WHERE dr.corporation = %s
-                      AND dr.date        = %s
-                      AND b.is_registered = 1
-                """, (corp, selected_date))
-            elif reg_filter == "not_registered":
-                # Only include branches that are NOT registered
-                result = db_manager.execute_query("""
-                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
-                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
-                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
-                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
-                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
-                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
-                           SUM(dr.palawan_international_commission) AS total_international_commission,
-                           SUM(dr.palawan_suki_discounts)         AS total_skid,
-                           SUM(dr.palawan_suki_rebates)           AS total_skir,
-                           SUM(dr.palawan_cancel)                 AS total_cancellation,
-                           SUM(COALESCE(p.inc, 0))                AS total_inc
-                    FROM daily_reports dr
-                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
-                    LEFT JOIN payable_tbl p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
-                    WHERE dr.corporation = %s
-                      AND dr.date        = %s
-                      AND b.is_registered = 0
-                """, (corp, selected_date))
+            # Determine date clause
+            is_range = self.date_range_widget.is_range_mode()
+            if is_range:
+                date_clause = "dr.date >= %s AND dr.date <= %s"
+                date_params = (date_start, date_end)
             else:
-                # All branches (original query)
-                result = db_manager.execute_query("""
+                date_clause = "dr.date = %s"
+                date_params = (date_start,)
+
+            # Build corp filter clause - Global Reliance uses global_tag, others use corporation name
+            if is_global_reliance:
+                corp_clause = "b.global_tag = 'GLOBAL'"
+                corp_params = ()
+            else:
+                corp_clause = "dr.corporation = %s"
+                corp_params = (corp,)
+
+            # Build query based on registration filter
+            if reg_filter == "registered":
+                result = db_manager.execute_query(f"""
                     SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
                            SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
                            SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
@@ -306,11 +302,73 @@ class ReportPage(QWidget):
                            SUM(dr.palawan_suki_rebates)           AS total_skir,
                            SUM(dr.palawan_cancel)                 AS total_cancellation,
                            SUM(COALESCE(p.inc, 0))                AS total_inc
-                    FROM daily_reports dr
-                    LEFT JOIN payable_tbl p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
-                    WHERE dr.corporation = %s
-                      AND dr.date        = %s
-                """, (corp, selected_date))
+                    FROM {self.daily_table} dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    WHERE {corp_clause}
+                      AND {date_clause}
+                      AND b.is_registered = 1
+                """, corp_params + date_params)
+            elif reg_filter == "not_registered":
+                result = db_manager.execute_query(f"""
+                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
+                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
+                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
+                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
+                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
+                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
+                           SUM(dr.palawan_international_commission) AS total_international_commission,
+                           SUM(dr.palawan_suki_discounts)         AS total_skid,
+                           SUM(dr.palawan_suki_rebates)           AS total_skir,
+                           SUM(dr.palawan_cancel)                 AS total_cancellation,
+                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    FROM {self.daily_table} dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    WHERE {corp_clause}
+                      AND {date_clause}
+                      AND b.is_registered = 0
+                """, corp_params + date_params)
+            elif is_global_reliance:
+                # Global Reliance with "All" registration filter - needs branches join for global_tag
+                result = db_manager.execute_query(f"""
+                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
+                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
+                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
+                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
+                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
+                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
+                           SUM(dr.palawan_international_commission) AS total_international_commission,
+                           SUM(dr.palawan_suki_discounts)         AS total_skid,
+                           SUM(dr.palawan_suki_rebates)           AS total_skir,
+                           SUM(dr.palawan_cancel)                 AS total_cancellation,
+                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    FROM {self.daily_table} dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    WHERE {corp_clause}
+                      AND {date_clause}
+                """, corp_params + date_params)
+            else:
+                result = db_manager.execute_query(f"""
+                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
+                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
+                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
+                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
+                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
+                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
+                           SUM(dr.palawan_international_commission) AS total_international_commission,
+                           SUM(dr.palawan_suki_discounts)         AS total_skid,
+                           SUM(dr.palawan_suki_rebates)           AS total_skir,
+                           SUM(dr.palawan_cancel)                 AS total_cancellation,
+                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    FROM {self.daily_table} dr
+                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    WHERE {corp_clause}
+                      AND {date_clause}
+                """, corp_params + date_params)
 
             if not result or not result[0]:
                 return None
@@ -345,7 +403,8 @@ class ReportPage(QWidget):
         If no data exists yet, clears the table silently — no popup.
         """
         corp          = self.corp_selector.currentText()
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        date_start, date_end = self.date_range_widget.get_date_range()
+        date_display = date_start if date_start == date_end else f"{date_start} to {date_end}"
 
         if not corp:
             self.table.setRowCount(0)
@@ -353,16 +412,17 @@ class ReportPage(QWidget):
 
   
         corp_abbrev_map = {
-            'SILVERSTAR PAWNSHOP': 'SJPI',
-            'ALEXITE CORP': 'AJPI',
-            'SAN RAMON CORP': 'SRPPI',
-            'HOMENEEDS PAWNSHOP': 'HPI',
+            'SILVERSTAR JEWELRY PAWNSHOP INC': 'SJPI',
+            'ALEXITE JEWELRY PAWNSHOP INC': 'AJPI',
+            'SAN RAMON PLATINUM PAWNSHOP INC': 'SRPPI',
             'HOMENEEDS PAWNSHOP INC': 'HPI',
-            'KRISTAL CLEAR': 'KCDGPI',
-            'SAFELOCK': 'SPI',
-            'MEGAWORLD': 'MDPI'
+            'KRISTAL CLEAR DIAMOND AND GOLD PAWNSHOP INC': 'KCDGPI',
+            'SAFELOCK PAWNSHOP INC': 'SPI',
+            'MEGAWORLD DOMESTIC PAWNSHOP INC': 'MDPI',
+            'GLOBAL RELIANCE MANAGEMENT & HOLDINGS CORP.': 'GRMHC',
         }
-        corp_abbrev = corp_abbrev_map.get(corp, 'AJPI')  # Default to AJPI if not found
+        corp_upper = corp.upper().strip().rstrip('.')
+        corp_abbrev = next((v for k, v in corp_abbrev_map.items() if k.upper().strip().rstrip('.') == corp_upper), 'AJPI')
 
         totals = self.get_totals_from_database()
 
@@ -409,7 +469,7 @@ class ReportPage(QWidget):
             # Header
             ("Palawan Express Pera Padala - " + corp, "",  "",            "",                      "header"),
             ("PEPP Reconciliation for",               "",  "Partner Registry No.", "",             "header"),
-            (selected_date,                           "",  registry,      "",                      "header"),
+            (date_display,                           "",  registry,      "",                      "header"),
             ("", "", "", "", "blank"),
             ("", "", "", "", "blank"),
 
@@ -434,7 +494,7 @@ class ReportPage(QWidget):
             (f"    {corp_abbrev} share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{corp_international_80:,.2f}", "indent"),
             ("    Service Charge",                                         "", f"{payout_sc:,.2f}",          "-",                             "indent"),
             ("        Subtotal",                                           "", "",                          f"{release_subtotal:,.2f}",       "subtotal"),
-            (f"    Add: {corp_abbrev} Branch Incentives released on {selected_date}", "", "",                        f"{total_inc:,.2f}",              "indent"),
+            (f"    Add: {corp_abbrev} Branch Incentives released",       "", "",                        f"{total_inc:,.2f}",              "indent"),
             ("        Subtotal",                                           "", "",                          f"{release_subtotal_with_inc:,.2f}", "subtotal"),
             ("    Add: Rebates (Suki Card)",                               "", f"{total_skir:,.2f}",         f"{skir_57:,.2f}",               "indent"),
             ("    Total Net Released",                                     "", "",                          f"{total_net_released:,.2f}",     "total"),
@@ -497,21 +557,24 @@ class ReportPage(QWidget):
             from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 
             corp          = self.corp_selector.currentText()
-            date          = self.date_selector.date().toString("yyyy-MM-dd")
+            date_start, date_end = self.date_range_widget.get_date_range()
+            date          = date_start if date_start == date_end else f"{date_start}_to_{date_end}"
+            date_display  = date_start if date_start == date_end else f"{date_start} to {date_end}"
             registry      = self.registry_input.text().strip()
 
             # Corporation abbreviation mapping
             corp_abbrev_map = {
-                'SILVERSTAR PAWNSHOP': 'SJPI',
-                'ALEXITE CORP': 'AJPI',
-                'SAN RAMON CORP': 'SRPPI',
-                'HOMENEEDS PAWNSHOP': 'HPI',
+                'SILVERSTAR JEWELRY PAWNSHOP INC': 'SJPI',
+                'ALEXITE JEWELRY PAWNSHOP INC': 'AJPI',
+                'SAN RAMON PLATINUM PAWNSHOP INC': 'SRPPI',
                 'HOMENEEDS PAWNSHOP INC': 'HPI',
-                'KRISTAL CLEAR': 'KCDGPI',
-                'SAFELOCK': 'SPI',
-                'MEGAWORLD': 'MDPI'
+                'KRISTAL CLEAR DIAMOND AND GOLD PAWNSHOP INC': 'KCDGPI',
+                'SAFELOCK PAWNSHOP INC': 'SPI',
+                'MEGAWORLD DOMESTIC PAWNSHOP INC': 'MDPI',
+                'GLOBAL RELIANCE MANAGEMENT & HOLDINGS CORP.': 'GRMHC',
             }
-            corp_abbrev = corp_abbrev_map.get(corp, 'AJPI')  # Default to AJPI if not found
+            corp_upper = corp.upper().strip().rstrip('.')
+            corp_abbrev = next((v for k, v in corp_abbrev_map.items() if k.upper().strip().rstrip('.') == corp_upper), 'AJPI')
 
             totals = self.get_totals_from_database()
             if not totals:
@@ -566,7 +629,7 @@ class ReportPage(QWidget):
             ws[f'A{r}'].fill = header_fill
             r += 1
 
-            ws[f'A{r}'] = f"PEPP Reconciliation for {date}"
+            ws[f'A{r}'] = f"PEPP Reconciliation for {date_display}"
             ws[f'C{r}'] = "Partner Registry No."
             ws[f'D{r}'] = registry
             for cell in [ws[f'A{r}'], ws[f'C{r}'], ws[f'D{r}']]:
@@ -591,7 +654,7 @@ class ReportPage(QWidget):
                 (f"    {corp_abbrev} share: 80% of commission (International Payout)",   "", f"{international_commission:,.2f}", f"{corp_international_80:,.2f}",   "indent"),
                 ("    Service Charge",                                         "", f"{payout_sc:,.2f}",             "-",                                  "indent"),
                 ("        Subtotal",                                           "", "",                              f"{release_subtotal:,.2f}",            "subtotal"),
-                (f"    Add: {corp_abbrev} Branch Incentives released on {date}",        "", "",                              f"{total_inc:,.2f}",                   "indent"),
+                (f"    Add: {corp_abbrev} Branch Incentives released",        "", "",                              f"{total_inc:,.2f}",                   "indent"),
                 ("        Subtotal",                                           "", "",                              f"{release_subtotal_with_inc:,.2f}",   "subtotal"),
                 ("    Add: Rebates (Suki Card)",                               "", f"{total_skir:,.2f}",            f"{skir_57:,.2f}",                    "indent"),
                 ("    Total Net Released",                                     "", "",                              f"{total_net_released:,.2f}",          "total"),

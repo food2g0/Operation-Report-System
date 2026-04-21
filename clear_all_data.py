@@ -17,6 +17,7 @@ def clear_all_data():
     print("  - daily_reports_brand_a")
     print("  - daily_reports_summary")
     print("  - payable_tbl")
+    print("  - payable_tbl_brand_a")
     print("  - users (including all client accounts)")
     print("  - branches")
     print("  - corporations")
@@ -49,6 +50,7 @@ def clear_all_data():
         tables = [
             "daily_reports_summary",
             "payable_tbl",
+            "payable_tbl_brand_a",
             "daily_reports_brand_a",
             "daily_reports",
             "users",
@@ -97,16 +99,17 @@ def clear_specific_table():
     print("  1. daily_reports - All daily report entries (Brand B)")
     print("  2. daily_reports_brand_a - All daily report entries (Brand A)")
     print("  3. daily_reports_summary - Summary data")
-    print("  4. payable_tbl - Payable records")
-    print("  5. users - All user accounts (clients and admins)")
-    print("  6. branches - All branches")
-    print("  7. corporations - All corporations")
+    print("  4. payable_tbl - Payable records (Brand B)")
+    print("  5. payable_tbl_brand_a - Payable records (Brand A)")
+    print("  6. users - All user accounts (clients and admins)")
+    print("  7. branches - All branches")
+    print("  8. corporations - All corporations")
     print("="*60)
     
     table_name = input("\nEnter table name to clear (or 'cancel'): ").strip().lower()
     
     valid_tables = ["daily_reports", "daily_reports_brand_a", "daily_reports_summary", 
-                    "payable_tbl", "users", "branches", "corporations"]
+                    "payable_tbl", "payable_tbl_brand_a", "users", "branches", "corporations"]
     
     if table_name == 'cancel':
         print("Operation cancelled.")

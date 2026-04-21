@@ -7,21 +7,24 @@ from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QLineEdit, QComboBox, QPushButton, QMessageBox, QScrollArea, QFrame,
     QTableWidget, QTableWidgetItem, QHeaderView, QDialog, QDialogButtonBox,
-    QSpinBox, QTabWidget
+    QSpinBox, QTabWidget, QCheckBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIntValidator
 from db_connect_pooled import db_manager
-from admin_manage import create_corporation, create_branch, create_client
+from admin_manage import (create_corporation, create_branch, create_client,
+                         get_all_supervisors, create_supervisor, delete_supervisor,
+                         update_supervisor)
 from security import hash_password
 
 
 class UserManagementPage(QWidget):
     """Page for managing corporations, branches, and client accounts"""
     
-    def __init__(self):
+    def __init__(self, is_super_admin=False):
         super().__init__()
         self.db = db_manager
+        self.is_super_admin = is_super_admin
         
         # Pagination state
         self.corp_page = 0
@@ -51,8 +54,8 @@ class UserManagementPage(QWidget):
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet("""
             QTabWidget::pane { border: 1px solid #dee2e6; border-radius: 4px; background: white; }
-            QTabBar::tab { background: #f8f9fa; padding: 8px 20px; margin-right: 2px; border: 1px solid #dee2e6; border-bottom: none; border-radius: 4px 4px 0 0; }
-            QTabBar::tab:selected { background: white; font-weight: bold; }
+            QTabBar::tab { background: #f8f9fa; color: #2c3e50; padding: 8px 20px; margin-right: 2px; border: 1px solid #dee2e6; border-bottom: none; border-radius: 4px 4px 0 0; }
+            QTabBar::tab:selected { background: white; color: #2c3e50; font-weight: bold; }
             QTabBar::tab:hover { background: #e9ecef; }
         """)
         
@@ -60,7 +63,11 @@ class UserManagementPage(QWidget):
         self.tabs.addTab(self._build_corporations_tab(), "📊 Corporations")
         self.tabs.addTab(self._build_branches_tab(), "🏢 Branches")
         self.tabs.addTab(self._build_clients_tab(), "👥 Clients")
-        self.tabs.addTab(self._build_admin_users_tab(), "👑 Admin Users")
+        
+        # Admin Users and Operation Supervisors tabs only visible to super admins
+        if self.is_super_admin:
+            self.tabs.addTab(self._build_admin_users_tab(), "Admin Users")
+            self.tabs.addTab(self._build_os_tab(), "📋 Operation Supervisors")
         
         # Auto-refresh dropdowns when switching tabs
         self.tabs.currentChanged.connect(self._on_tab_changed)
@@ -154,31 +161,78 @@ class UserManagementPage(QWidget):
         # Add form
         form_frame = QFrame()
         form_frame.setStyleSheet("QFrame { background: #f8f9fa; border-radius: 6px; padding: 10px; }")
-        form_layout = QHBoxLayout(form_frame)
+        form_main_layout = QVBoxLayout(form_frame)
+        
+        row1_layout = QHBoxLayout()
         
         self.branch_corp_combo = QComboBox()
         self.branch_corp_combo.setMinimumWidth(150)
+        
+        self.branch_corp_combo2 = QComboBox()
+        self.branch_corp_combo2.setMinimumWidth(150)
+        self.branch_corp_combo2.addItem("-- None --", None)
         
         self.branch_name_input = QLineEdit()
         self.branch_name_input.setPlaceholderText("Enter branch name")
         self.branch_name_input.setMinimumWidth(200)
 
-        self.branch_os_input = QLineEdit()
-        self.branch_os_input.setPlaceholderText("Operation Supervisor name")
-        self.branch_os_input.setMinimumWidth(180)
+        self.branch_os_combo = QComboBox()
+        self.branch_os_combo.setMinimumWidth(180)
+        self._load_os_dropdown()
+        
+        row1_layout.addWidget(QLabel("Corporation:"))
+        row1_layout.addWidget(self.branch_corp_combo)
+        row1_layout.addWidget(QLabel("Sub Corporation (optional):"))
+        row1_layout.addWidget(self.branch_corp_combo2)
+        row1_layout.addWidget(QLabel("Branch Name:"))
+        row1_layout.addWidget(self.branch_name_input)
+        row1_layout.addWidget(QLabel("Group:"))
+        row1_layout.addWidget(self.branch_os_combo)
+        row1_layout.addStretch()
+        
+
+        row2_layout = QHBoxLayout()
+        
+        self.branch_area_input = QLineEdit()
+        self.branch_area_input.setPlaceholderText("Area")
+        self.branch_area_input.setMinimumWidth(120)
+        
+        self.branch_global_combo = QComboBox()
+        self.branch_global_combo.addItem("-- Global --", None)
+        self.branch_global_combo.addItem("GLOBAL", "GLOBAL")
+        self.branch_global_combo.addItem("NO GLOBAL", "NO GLOBAL")
+        self.branch_global_combo.setMinimumWidth(100)
+        
+        self.branch_sunday_combo = QComboBox()
+        self.branch_sunday_combo.addItem("-- Sunday --", None)
+        self.branch_sunday_combo.addItem("YES", "YES")
+        self.branch_sunday_combo.addItem("NO", "NO")
+        self.branch_sunday_combo.setMinimumWidth(100)
+        
+        self.branch_lob_combo = QComboBox()
+        self.branch_lob_combo.addItem("-- Line of Business --", None)
+        self.branch_lob_combo.addItem("GROUP 1", "GROUP 1")
+        self.branch_lob_combo.addItem("GROUP 2", "GROUP 2")
+        self.branch_lob_combo.addItem("GROUP 3", "GROUP 3")
+        self.branch_lob_combo.setMinimumWidth(130)
         
         add_btn = QPushButton("➕ Add")
         add_btn.setStyleSheet("QPushButton { background: #27ae60; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold; } QPushButton:hover { background: #219a52; }")
         add_btn.clicked.connect(self._add_branch)
         
-        form_layout.addWidget(QLabel("Corporation:"))
-        form_layout.addWidget(self.branch_corp_combo)
-        form_layout.addWidget(QLabel("Branch Name:"))
-        form_layout.addWidget(self.branch_name_input)
-        form_layout.addWidget(QLabel("OS:"))
-        form_layout.addWidget(self.branch_os_input)
-        form_layout.addWidget(add_btn)
-        form_layout.addStretch()
+        row2_layout.addWidget(QLabel("Area:"))
+        row2_layout.addWidget(self.branch_area_input)
+        row2_layout.addWidget(QLabel("Global:"))
+        row2_layout.addWidget(self.branch_global_combo)
+        row2_layout.addWidget(QLabel("Sunday:"))
+        row2_layout.addWidget(self.branch_sunday_combo)
+        row2_layout.addWidget(QLabel("LOB:"))
+        row2_layout.addWidget(self.branch_lob_combo)
+        row2_layout.addWidget(add_btn)
+        row2_layout.addStretch()
+        
+        form_main_layout.addLayout(row1_layout)
+        form_main_layout.addLayout(row2_layout)
         
         layout.addWidget(form_frame)
 
@@ -212,6 +266,16 @@ class UserManagementPage(QWidget):
         control_bar.addSpacing(20)
         control_bar.addWidget(filter_label)
         control_bar.addWidget(self.branch_filter_combo)
+        control_bar.addSpacing(10)
+        
+        self.branch_search_input = QLineEdit()
+        self.branch_search_input.setPlaceholderText("Search branch name...")
+        self.branch_search_input.setMinimumWidth(150)
+        self.branch_search_input.setClearButtonEnabled(True)
+        self.branch_search_input.returnPressed.connect(self._on_branch_filter_changed)
+        control_bar.addWidget(QLabel("Search:"))
+        control_bar.addWidget(self.branch_search_input)
+        
         control_bar.addStretch()
         control_bar.addWidget(prev_btn)
         control_bar.addWidget(self.branch_page_label)
@@ -221,8 +285,8 @@ class UserManagementPage(QWidget):
         
         # Table
         self.branch_table = QTableWidget()
-        self.branch_table.setColumnCount(7)
-        self.branch_table.setHorizontalHeaderLabels(["ID", "Branch Name", "Corporation", "OS", "Created At", "Registered", "Actions"])
+        self.branch_table.setColumnCount(12)
+        self.branch_table.setHorizontalHeaderLabels(["ID", "Branch Name", "Corporation", "Sub Corporation", "OS", "Area", "Global", "Sunday", "LOB", "Created At", "Registered", "Actions"])
         self.branch_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.branch_table.setAlternatingRowColors(True)
         self.branch_table.setStyleSheet("""
@@ -233,11 +297,16 @@ class UserManagementPage(QWidget):
         header = self.branch_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(8, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(10, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(11, QHeaderView.ResizeToContents)
         
         table_layout.addWidget(self.branch_table)
         layout.addWidget(table_frame)
@@ -245,45 +314,36 @@ class UserManagementPage(QWidget):
         return widget
 
     def _build_clients_tab(self):
-        """Build clients management tab"""
+
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(10)
 
-        # Add form
         form_frame = QFrame()
         form_frame.setStyleSheet("QFrame { background: #f8f9fa; border-radius: 6px; padding: 10px; }")
         form_layout = QVBoxLayout(form_frame)
         
-        # Row 1
         row1 = QHBoxLayout()
-        self.client_first_input = QLineEdit()
-        self.client_first_input.setPlaceholderText("First name")
-        self.client_first_input.setMinimumWidth(120)
-        self.client_last_input = QLineEdit()
-        self.client_last_input.setPlaceholderText("Last name")
-        self.client_last_input.setMinimumWidth(120)
         self.client_corp_combo = QComboBox()
         self.client_corp_combo.setMinimumWidth(150)
         self.client_corp_combo.currentIndexChanged.connect(self._on_client_corp_changed)
         self.client_branch_combo = QComboBox()
         self.client_branch_combo.setMinimumWidth(150)
         
-        row1.addWidget(QLabel("First:"))
-        row1.addWidget(self.client_first_input)
-        row1.addWidget(QLabel("Last:"))
-        row1.addWidget(self.client_last_input)
         row1.addWidget(QLabel("Corp:"))
         row1.addWidget(self.client_corp_combo)
         row1.addWidget(QLabel("Branch:"))
         row1.addWidget(self.client_branch_combo)
         
-        # Row 2
         row2 = QHBoxLayout()
         self.client_password_input = QLineEdit()
         self.client_password_input.setPlaceholderText("Password")
         self.client_password_input.setEchoMode(QLineEdit.Password)
         self.client_password_input.setMinimumWidth(150)
+        
+        client_show_pw = QCheckBox("Show")
+        client_show_pw.toggled.connect(lambda checked: self.client_password_input.setEchoMode(
+            QLineEdit.Normal if checked else QLineEdit.Password))
         
         add_btn = QPushButton("➕ Add Client")
         add_btn.setStyleSheet("QPushButton { background: #27ae60; color: white; padding: 6px 16px; border: none; border-radius: 4px; font-weight: bold; } QPushButton:hover { background: #219a52; }")
@@ -291,6 +351,7 @@ class UserManagementPage(QWidget):
         
         row2.addWidget(QLabel("Password:"))
         row2.addWidget(self.client_password_input)
+        row2.addWidget(client_show_pw)
         row2.addWidget(add_btn)
         row2.addStretch()
         
@@ -298,7 +359,6 @@ class UserManagementPage(QWidget):
         form_layout.addLayout(row2)
         layout.addWidget(form_frame)
 
-        # Table with pagination
         table_frame = QFrame()
         table_layout = QVBoxLayout(table_frame)
         table_layout.setContentsMargins(0, 0, 0, 0)
@@ -311,7 +371,7 @@ class UserManagementPage(QWidget):
         
         # Search
         self.client_search_input = QLineEdit()
-        self.client_search_input.setPlaceholderText("Search by username or name...")
+        self.client_search_input.setPlaceholderText("Search by username or branch...")
         self.client_search_input.setMaximumWidth(200)
         self.client_search_input.returnPressed.connect(self._load_clients)
         
@@ -334,8 +394,8 @@ class UserManagementPage(QWidget):
         
         # Table
         self.client_table = QTableWidget()
-        self.client_table.setColumnCount(8)
-        self.client_table.setHorizontalHeaderLabels(["ID", "Username", "First Name", "Last Name", "Corporation", "Branch", "Created At", "Actions"])
+        self.client_table.setColumnCount(6)
+        self.client_table.setHorizontalHeaderLabels(["ID", "Username", "Corporation", "Branch", "Created At", "Actions"])
         self.client_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.client_table.setAlternatingRowColors(True)
         self.client_table.setStyleSheet("""
@@ -345,26 +405,25 @@ class UserManagementPage(QWidget):
         """)
         header = self.client_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.Stretch)
-        header.setSectionResizeMode(3, QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)
         
         table_layout.addWidget(self.client_table)
         layout.addWidget(table_frame)
         
         return widget
 
-    # ========== LOAD METHODS ==========
     
     def _load_corp_dropdowns(self):
         """Load corporations into dropdowns"""
         try:
             rows = self.db.execute_query("SELECT id, name FROM corporations ORDER BY name")
             self.branch_corp_combo.clear()
+            self.branch_corp_combo2.clear()
+            self.branch_corp_combo2.addItem("-- None --", None)
             self.client_corp_combo.clear()
             # Preserve current filter selection
             current_filter = self.branch_filter_combo.currentData()
@@ -373,6 +432,7 @@ class UserManagementPage(QWidget):
             if rows:
                 for r in rows:
                     self.branch_corp_combo.addItem(r['name'], r['id'])
+                    self.branch_corp_combo2.addItem(r['name'], r['id'])
                     self.client_corp_combo.addItem(r['name'], r['id'])
                     self.branch_filter_combo.addItem(r['name'], r['id'])
                 # Restore filter selection if possible
@@ -384,15 +444,18 @@ class UserManagementPage(QWidget):
             print(f"Error loading corporations: {e}")
 
     def _on_tab_changed(self, index):
-        """Refresh dropdowns when switching to branches or clients tab"""
-        # Tab 0 = Corps, Tab 1 = Branches, Tab 2 = Clients, Tab 3 = Admin Users
+
+
         if index == 1:
             self._load_corp_dropdowns()
+            self._load_os_dropdown()
         elif index == 2:
             self._load_corp_dropdowns()
             self._refresh_client_branches()
-        elif index == 3:
+        elif index == 3 and self.is_super_admin:
             self._load_admin_users()
+        elif index == 4 and self.is_super_admin:
+            self._refresh_os_list()
 
     def _refresh_client_branches(self):
         """Refresh the branch dropdown in client form based on selected corporation"""
@@ -401,7 +464,7 @@ class UserManagementPage(QWidget):
         self.client_branch_combo.clear()
         if corp_id:
             try:
-                rows = self.db.execute_query("SELECT id, name FROM branches WHERE corporation_id = %s ORDER BY name", (corp_id,))
+                rows = self.db.execute_query("SELECT id, name FROM branches WHERE corporation_id = %s OR sub_corporation_id = %s ORDER BY name", (corp_id, corp_id))
                 if rows:
                     for r in rows:
                         self.client_branch_combo.addItem(r['name'], r['id'])
@@ -419,7 +482,7 @@ class UserManagementPage(QWidget):
         self.client_branch_combo.clear()
         if corp_id:
             try:
-                rows = self.db.execute_query("SELECT id, name FROM branches WHERE corporation_id = %s ORDER BY name", (corp_id,))
+                rows = self.db.execute_query("SELECT id, name FROM branches WHERE corporation_id = %s OR sub_corporation_id = %s ORDER BY name", (corp_id, corp_id))
                 if rows:
                     for r in rows:
                         self.client_branch_combo.addItem(r['name'], r['id'])
@@ -478,18 +541,30 @@ class UserManagementPage(QWidget):
         self._load_branches()
 
     def _load_branches(self):
-        """Load branches with pagination and optional corporation filter"""
+        """Load branches with pagination and optional corporation/name filter"""
         try:
             corp_filter = self.branch_filter_combo.currentData()
+            search_text = self.branch_search_input.text().strip()
             
-            # Build count query
+            # Build WHERE conditions
+            conditions = []
+            params = []
             if corp_filter:
-                count_row = self.db.execute_query(
-                    "SELECT COUNT(*) as cnt FROM branches WHERE corporation_id = %s", 
-                    (corp_filter,)
-                )
-            else:
-                count_row = self.db.execute_query("SELECT COUNT(*) as cnt FROM branches")
+                # Filter by either main corporation OR sub corporation
+                conditions.append("(b.corporation_id = %s OR b.sub_corporation_id = %s)")
+                params.append(corp_filter)
+                params.append(corp_filter)
+            if search_text:
+                conditions.append("b.name LIKE %s")
+                params.append(f"%{search_text}%")
+            
+            where_clause = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+            
+            # Count query
+            count_row = self.db.execute_query(
+                f"SELECT COUNT(*) as cnt FROM branches b {where_clause}",
+                tuple(params) if params else None
+            )
             
             self.branch_total = count_row[0]['cnt'] if count_row else 0
             
@@ -499,26 +574,24 @@ class UserManagementPage(QWidget):
             
             offset = self.branch_page * self.page_size
             
-            # Build data query with optional filter
-            if corp_filter:
-                rows = self.db.execute_query("""
-                    SELECT b.id, b.name, c.name as corp_name, b.created_at, b.is_registered,
-                           COALESCE(b.os_name, '') as os_name
-                    FROM branches b
-                    LEFT JOIN corporations c ON b.corporation_id = c.id
-                    WHERE b.corporation_id = %s
-                    ORDER BY c.name, b.name
-                    LIMIT %s OFFSET %s
-                """, (corp_filter, self.page_size, offset))
-            else:
-                rows = self.db.execute_query("""
-                    SELECT b.id, b.name, c.name as corp_name, b.created_at, b.is_registered,
-                           COALESCE(b.os_name, '') as os_name
-                    FROM branches b
-                    LEFT JOIN corporations c ON b.corporation_id = c.id
-                    ORDER BY c.name, b.name
-                    LIMIT %s OFFSET %s
-                """, (self.page_size, offset))
+            # Build data query with filters
+            data_params = list(params) + [self.page_size, offset]
+            rows = self.db.execute_query(f"""
+                SELECT b.id, b.name, c.name as corp_name, b.created_at, b.is_registered,
+                       COALESCE(b.os_name, '') as os_name,
+                       COALESCE(b.area, '') as area,
+                       COALESCE(b.global_tag, '') as global_tag,
+                       COALESCE(b.sunday, '') as sunday,
+                       COALESCE(b.line_of_business, '') as line_of_business,
+                       b.sub_corporation_id,
+                       COALESCE(sc.name, '') as sub_corp_name
+                FROM branches b
+                LEFT JOIN corporations c ON b.corporation_id = c.id
+                LEFT JOIN corporations sc ON b.sub_corporation_id = sc.id
+                {where_clause}
+                ORDER BY c.name, b.name
+                LIMIT %s OFFSET %s
+            """, tuple(data_params))
             
             self.branch_table.setRowCount(0)
             if rows:
@@ -528,9 +601,32 @@ class UserManagementPage(QWidget):
                     
                     self.branch_table.setItem(row_idx, 0, QTableWidgetItem(str(row_data['id'])))
                     self.branch_table.setItem(row_idx, 1, QTableWidgetItem(str(row_data['name'])))
-                    self.branch_table.setItem(row_idx, 2, QTableWidgetItem(str(row_data.get('corp_name', ''))))
+                    
+                    corp_name = str(row_data.get('corp_name', '')) or ''
+                    sub_corp_name = str(row_data.get('sub_corp_name', '')) or ''
+                    
+                    corp_widget = QWidget()
+                    corp_lay = QHBoxLayout(corp_widget)
+                    corp_lay.setContentsMargins(2, 2, 2, 2)
+                    corp_lay.setSpacing(4)
+                    
+                    corp_label = QLabel(corp_name if corp_name else '—')
+                    corp_label.setStyleSheet("font-size:10px; color: #2c3e50;" if corp_name else "font-size:10px; color: #aaa;")
+                    
+                    corp_edit_btn = QPushButton("✏️")
+                    corp_edit_btn.setFixedSize(24, 24)
+                    corp_edit_btn.setToolTip("Edit Main/Sub Corporation")
+                    corp_edit_btn.setStyleSheet("QPushButton { background: #3498db; border: none; border-radius: 3px; } QPushButton:hover { background: #2980b9; }")
+                    corp_edit_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data.get('name', ''), mcorp=row_data.get('corporation_id'), scorp=row_data.get('sub_corporation_id'): self._edit_branch_corporations(bid, bname, mcorp, scorp))
+                    
+                    corp_lay.addWidget(corp_label, 1)
+                    corp_lay.addWidget(corp_edit_btn)
+                    self.branch_table.setCellWidget(row_idx, 2, corp_widget)
+                    
+                    sub_corp_label = QLabel(sub_corp_name if sub_corp_name else '—')
+                    sub_corp_label.setStyleSheet("font-size:10px; color: #2c3e50;" if sub_corp_name else "font-size:10px; color: #aaa;")
+                    self.branch_table.setItem(row_idx, 3, QTableWidgetItem(sub_corp_label.text()))
 
-                    # OS column (col 3) with inline edit button
                     os_val = row_data.get('os_name', '') or ''
                     os_widget = QWidget()
                     os_lay = QHBoxLayout(os_widget)
@@ -545,18 +641,82 @@ class UserManagementPage(QWidget):
                     os_edit_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data.get('name', ''), cur_os=os_val: self._edit_branch_os(bid, bname, cur_os))
                     os_lay.addWidget(os_label, 1)
                     os_lay.addWidget(os_edit_btn)
-                    self.branch_table.setCellWidget(row_idx, 3, os_widget)
+                    self.branch_table.setCellWidget(row_idx, 4, os_widget)
 
-                    self.branch_table.setItem(row_idx, 4, QTableWidgetItem(str(row_data.get('created_at', ''))[:19]))
+                    area_val = row_data.get('area', '') or ''
+                    area_widget = QWidget()
+                    area_lay = QHBoxLayout(area_widget)
+                    area_lay.setContentsMargins(2, 2, 2, 2)
+                    area_lay.setSpacing(4)
+                    area_label = QLabel(area_val if area_val else '—')
+                    area_label.setStyleSheet("font-size:10px; color: #2c3e50;" if area_val else "font-size:10px; color: #aaa;")
+                    area_edit_btn = QPushButton("✏️")
+                    area_edit_btn.setFixedSize(24, 24)
+                    area_edit_btn.setToolTip("Edit Area")
+                    area_edit_btn.setStyleSheet("QPushButton { background: #3498db; border: none; border-radius: 3px; } QPushButton:hover { background: #2980b9; }")
+                    area_edit_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data.get('name', ''), cur=area_val: self._edit_branch_field(bid, bname, 'area', 'Area', cur))
+                    area_lay.addWidget(area_label, 1)
+                    area_lay.addWidget(area_edit_btn)
+                    self.branch_table.setCellWidget(row_idx, 5, area_widget)
+
+                    global_val = row_data.get('global_tag', '') or ''
+                    global_widget = QWidget()
+                    global_lay = QHBoxLayout(global_widget)
+                    global_lay.setContentsMargins(2, 2, 2, 2)
+                    global_lay.setSpacing(4)
+                    global_label = QLabel(global_val if global_val else '—')
+                    global_label.setStyleSheet("font-size:10px; color: #2c3e50;" if global_val else "font-size:10px; color: #aaa;")
+                    global_edit_btn = QPushButton("✏️")
+                    global_edit_btn.setFixedSize(24, 24)
+                    global_edit_btn.setToolTip("Edit Global")
+                    global_edit_btn.setStyleSheet("QPushButton { background: #3498db; border: none; border-radius: 3px; } QPushButton:hover { background: #2980b9; }")
+                    global_edit_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data.get('name', ''), cur=global_val: self._edit_branch_dropdown(bid, bname, 'global_tag', 'Global', cur, ['GLOBAL', 'NO GLOBAL']))
+                    global_lay.addWidget(global_label, 1)
+                    global_lay.addWidget(global_edit_btn)
+                    self.branch_table.setCellWidget(row_idx, 6, global_widget)
+
+                    # Sunday column (col 7) with edit button
+                    sunday_val = row_data.get('sunday', '') or ''
+                    sunday_widget = QWidget()
+                    sunday_lay = QHBoxLayout(sunday_widget)
+                    sunday_lay.setContentsMargins(2, 2, 2, 2)
+                    sunday_lay.setSpacing(4)
+                    sunday_label = QLabel(sunday_val if sunday_val else '—')
+                    sunday_label.setStyleSheet("font-size:10px; color: #2c3e50;" if sunday_val else "font-size:10px; color: #aaa;")
+                    sunday_edit_btn = QPushButton("✏️")
+                    sunday_edit_btn.setFixedSize(24, 24)
+                    sunday_edit_btn.setToolTip("Edit Sunday")
+                    sunday_edit_btn.setStyleSheet("QPushButton { background: #3498db; border: none; border-radius: 3px; } QPushButton:hover { background: #2980b9; }")
+                    sunday_edit_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data.get('name', ''), cur=sunday_val: self._edit_branch_dropdown(bid, bname, 'sunday', 'Sunday', cur, ['YES', 'NO']))
+                    sunday_lay.addWidget(sunday_label, 1)
+                    sunday_lay.addWidget(sunday_edit_btn)
+                    self.branch_table.setCellWidget(row_idx, 7, sunday_widget)
+
+                    # LOB column (col 8) with edit button
+                    lob_val = row_data.get('line_of_business', '') or ''
+                    lob_widget = QWidget()
+                    lob_lay = QHBoxLayout(lob_widget)
+                    lob_lay.setContentsMargins(2, 2, 2, 2)
+                    lob_lay.setSpacing(4)
+                    lob_label = QLabel(lob_val if lob_val else '—')
+                    lob_label.setStyleSheet("font-size:10px; color: #2c3e50;" if lob_val else "font-size:10px; color: #aaa;")
+                    lob_edit_btn = QPushButton("✏️")
+                    lob_edit_btn.setFixedSize(24, 24)
+                    lob_edit_btn.setToolTip("Edit Line of Business")
+                    lob_edit_btn.setStyleSheet("QPushButton { background: #3498db; border: none; border-radius: 3px; } QPushButton:hover { background: #2980b9; }")
+                    lob_edit_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data.get('name', ''), cur=lob_val: self._edit_branch_dropdown(bid, bname, 'line_of_business', 'Line of Business', cur, ['GROUP 1', 'GROUP 2', 'GROUP 3']))
+                    lob_lay.addWidget(lob_label, 1)
+                    lob_lay.addWidget(lob_edit_btn)
+                    self.branch_table.setCellWidget(row_idx, 8, lob_widget)
+
+                    self.branch_table.setItem(row_idx, 9, QTableWidgetItem(str(row_data.get('created_at', ''))[:19]))
                     
-                    # Registered toggle button with visible label + confirmation
                     is_registered = row_data.get('is_registered', 1)
                     reg_widget = QWidget()
                     reg_layout = QHBoxLayout(reg_widget)
                     reg_layout.setContentsMargins(2, 2, 2, 2)
                     reg_layout.setSpacing(6)
 
-                    # Status label (explicit text so column isn't just an icon)
                     status_label = QLabel("Registered" if is_registered else "Not Registered")
                     status_label.setStyleSheet("font-size:10px;")
                     if is_registered:
@@ -571,15 +731,13 @@ class UserManagementPage(QWidget):
                     else:
                         reg_btn.setStyleSheet("QPushButton { background: #e74c3c; color: white; border: none; border-radius: 3px; font-size: 10px; } QPushButton:hover { background: #c0392b; }")
 
-                    # Pass branch name for confirmation message
                     reg_btn.clicked.connect(lambda checked, bid=row_data['id'], current=is_registered, bname=row_data.get('name', ''): self._toggle_branch_registered(bid, current, bname))
 
                     reg_layout.addWidget(status_label)
                     reg_layout.addWidget(reg_btn)
                     reg_layout.addStretch()
-                    self.branch_table.setCellWidget(row_idx, 5, reg_widget)
+                    self.branch_table.setCellWidget(row_idx, 10, reg_widget)
                     
-                    # Actions button
                     action_widget = QWidget()
                     action_layout = QHBoxLayout(action_widget)
                     action_layout.setContentsMargins(2, 2, 2, 2)
@@ -591,7 +749,7 @@ class UserManagementPage(QWidget):
                     del_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data['name']: self._delete_branch(bid, bname))
                     
                     action_layout.addWidget(del_btn)
-                    self.branch_table.setCellWidget(row_idx, 6, action_widget)
+                    self.branch_table.setCellWidget(row_idx, 11, action_widget)
             
             self.branch_page_label.setText(f"Page {self.branch_page + 1} of {total_pages} ({self.branch_total} total)")
             
@@ -601,14 +759,23 @@ class UserManagementPage(QWidget):
     def _edit_branch_os(self, branch_id, branch_name, current_os):
         """Open a dialog to assign / change the Operation Supervisor for a branch."""
         from PyQt5.QtWidgets import QInputDialog
-        new_os, ok = QInputDialog.getText(
+        supervisors = get_all_supervisors()
+        items = ['-- Clear --'] + [s['name'] for s in supervisors]
+        current_idx = 0
+        if current_os:
+            for i, s in enumerate(supervisors):
+                if s['name'] == current_os:
+                    current_idx = i + 1
+                    break
+        new_os, ok = QInputDialog.getItem(
             self, "Assign Operation Supervisor",
-            f"Enter OS name for branch '{branch_name}':",
-            text=current_os or ""
+            f"Select OS for branch '{branch_name}':",
+            items, current_idx, False
         )
         if not ok:
             return
-        new_os = new_os.strip()
+        if new_os == '-- Clear --':
+            new_os = None
         try:
             self.db.execute_query(
                 "UPDATE branches SET os_name = %s WHERE id = %s",
@@ -619,6 +786,68 @@ class UserManagementPage(QWidget):
             self._load_branches()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to update OS: {e}")
+
+    def _edit_branch_corporations(self, branch_id, branch_name, main_corp_id, sub_corp_id):
+        """Open a dialog to edit main and sub corporation for a branch."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Edit Corporations - {branch_name}")
+        dialog.setMinimumWidth(400)
+        
+        layout = QFormLayout(dialog)
+        layout.setSpacing(10)
+        
+        # Load all corporations
+        try:
+            corps = self.db.execute_query("SELECT id, name FROM corporations ORDER BY name")
+        except:
+            corps = []
+        
+        # Main Corporation combo
+        main_corp_combo = QComboBox()
+        for c in corps:
+            main_corp_combo.addItem(c['name'], c['id'])
+            if c['id'] == main_corp_id:
+                main_corp_combo.setCurrentIndex(main_corp_combo.count() - 1)
+        
+        # Sub Corporation combo
+        sub_corp_combo = QComboBox()
+        sub_corp_combo.addItem("-- None --", None)
+        for c in corps:
+            sub_corp_combo.addItem(c['name'], c['id'])
+            if c['id'] == sub_corp_id:
+                sub_corp_combo.setCurrentIndex(sub_corp_combo.count() - 1)
+        
+        layout.addRow("Main Corporation:", main_corp_combo)
+        layout.addRow("Sub Corporation:", sub_corp_combo)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addRow(buttons)
+        
+        if dialog.exec_() == QDialog.Accepted:
+            try:
+                new_main_corp_id = main_corp_combo.currentData()
+                new_sub_corp_id = sub_corp_combo.currentData()
+                
+                if new_sub_corp_id and new_sub_corp_id == new_main_corp_id:
+                    QMessageBox.warning(self, "Invalid", "Sub Corporation must be different from Main Corporation.")
+                    return
+                
+                # Update in database
+                self.db.execute_query(
+                    "UPDATE branches SET corporation_id = %s, sub_corporation_id = %s WHERE id = %s",
+                    (new_main_corp_id, new_sub_corp_id, branch_id)
+                )
+                
+                main_corp_name = main_corp_combo.currentText()
+                sub_corp_name = sub_corp_combo.currentText() if new_sub_corp_id else "None"
+                QMessageBox.information(self, "✅ Updated", 
+                    f"Branch '{branch_name}' updated:\nMain: {main_corp_name}\nSub: {sub_corp_name}")
+                self._load_branches()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to update corporations: {e}")
 
     def _toggle_branch_registered(self, branch_id, current_status, branch_name=None):
         """Toggle the registered status of a branch with confirmation"""
@@ -648,6 +877,60 @@ class UserManagementPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to update branch: {e}")
 
+    def _edit_branch_field(self, branch_id, branch_name, field_name, field_label, current_value):
+        """Open a dialog to edit a text field for a branch."""
+        from PyQt5.QtWidgets import QInputDialog
+        new_val, ok = QInputDialog.getText(
+            self, f"Edit {field_label}",
+            f"Enter {field_label} for branch '{branch_name}':",
+            text=current_value or ""
+        )
+        if not ok:
+            return
+        new_val = new_val.strip()
+        try:
+            self.db.execute_query(
+                f"UPDATE branches SET {field_name} = %s WHERE id = %s",
+                (new_val if new_val else None, branch_id)
+            )
+            QMessageBox.information(self, "Updated",
+                f"{field_label} for '{branch_name}' set to '{new_val}'." if new_val else f"{field_label} for '{branch_name}' cleared.")
+            self._load_branches()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to update {field_label}: {e}")
+
+    def _edit_branch_dropdown(self, branch_id, branch_name, field_name, field_label, current_value, options):
+        """Open a dialog to edit a dropdown field for a branch."""
+        from PyQt5.QtWidgets import QInputDialog
+        # Add empty option for clearing
+        items = ['-- Clear --'] + options
+        current_idx = 0
+        if current_value in options:
+            current_idx = options.index(current_value) + 1
+        
+        new_val, ok = QInputDialog.getItem(
+            self, f"Edit {field_label}",
+            f"Select {field_label} for branch '{branch_name}':",
+            items, current_idx, False
+        )
+        if not ok:
+            return
+        
+        # Handle clear option
+        if new_val == '-- Clear --':
+            new_val = None
+        
+        try:
+            self.db.execute_query(
+                f"UPDATE branches SET {field_name} = %s WHERE id = %s",
+                (new_val, branch_id)
+            )
+            QMessageBox.information(self, "Updated",
+                f"{field_label} for '{branch_name}' set to '{new_val}'." if new_val else f"{field_label} for '{branch_name}' cleared.")
+            self._load_branches()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to update {field_label}: {e}")
+
     def _load_clients(self):
         """Load clients with pagination and search"""
         try:
@@ -655,9 +938,9 @@ class UserManagementPage(QWidget):
             
             # Build query
             if search:
-                count_query = "SELECT COUNT(*) as cnt FROM users WHERE role='user' AND (username LIKE %s OR first_name LIKE %s OR last_name LIKE %s)"
+                count_query = "SELECT COUNT(*) as cnt FROM users WHERE role='user' AND (username LIKE %s OR branch LIKE %s)"
                 search_param = f"%{search}%"
-                count_row = self.db.execute_query(count_query, (search_param, search_param, search_param))
+                count_row = self.db.execute_query(count_query, (search_param, search_param))
             else:
                 count_row = self.db.execute_query("SELECT COUNT(*) as cnt FROM users WHERE role='user'")
             
@@ -671,13 +954,13 @@ class UserManagementPage(QWidget):
             
             if search:
                 rows = self.db.execute_query("""
-                    SELECT id, username, first_name, last_name, corporation, branch, created_at
-                    FROM users WHERE role='user' AND (username LIKE %s OR first_name LIKE %s OR last_name LIKE %s)
+                    SELECT id, username, corporation, branch, created_at
+                    FROM users WHERE role='user' AND (username LIKE %s OR branch LIKE %s)
                     ORDER BY id DESC LIMIT %s OFFSET %s
-                """, (search_param, search_param, search_param, self.page_size, offset))
+                """, (search_param, search_param, self.page_size, offset))
             else:
                 rows = self.db.execute_query("""
-                    SELECT id, username, first_name, last_name, corporation, branch, created_at
+                    SELECT id, username, corporation, branch, created_at
                     FROM users WHERE role='user'
                     ORDER BY id DESC LIMIT %s OFFSET %s
                 """, (self.page_size, offset))
@@ -690,11 +973,9 @@ class UserManagementPage(QWidget):
                     
                     self.client_table.setItem(row_idx, 0, QTableWidgetItem(str(row_data['id'])))
                     self.client_table.setItem(row_idx, 1, QTableWidgetItem(str(row_data.get('username', ''))))
-                    self.client_table.setItem(row_idx, 2, QTableWidgetItem(str(row_data.get('first_name', ''))))
-                    self.client_table.setItem(row_idx, 3, QTableWidgetItem(str(row_data.get('last_name', ''))))
-                    self.client_table.setItem(row_idx, 4, QTableWidgetItem(str(row_data.get('corporation', ''))))
-                    self.client_table.setItem(row_idx, 5, QTableWidgetItem(str(row_data.get('branch', ''))))
-                    self.client_table.setItem(row_idx, 6, QTableWidgetItem(str(row_data.get('created_at', ''))[:19]))
+                    self.client_table.setItem(row_idx, 2, QTableWidgetItem(str(row_data.get('corporation', ''))))
+                    self.client_table.setItem(row_idx, 3, QTableWidgetItem(str(row_data.get('branch', ''))))
+                    self.client_table.setItem(row_idx, 4, QTableWidgetItem(str(row_data.get('created_at', ''))[:19]))
                     
                     # Actions buttons
                     action_widget = QWidget()
@@ -714,7 +995,7 @@ class UserManagementPage(QWidget):
                     
                     action_layout.addWidget(edit_btn)
                     action_layout.addWidget(del_btn)
-                    self.client_table.setCellWidget(row_idx, 7, action_widget)
+                    self.client_table.setCellWidget(row_idx, 5, action_widget)
             
             self.client_page_label.setText(f"Page {self.client_page + 1} of {total_pages} ({self.client_total} total)")
             
@@ -735,8 +1016,7 @@ class UserManagementPage(QWidget):
         self.client_page += delta
         self._load_clients()
 
-    # ========== ADD METHODS ==========
-    
+
     def _add_corporation(self):
         name = self.corp_name_input.text().strip()
         if not name:
@@ -755,51 +1035,91 @@ class UserManagementPage(QWidget):
     def _add_branch(self):
         name = self.branch_name_input.text().strip()
         corp_id = self.branch_corp_combo.currentData()
-        os_name = self.branch_os_input.text().strip() or None
+        corp_id2 = self.branch_corp_combo2.currentData()
+        os_name = self.branch_os_combo.currentData()
+        area = self.branch_area_input.text().strip() or None
+        global_tag = self.branch_global_combo.currentData()
+        sunday = self.branch_sunday_combo.currentData()
+        lob = self.branch_lob_combo.currentData()
+        
+        missing = []
         if not corp_id:
-            QMessageBox.warning(self, "Selection Required", "Please select a corporation.")
-            return
+            missing.append("Corporation")
         if not name:
-            QMessageBox.warning(self, "Input Required", "Please enter a branch name.")
+            missing.append("Branch Name")
+        if not os_name:
+            missing.append("Group")
+        if not area:
+            missing.append("Area")
+        if not global_tag:
+            missing.append("Global")
+        if not sunday:
+            missing.append("Sunday")
+        if not lob:
+            missing.append("LOB")
+        if missing:
+            QMessageBox.warning(self, "Input Required", f"Please fill in the following fields:\n• " + "\n• ".join(missing))
             return
+        if corp_id2 and corp_id2 == corp_id:
+            QMessageBox.warning(self, "Same Corporation", "Sub Corporation must be different from Main Corporation.")
+            return
+        
+        # Check duplicates for corp 1
+        existing = self.db.execute_query(
+            "SELECT id FROM branches WHERE corporation_id = %s AND name = %s",
+            (corp_id, name)
+        )
+        if existing:
+            corp_name = self.branch_corp_combo.currentText()
+            QMessageBox.warning(self, "Duplicate Branch", f"Branch '{name}' already exists under '{corp_name}'.")
+            return
+        
         try:
-            bid = create_branch(name, corp_id)
+            # Create only ONE branch with the main corporation
+            bid = create_branch(name, corp_id, os_name=os_name, sub_corporation_id=corp_id2)
+            
             if bid:
-                # Save OS name if provided
-                if os_name:
-                    self.db.execute_query(
-                        "UPDATE branches SET os_name = %s WHERE id = %s",
-                        (os_name, bid)
-                    )
-                QMessageBox.information(self, "✅ Created", f"Branch '{name}' created (ID: {bid})")
-                self.branch_name_input.clear()
-                self.branch_os_input.clear()
-                self._load_branches()
-                # Refresh branch dropdown in clients tab so new branch appears
-                self._refresh_client_branches()
+                # Update all additional fields
+                self.db.execute_query(
+                    """UPDATE branches 
+                       SET area = %s, global_tag = %s, sunday = %s, line_of_business = %s 
+                       WHERE id = %s""",
+                    (area, global_tag, sunday, lob, bid)
+                )
+            
+            if bid:
+                corp_name = self.branch_corp_combo.currentText()
+                if corp_id2:
+                    sub_corp_name = self.branch_corp_combo2.currentText()
+                    QMessageBox.information(self, "✅ Created", f"Branch '{name}' created under {corp_name} (ID: {bid})\nSub Corporation: {sub_corp_name}")
+                else:
+                    QMessageBox.information(self, "✅ Created", f"Branch '{name}' created (ID: {bid})")
+            
+            self.branch_name_input.clear()
+            self.branch_os_combo.setCurrentIndex(0)
+            self.branch_area_input.clear()
+            self.branch_global_combo.setCurrentIndex(0)
+            self.branch_sunday_combo.setCurrentIndex(0)
+            self.branch_lob_combo.setCurrentIndex(0)
+            self.branch_corp_combo2.setCurrentIndex(0)
+            self._load_branches()
+            self._refresh_client_branches()
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to create branch: {e}")
 
     def _add_client(self):
-        first = self.client_first_input.text().strip()
-        last = self.client_last_input.text().strip()
         corp_id = self.client_corp_combo.currentData()
         branch_id = self.client_branch_combo.currentData()
         password = self.client_password_input.text() or None
 
-        if not (first and last):
-            QMessageBox.warning(self, "Input Required", "Please enter first and last names.")
-            return
         if not corp_id or not branch_id:
             QMessageBox.warning(self, "Selection Required", "Please select corporation and branch.")
             return
 
         try:
-            row = create_client(first, last, corp_id, branch_id, password)
+            row = create_client(None, None, corp_id, branch_id, password)
             if row:
                 QMessageBox.information(self, "✅ Created", f"Client created!\nUsername: {row['username']}\nID: {row['id']}")
-                self.client_first_input.clear()
-                self.client_last_input.clear()
                 self.client_password_input.clear()
                 self._load_clients()
         except Exception as e:
@@ -819,9 +1139,6 @@ class UserManagementPage(QWidget):
         # Fields
         username_label = QLabel(client_data.get('username', ''))
         username_label.setStyleSheet("font-weight: bold; color: #2c3e50;")
-        
-        first_input = QLineEdit(client_data.get('first_name', ''))
-        last_input = QLineEdit(client_data.get('last_name', ''))
         
         corp_combo = QComboBox()
         branch_combo = QComboBox()
@@ -843,7 +1160,7 @@ class UserManagementPage(QWidget):
             branch_combo.clear()
             if corp_id:
                 try:
-                    branches = self.db.execute_query("SELECT id, name FROM branches WHERE corporation_id = %s ORDER BY name", (corp_id,))
+                    branches = self.db.execute_query("SELECT id, name FROM branches WHERE corporation_id = %s OR sub_corporation_id = %s ORDER BY name", (corp_id, corp_id))
                     if branches:
                         for b in branches:
                             branch_combo.addItem(b['name'], b['id'])
@@ -859,12 +1176,17 @@ class UserManagementPage(QWidget):
         password_input.setPlaceholderText("Leave empty to keep current")
         password_input.setEchoMode(QLineEdit.Password)
         
+        pw_row = QHBoxLayout()
+        pw_row.addWidget(password_input)
+        edit_show_pw = QCheckBox("Show")
+        edit_show_pw.toggled.connect(lambda checked: password_input.setEchoMode(
+            QLineEdit.Normal if checked else QLineEdit.Password))
+        pw_row.addWidget(edit_show_pw)
+        
         layout.addRow("Username:", username_label)
-        layout.addRow("First Name:", first_input)
-        layout.addRow("Last Name:", last_input)
         layout.addRow("Corporation:", corp_combo)
         layout.addRow("Branch:", branch_combo)
-        layout.addRow("New Password:", password_input)
+        layout.addRow("New Password:", pw_row)
         
         # Buttons
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -878,18 +1200,10 @@ class UserManagementPage(QWidget):
                 update_fields = []
                 update_values = []
                 
-                new_first = first_input.text().strip()
-                new_last = last_input.text().strip()
                 new_corp = corp_combo.currentText()
                 new_branch = branch_combo.currentText()
                 new_password = password_input.text()
                 
-                if new_first:
-                    update_fields.append("first_name = %s")
-                    update_values.append(new_first)
-                if new_last:
-                    update_fields.append("last_name = %s")
-                    update_values.append(new_last)
                 if new_corp:
                     update_fields.append("corporation = %s")
                     update_values.append(new_corp)
@@ -979,6 +1293,10 @@ class UserManagementPage(QWidget):
         self.admin_password_input.setPlaceholderText("Password")
         self.admin_password_input.setEchoMode(QLineEdit.Password)
         self.admin_password_input.setMinimumWidth(140)
+        
+        self.admin_show_pw = QCheckBox("Show")
+        self.admin_show_pw.toggled.connect(lambda checked: self.admin_password_input.setEchoMode(
+            QLineEdit.Normal if checked else QLineEdit.Password))
 
         self.admin_role_combo = QComboBox()
         self.admin_role_combo.addItem("admin",       "admin")
@@ -1009,6 +1327,7 @@ class UserManagementPage(QWidget):
         form_layout.addWidget(self.admin_username_input)
         form_layout.addWidget(QLabel("Password:"))
         form_layout.addWidget(self.admin_password_input)
+        form_layout.addWidget(self.admin_show_pw)
         form_layout.addWidget(QLabel("Role:"))
         form_layout.addWidget(self.admin_role_combo)
         form_layout.addWidget(self.admin_brand_label)
@@ -1263,9 +1582,16 @@ class UserManagementPage(QWidget):
         confirm_pw = QLineEdit()
         confirm_pw.setPlaceholderText("Confirm password")
         confirm_pw.setEchoMode(QLineEdit.Password)
+        
+        reset_show_pw = QCheckBox("Show")
+        reset_show_pw.toggled.connect(lambda checked: (
+            new_pw.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password),
+            confirm_pw.setEchoMode(QLineEdit.Normal if checked else QLineEdit.Password)
+        ))
 
         form.addRow("New Password:", new_pw)
         form.addRow("Confirm:", confirm_pw)
+        form.addRow("", reset_show_pw)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         btns.accepted.connect(dialog.accept)
@@ -1288,7 +1614,7 @@ class UserManagementPage(QWidget):
                     (hashed, user_id)
                 )
                 QMessageBox.information(
-                    self, "✅ Updated",
+                    self, "Updated",
                     f"Password for '{username}' has been reset."
                 )
             except Exception as e:
@@ -1303,7 +1629,169 @@ class UserManagementPage(QWidget):
         if reply == QMessageBox.Yes:
             try:
                 self.db.execute_query("DELETE FROM users WHERE id = %s", (client_id,))
-                QMessageBox.information(self, "✅ Deleted", f"Client '{username}' deleted.")
+                QMessageBox.information(self, "Deleted", f"Client '{username}' deleted.")
                 self._load_clients()
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to delete: {e}")
+
+    # ========== OPERATION SUPERVISORS ==========
+
+    def _load_os_dropdown(self):
+        """Populate the OS dropdown in the branch creation form."""
+        current = self.branch_os_combo.currentData()
+        self.branch_os_combo.clear()
+        self.branch_os_combo.addItem("-- Select Group --", None)
+        try:
+            supervisors = get_all_supervisors()
+            for s in supervisors:
+                self.branch_os_combo.addItem(s['name'], s['name'])
+            if current:
+                idx = self.branch_os_combo.findData(current)
+                if idx >= 0:
+                    self.branch_os_combo.setCurrentIndex(idx)
+        except Exception as e:
+            print(f"Error loading supervisors: {e}")
+
+    def _build_os_tab(self):
+
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(15)
+        layout.setContentsMargins(15, 15, 15, 15)
+
+        title = QLabel("📋 Manage Operation Supervisors")
+        title.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50;")
+        layout.addWidget(title)
+
+        desc = QLabel("Add or remove Operation Supervisor names. These will appear as dropdown options when creating branches.")
+        desc.setStyleSheet("font-size: 12px; color: #666;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        # Add form
+        add_frame = QFrame()
+        add_frame.setStyleSheet("QFrame { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 8px; padding: 12px; }")
+        add_layout = QHBoxLayout(add_frame)
+        add_layout.setSpacing(10)
+
+        self._os_name_input = QLineEdit()
+        self._os_name_input.setPlaceholderText("Enter Operation Supervisor name")
+        self._os_name_input.setStyleSheet("QLineEdit { padding: 8px; border: 1.5px solid #ccc; border-radius: 6px; font-size: 13px; } QLineEdit:focus { border-color: #3498db; }")
+        self._os_name_input.returnPressed.connect(self._on_add_supervisor)
+        add_layout.addWidget(self._os_name_input, 1)
+
+        add_btn = QPushButton("➕ Add Supervisor")
+        add_btn.setStyleSheet("QPushButton { background: #27ae60; color: white; border: none; padding: 8px 18px; border-radius: 6px; font-weight: bold; } QPushButton:hover { background: #229954; }")
+        add_btn.clicked.connect(self._on_add_supervisor)
+        add_layout.addWidget(add_btn)
+        layout.addWidget(add_frame)
+
+
+        list_label = QLabel("Current Operation Supervisors:")
+        list_label.setStyleSheet("font-weight: bold; font-size: 13px;")
+        layout.addWidget(list_label)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("QScrollArea { border: 1px solid #dee2e6; border-radius: 6px; }")
+        self._os_list_widget = QWidget()
+        self._os_list_layout = QVBoxLayout(self._os_list_widget)
+        self._os_list_layout.setAlignment(Qt.AlignTop)
+        self._os_list_layout.setSpacing(6)
+        scroll.setWidget(self._os_list_widget)
+        layout.addWidget(scroll, 1)
+
+        self._refresh_os_list()
+        return widget
+
+    def _refresh_os_list(self):
+        """Reload the operation supervisors list UI."""
+        while self._os_list_layout.count():
+            item = self._os_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        supervisors = get_all_supervisors()
+        if not supervisors:
+            empty = QLabel("No operation supervisors added yet.")
+            empty.setStyleSheet("color: #999; font-style: italic; padding: 20px;")
+            empty.setAlignment(Qt.AlignCenter)
+            self._os_list_layout.addWidget(empty)
+            return
+
+        for sup in supervisors:
+            sid = sup['id']
+            sname = sup['name']
+            row = QFrame()
+            row.setStyleSheet("QFrame { background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 6px 10px; } QFrame:hover { border-color: #3498db; }")
+            h = QHBoxLayout(row)
+            h.setContentsMargins(10, 6, 10, 6)
+            lbl = QLabel(f"👤 {sname}")
+            lbl.setStyleSheet("font-size: 13px; font-weight: 600; border: none;")
+            h.addWidget(lbl)
+            h.addStretch()
+
+            edit_btn = QPushButton("✏️ Edit")
+            edit_btn.setStyleSheet("QPushButton { background: #3498db; color: white; border: none; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; } QPushButton:hover { background: #2980b9; }")
+            edit_btn.clicked.connect(lambda checked, s_id=sid, s_name=sname: self._on_edit_supervisor(s_id, s_name))
+            h.addWidget(edit_btn)
+
+            del_btn = QPushButton("🗑️ Remove")
+            del_btn.setStyleSheet("QPushButton { background: #e74c3c; color: white; border: none; padding: 5px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; } QPushButton:hover { background: #c0392b; }")
+            del_btn.clicked.connect(lambda checked, s_id=sid, s_name=sname: self._on_delete_supervisor(s_id, s_name))
+            h.addWidget(del_btn)
+            self._os_list_layout.addWidget(row)
+
+    def _on_add_supervisor(self):
+        name = self._os_name_input.text().strip()
+        if not name:
+            QMessageBox.warning(self, "Input Required", "Please enter a supervisor name.")
+            return
+        try:
+            sid = create_supervisor(name)
+            if sid:
+                QMessageBox.information(self, "✅ Created", f"Operation Supervisor '{name}' added.")
+                self._os_name_input.clear()
+                self._refresh_os_list()
+                self._load_os_dropdown()
+        except Exception as e:
+            if "Duplicate" in str(e):
+                QMessageBox.warning(self, "Duplicate", f"'{name}' already exists.")
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to add supervisor: {e}")
+
+    def _on_delete_supervisor(self, supervisor_id, name):
+        reply = QMessageBox.question(
+            self, "Confirm Delete",
+            f"Are you sure you want to remove '{name}'?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            try:
+                delete_supervisor(supervisor_id)
+                self._refresh_os_list()
+                self._load_os_dropdown()
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to remove supervisor: {e}")
+
+    def _on_edit_supervisor(self, supervisor_id, current_name):
+        from PyQt5.QtWidgets import QInputDialog
+        new_name, ok = QInputDialog.getText(
+            self, "Edit Supervisor",
+            "Enter new name:",
+            text=current_name
+        )
+        if not ok:
+            return
+        new_name = new_name.strip()
+        if not new_name or new_name == current_name:
+            return
+        try:
+            update_supervisor(supervisor_id, new_name)
+            self._refresh_os_list()
+            self._load_os_dropdown()
+        except Exception as e:
+            if "Duplicate" in str(e):
+                QMessageBox.warning(self, "Duplicate", f"'{new_name}' already exists.")
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to rename supervisor: {e}")

@@ -28,3 +28,8 @@ bcrypt==4.1.2
 # Auto-updater dependencies
 requests==2.31.0
 packaging==23.2
+
+# REST API Server dependencies
+Flask==3.0.0
+Flask-CORS==4.0.0
+PyJWT==2.12.1
