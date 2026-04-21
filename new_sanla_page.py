@@ -15,6 +15,8 @@ from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QPainter
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from db_connect_pooled import db_manager
+from db_worker import run_query_async
+from date_range_widget import DateRangeWidget
 
 
 # Column definitions  ──────────────────────────────────────────────────────
@@ -82,39 +84,34 @@ class NewSanlaPage(QWidget):
         row = QHBoxLayout(frame)
         row.setSpacing(15)
 
-        row.addWidget(self._bold_label("Corporation:"))
-        self.corp_selector = self._combo(220)
-        self.corp_selector.currentTextChanged.connect(self.populate_table)
-        row.addWidget(self.corp_selector)
+        row.addWidget(self._bold_label("Group:"))
+        self.group_selector = self._combo(220)
+        self.group_selector.currentTextChanged.connect(self.populate_table)
+        row.addWidget(self.group_selector)
 
         row.addSpacing(20)
         row.addWidget(self._bold_label("Date:"))
-        self.date_selector = QDateEdit(calendarPopup=True)
-        self.date_selector.setDate(QDate.currentDate())
-        self.date_selector.setDisplayFormat("yyyy-MM-dd")
-        self.date_selector.setMinimumHeight(38)
-        self.date_selector.setMinimumWidth(150)
-        self.date_selector.dateChanged.connect(self.populate_table)
-        self.date_selector.setStyleSheet(
-            "QDateEdit{padding:8px;border:2px solid #dee2e6;border-radius:6px;"
-            "background:white;font-size:13px;}"
-            "QDateEdit:focus{border-color:#007bff;}"
-        )
-        row.addWidget(self.date_selector)
+        self.date_range_widget = DateRangeWidget()
+        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
+        self.date_selector = self.date_range_widget  # backward-compat
+        row.addWidget(self.date_range_widget)
 
         row.addSpacing(20)
         row.addWidget(self._bold_label("Status:"))
         self.reg_filter_selector = self._combo(150)
         self.reg_filter_selector.addItem("Registered Only", "registered")
+        self.reg_filter_selector.addItem("Not Registered", "not_registered")
+        self.reg_filter_selector.addItem("All Branches", "all")
         self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
         row.addWidget(self.reg_filter_selector)
 
-        row.addSpacing(20)
-        row.addWidget(self._bold_label("OS Filter:"))
+        # Keep os_filter_selector for backward compat but hidden
         self.os_filter_selector = self._combo(180)
         self.os_filter_selector.addItem("All (by Corporation)", None)
-        self.os_filter_selector.currentIndexChanged.connect(self.populate_table)
-        row.addWidget(self.os_filter_selector)
+        self.os_filter_selector.setVisible(False)
+        # Keep corp_selector for backward compat but hidden
+        self.corp_selector = self._combo(220)
+        self.corp_selector.setVisible(False)
 
         row.addStretch()
         parent.addWidget(frame, 0)
@@ -189,20 +186,21 @@ class NewSanlaPage(QWidget):
 
     # ── Data loading ──────────────────────────────────────────────────────
     def load_corporations(self):
-        self.corp_selector.blockSignals(True)
-        self.corp_selector.clear()
-        self.corp_selector.addItem("")
+        self.group_selector.blockSignals(True)
+        self.group_selector.clear()
         try:
             rows = db_manager.execute_query(
-                "SELECT DISTINCT corporation FROM daily_reports_brand_a ORDER BY corporation"
+                "SELECT DISTINCT os_name FROM branches "
+                "WHERE os_name IS NOT NULL AND os_name != '' ORDER BY os_name"
             )
-            for r in rows:
-                self.corp_selector.addItem(r['corporation'])
+            if rows:
+                for r in rows:
+                    name = r['os_name'] if isinstance(r, dict) else r[0]
+                    self.group_selector.addItem(name)
         except Exception as e:
-            print(f"Error loading corporations: {e}")
+            print(f"Error loading groups: {e}")
         finally:
-            self.corp_selector.blockSignals(False)
-        self._load_os_options()
+            self.group_selector.blockSignals(False)
 
     def _load_os_options(self):
         self.os_filter_selector.blockSignals(True)
@@ -232,12 +230,12 @@ class NewSanlaPage(QWidget):
         self._is_loading = True
         self.table.setRowCount(0)
 
-        corp = self.corp_selector.currentText().strip()
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
-        os_filter = self.os_filter_selector.currentData()
+        group = self.group_selector.currentText().strip() if hasattr(self, 'group_selector') else ""
+        date_start, date_end = self.date_range_widget.get_date_range()
+        is_range = self.date_range_widget.is_range_mode()
         reg_value = self.reg_filter_selector.currentData()
 
-        if not corp and not os_filter:
+        if not group:
             self._is_loading = False
             return
 
@@ -247,37 +245,50 @@ class NewSanlaPage(QWidget):
 
         select_parts = ["b.name AS branch"]
         for col in sorted(needed):
-            select_parts.append(f"COALESCE(dr.`{col}`, 0) AS `{col}`")
+            if is_range:
+                select_parts.append(f"SUM(COALESCE(dr.`{col}`, 0)) AS `{col}`")
+            else:
+                select_parts.append(f"COALESCE(dr.`{col}`, 0) AS `{col}`")
 
-        where_parts = ["dr.date = %s"]
-        params = [selected_date]
+        if is_range:
+            where_parts = ["dr.date >= %s", "dr.date <= %s"]
+            params = [date_start, date_end]
+        else:
+            where_parts = ["dr.date = %s"]
+            params = [date_start]
 
-        if corp:
-            where_parts.append("dr.corporation = %s")
-            params.append(corp)
-        if os_filter:
+        if group:
             where_parts.append("b.os_name = %s")
-            params.append(os_filter)
+            params.append(group)
         if reg_value == "registered":
             where_parts.append("b.is_registered = 1")
         elif reg_value == "not_registered":
             where_parts.append("(b.is_registered = 0 OR b.is_registered IS NULL)")
 
+        group_by = " GROUP BY b.name" if is_range else ""
         sql = (
             f"SELECT {', '.join(select_parts)} "
-            f"FROM daily_reports_brand_a dr "
-            f"INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci "
-            f"WHERE {' AND '.join(where_parts)} "
+            f"FROM branches b "
+            f"LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+            f"WHERE {' AND '.join(where_parts)}"
+            f"{group_by} "
             f"ORDER BY b.name"
         )
 
-        try:
-            rows = db_manager.execute_query(sql, tuple(params))
-        except Exception as e:
-            QMessageBox.critical(self, "Query Error", str(e))
-            self._is_loading = False
-            return
+        run_query_async(
+            parent=self,
+            query=sql,
+            params=tuple(params),
+            on_result=self._on_populate_result,
+            on_error=self._on_populate_error,
+            loading_message="\u23f3  Loading sanla data\u2026",
+        )
 
+    def _on_populate_error(self, err):
+        QMessageBox.critical(self, "Query Error", err)
+        self._is_loading = False
+
+    def _on_populate_result(self, rows):
         if not rows:
             self._is_loading = False
             return
@@ -342,9 +353,11 @@ class NewSanlaPage(QWidget):
             QMessageBox.warning(self, "No Data", "Please load data first.")
             return
 
+        date_start, date_end = self.date_range_widget.get_date_range()
+        date_label = date_start if date_start == date_end else f"{date_start}_to_{date_end}"
         path, _ = QFileDialog.getSaveFileName(
             self, "Save Excel",
-            f"New_Sanla_{self.date_selector.date().toString('yyyy-MM-dd')}.xlsx",
+            f"New_Sanla_{date_label}.xlsx",
             "Excel Files (*.xlsx)"
         )
         if not path:

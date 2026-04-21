@@ -7,6 +7,7 @@ from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument, QDoubleValidator, QPainter
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from db_connect_pooled import db_manager
+from date_range_widget import DateRangeWidget
 import datetime
 
 
@@ -53,14 +54,16 @@ class PayablesPage(QWidget):
         self.account_type = account_type
         # Set correct table based on brand: Brand A -> daily_reports_brand_a, Brand B -> daily_reports
         self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
+        # Set correct payable table based on brand
+        self.payable_table = "payable_tbl_brand_a" if account_type == 1 else "payable_tbl"
         self.setWindowTitle("Palawan Transactions - Detailed View")
 
         self._is_loading = False  # ← FLAG: prevents auto-save during table population
 
         # Main layout directly on the widget (no intermediate scroll area)
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(15, 15, 15, 15)
-        self.main_layout.setSpacing(10)
+        self.main_layout.setContentsMargins(8, 6, 8, 6)
+        self.main_layout.setSpacing(4)
 
         self.create_controls()
         self.create_table()
@@ -73,26 +76,27 @@ class PayablesPage(QWidget):
 
     # ─────────────────────────────────────────────────────────────────────────
     def verify_table_structure(self):
-        """Ensures payable_tbl has the UNIQUE constraint for ON DUPLICATE KEY UPDATE."""
+        """Ensures payable table has the UNIQUE constraint for ON DUPLICATE KEY UPDATE."""
+        constraint_name = "uq_corp_branch_date_a" if self.account_type == 1 else "uq_corp_branch_date"
         try:
             result = db_manager.execute_query("""
                 SELECT COUNT(*) as cnt
                 FROM information_schema.TABLE_CONSTRAINTS
                 WHERE TABLE_SCHEMA    = DATABASE()
-                  AND TABLE_NAME      = 'payable_tbl'
+                  AND TABLE_NAME      = %s
                   AND CONSTRAINT_TYPE = 'UNIQUE'
-                  AND CONSTRAINT_NAME = 'uq_corp_branch_date'
-            """)
+                  AND CONSTRAINT_NAME = %s
+            """, (self.payable_table, constraint_name))
             exists = result[0]['cnt'] > 0 if result else False
             if not exists:
-                db_manager.execute_query("""
-                    ALTER TABLE payable_tbl
-                    ADD CONSTRAINT uq_corp_branch_date
+                db_manager.execute_query(f"""
+                    ALTER TABLE {self.payable_table}
+                    ADD CONSTRAINT {constraint_name}
                     UNIQUE (corporation, branch, date)
                 """)
-                print("✅ Added unique constraint to payable_tbl")
+                print(f"✅ Added unique constraint to {self.payable_table}")
             else:
-                print("✅ Unique constraint already present")
+                print(f"✅ Unique constraint already present on {self.payable_table}")
         except Exception as e:
             print(f"⚠️  verify_table_structure: {e}")
 
@@ -100,13 +104,31 @@ class PayablesPage(QWidget):
     def populate_table(self):
         """Load data into table. _is_loading flag blocks auto-save during fill."""
         corp          = self.corp_selector.currentText()
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        date_start, date_end = self.date_range_widget.get_date_range()
+        is_range      = self.date_range_widget.is_range_mode()
         reg_filter    = self.reg_filter_selector.currentData()
         os_filter     = self.os_filter_selector.currentData()  # None or OS name
+        category_filter = self.category_filter_selector.currentData() if hasattr(self, 'category_filter_selector') else "all"
 
-        # Need at least a corporation OR an OS selected
-        if not corp and not os_filter:
-            return
+        # 60% corporations list
+        SIXTY_PERCENT_CORPS = [
+            "Allexite Jewelry Pawnshop Inc.",
+            "Homeneeds Pawnshop Inc.",
+            "Kristal Clear Diamond and Gold Pawnshop Inc.",
+            "Safelock Pawnshop Inc.",
+            "Megaworld Domestic Pawnshop Inc.",
+            "San Ramon Platinum Pawnshop Inc."
+        ]
+
+        # For Brand A admin, don't require corporation - only need OS or category filter
+        if self.account_type == 1:
+            # Brand A admin: don't filter by corporation, only by Group/Category
+            if not os_filter and category_filter == "all":
+                return  # Need at least Group or Category filter
+        else:
+            # Non-Brand A: Need corporation OR OS selected
+            if not corp and not os_filter:
+                return
 
         # ── SET FLAG: stops on_item_changed from saving while we fill the table ──
         self._is_loading = True
@@ -116,9 +138,36 @@ class PayablesPage(QWidget):
         self.table.blockSignals(True)
 
         try:
-            # ── Build SELECT columns (always the same) ────────────────────────
-            select_cols = f"""
-                    SELECT dr.branch,
+            if is_range:
+                select_cols = f"""
+                    SELECT b.name as branch,
+                           SUM(COALESCE(dr.palawan_sendout_lotes_total, 0))         AS so_lotes,
+                           SUM(COALESCE(dr.palawan_sendout_principal, 0))           AS so_capital,
+                           SUM(COALESCE(dr.palawan_sendout_sc, 0))                  AS so_sc,
+                           SUM(COALESCE(dr.palawan_sendout_commission, 0))          AS so_commission,
+                           SUM(COALESCE(dr.palawan_sendout_regular_total, 0))       AS so_total,
+                           SUM(COALESCE(dr.palawan_payout_lotes_total, 0))          AS po_lotes,
+                           SUM(COALESCE(dr.palawan_payout_principal, 0))            AS po_capital,
+                           SUM(COALESCE(dr.palawan_payout_sc, 0))                   AS po_sc,
+                           SUM(COALESCE(dr.palawan_payout_commission, 0))           AS po_commission,
+                           SUM(COALESCE(dr.palawan_payout_regular_total, 0))        AS po_total,
+                           SUM(COALESCE(dr.palawan_international_lotes_total, 0))   AS int_lotes,
+                           SUM(COALESCE(dr.palawan_international_principal, 0))     AS int_capital,
+                           SUM(COALESCE(dr.palawan_international_sc, 0))            AS int_sc,
+                           SUM(COALESCE(dr.palawan_international_commission, 0))    AS int_commission,
+                           SUM(COALESCE(dr.palawan_international_regular_total, 0)) AS int_total,
+                           SUM(COALESCE(dr.palawan_suki_discounts, 0))              AS skid,
+                           SUM(COALESCE(dr.palawan_suki_rebates, 0))                AS skir,
+                           SUM(COALESCE(dr.palawan_cancel, 0))                      AS cancellation,
+                           SUM(COALESCE(dr.palawan_pay_out_incentives, 0))          AS po_incentives,
+                           c.name                                                   AS corp_name
+                    FROM branches b
+                    LEFT JOIN corporations c ON (b.corporation_id = c.id OR b.sub_corporation_id = c.id)
+                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                """
+            else:
+                select_cols = f"""
+                    SELECT b.name as branch,
                            COALESCE(dr.palawan_sendout_lotes_total, 0)         AS so_lotes,
                            COALESCE(dr.palawan_sendout_principal, 0)           AS so_capital,
                            COALESCE(dr.palawan_sendout_sc, 0)                  AS so_sc,
@@ -138,31 +187,46 @@ class PayablesPage(QWidget):
                            COALESCE(dr.palawan_suki_rebates, 0)                AS skir,
                            COALESCE(dr.palawan_cancel, 0)                      AS cancellation,
                            COALESCE(dr.palawan_pay_out_incentives, 0)          AS po_incentives,
-                           dr.corporation                                      AS corp_name
-                    FROM {self.daily_table} dr
-                    INNER JOIN branches b ON dr.branch = b.name
-                    INNER JOIN corporations c ON b.corporation_id = c.id
-                           AND dr.corporation = c.name
-            """
+                           c.name                                              AS corp_name
+                    FROM branches b
+                    LEFT JOIN corporations c ON (b.corporation_id = c.id OR b.sub_corporation_id = c.id)
+                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                """
 
             # ── Build WHERE clauses dynamically ───────────────────────────────
-            where_parts = ["dr.date = %s"]
-            params = [selected_date]
+            if is_range:
+                where_parts = ["dr.date >= %s", "dr.date <= %s"]
+                params = [date_start, date_end]
+            else:
+                where_parts = ["dr.date = %s"]
+                params = [date_start]
 
             if corp:
-                where_parts.append("dr.corporation = %s")
-                params.append(corp)
+                where_parts.append("(b.corporation_id = (SELECT id FROM corporations WHERE name = %s) OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))")
+                params.extend([corp, corp])
 
+            # Registration filter: "all" shows everything, "registered" and "not_registered" filter
             if reg_filter == "registered":
                 where_parts.append("b.is_registered = 1")
             elif reg_filter == "not_registered":
-                where_parts.append("b.is_registered = 0")
+                where_parts.append("(b.is_registered = 0 OR b.is_registered IS NULL)")
+            # "all" - no filter needed
 
             if os_filter:
                 where_parts.append("b.os_name = %s")
                 params.append(os_filter)
 
-            daily_query = select_cols + " WHERE " + " AND ".join(where_parts) + " ORDER BY dr.branch"
+            # Category filter: 60% = specific corporations, 30% = Global tagging
+            if category_filter == "60":
+                corps_to_filter = SIXTY_PERCENT_CORPS
+                placeholders = ", ".join(["%s"] * len(corps_to_filter))
+                where_parts.append(f"c.name IN ({placeholders})")
+                params.extend(corps_to_filter)
+            elif category_filter == "30":
+                where_parts.append("b.global_tag = 'GLOBAL'")
+
+            group_by = " GROUP BY b.name, c.name" if is_range else ""
+            daily_query = select_cols + " WHERE " + " AND ".join(where_parts) + group_by + " ORDER BY b.name"
 
             results = db_manager.execute_query(daily_query, tuple(params))
 
@@ -172,7 +236,7 @@ class PayablesPage(QWidget):
                 self._is_loading = False
                 self.table.blockSignals(False)
                 self.table.setUpdatesEnabled(True)
-                QMessageBox.information(self, "No Data", f"No data found for {selected_date}.")
+                QMessageBox.information(self, "No Data", f"No data found for the selected date(s).")
                 return
 
             column_totals = [0.0] * (self.table.columnCount() - 1)
@@ -241,7 +305,8 @@ class PayablesPage(QWidget):
             QTimer.singleShot(200, self.adjust_responsive_widths)
 
             # ── Auto-sync INC values to payable_tbl so report_page can read them ──
-            self._sync_inc_to_payable(selected_date)
+            if not is_range:
+                self._sync_inc_to_payable(date_start)
 
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading data: {str(e)}")
@@ -256,7 +321,7 @@ class PayablesPage(QWidget):
 
     # ─────────────────────────────────────────────────────────────────────────
     def _sync_inc_to_payable(self, selected_date):
-        """Sync palawan_pay_out_incentives (INC) from daily_reports into payable_tbl
+        """Sync palawan_pay_out_incentives (INC) from daily_reports into payable table
         so that report_page can read them. Uses batch execution for performance."""
         try:
             totals_row = self.table.rowCount() - 1
@@ -292,8 +357,8 @@ class PayablesPage(QWidget):
 
             # Execute batch upsert if we have data
             if batch_params:
-                db_manager.execute_many("""
-                    INSERT INTO payable_tbl (
+                db_manager.execute_many(f"""
+                    INSERT INTO {self.payable_table} (
                         corporation, branch, date,
                         sendout_capital, sendout_sc, sendout_commission, sendout_total,
                         payout_capital,  payout_sc,  payout_commission,  payout_total,
@@ -352,7 +417,7 @@ class PayablesPage(QWidget):
         if row >= self.table.rowCount() - 1:  # skip totals row
             return
 
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        selected_date = self.date_range_widget.get_date_range()[0]  # use start date
         branch_item   = self.table.item(row, 0)
 
         if not branch_item:
@@ -380,8 +445,8 @@ class PayablesPage(QWidget):
             inc          = get(19)  # Editable by user
 
             # Use upsert - no need for a separate SELECT check
-            db_manager.execute_query("""
-                INSERT INTO payable_tbl (
+            db_manager.execute_query(f"""
+                INSERT INTO {self.payable_table} (
                     corporation, branch, date,
                     sendout_capital, sendout_sc, sendout_commission, sendout_total,
                     payout_capital,  payout_sc,  payout_commission,  payout_total,
@@ -414,8 +479,8 @@ class PayablesPage(QWidget):
 
     # ─────────────────────────────────────────────────────────────────────────
     def save_to_database(self):
-        """Manual save — writes every row to payable_tbl using batch execution."""
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
+        """Manual save — writes every row to payable table using batch execution."""
+        selected_date = self.date_range_widget.get_date_range()[0]  # use start date
 
         if self.table.rowCount() == 0:
             QMessageBox.warning(self, "No Data", "No data to save.")
@@ -424,8 +489,8 @@ class PayablesPage(QWidget):
         try:
             totals_row    = self.table.rowCount() - 1
 
-            upsert = """
-                INSERT INTO payable_tbl (
+            upsert = f"""
+                INSERT INTO {self.payable_table} (
                     corporation, branch, date,
                     sendout_capital, sendout_sc, sendout_commission, sendout_total,
                     payout_capital,  payout_sc,  payout_commission,  payout_total,
@@ -516,87 +581,100 @@ class PayablesPage(QWidget):
         controls_frame.setStyleSheet("""
             QFrame {
                 background-color: #f8f9fa; border: 1px solid #dee2e6;
-                border-radius: 5px; padding: 10px;
+                border-radius: 5px; padding: 4px;
             }
         """)
         controls_layout = QVBoxLayout(controls_frame)
-        controls_layout.setSpacing(15)
+        controls_layout.setContentsMargins(6, 4, 6, 4)
+        controls_layout.setSpacing(4)
 
-        selectors_layout = QHBoxLayout()
-        selectors_layout.setSpacing(20)
+        _combo_ss = """
+            QComboBox { padding:4px 6px; border:2px solid #dee2e6; border-radius:4px;
+                        background-color:white; font-size:12px; }
+            QComboBox:focus { border-color:#007bff; }
+            QComboBox::drop-down { width: 24px; }
+        """
 
+        # ── Row 1: Corporation + Date ────────────────────────────────────
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+
+        # Corporation filter (hidden for Brand A admin)
         corp_label = QLabel("Corporation:")
-        corp_label.setFont(QFont("Arial", 12, QFont.Bold))
+        corp_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.corp_selector = QComboBox()
-        self.corp_selector.setMinimumWidth(220)
-        self.corp_selector.setMaximumWidth(350)
-        self.corp_selector.setMinimumHeight(40)
+        self.corp_selector.setMinimumHeight(30)
         self.corp_selector.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.corp_selector.currentTextChanged.connect(self.populate_table)
-        self.corp_selector.setStyleSheet("""
-            QComboBox { padding:10px; border:2px solid #dee2e6; border-radius:6px;
-                        background-color:white; font-size:13px; }
-            QComboBox:focus { border-color:#007bff; }
-            QComboBox::drop-down { width: 30px; }
-        """)
+        self.corp_selector.setStyleSheet(_combo_ss)
+
+        # Hide corporation filter for Brand A admin (account_type == 1)
+        self.corp_label = corp_label
+        if self.account_type == 1:
+            corp_label.hide()
+            self.corp_selector.hide()
 
         date_label = QLabel("Date:")
-        date_label.setFont(QFont("Arial", 12, QFont.Bold))
-        self.date_selector = QDateEdit(calendarPopup=True)
-        self.date_selector.setDate(QDate.currentDate())
-        self.date_selector.setDisplayFormat("yyyy-MM-dd")
-        self.date_selector.setMinimumWidth(160)
-        self.date_selector.setMaximumWidth(220)
-        self.date_selector.setMinimumHeight(40)
-        self.date_selector.dateChanged.connect(self.populate_table)
-        self.date_selector.setStyleSheet("""
-            QDateEdit { padding:10px; border:2px solid #dee2e6; border-radius:6px;
-                        background-color:white; font-size:13px; }
-            QDateEdit:focus { border-color:#007bff; }
-        """)
+        date_label.setFont(QFont("Arial", 10, QFont.Bold))
+        self.date_range_widget = DateRangeWidget()
+        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
+        self.date_selector = self.date_range_widget  # backward-compat
+
+        if self.account_type != 1:
+            row1.addWidget(corp_label)
+            row1.addWidget(self.corp_selector, 1)
+
+        row1.addWidget(date_label)
+        row1.addWidget(self.date_range_widget, 2)
+        controls_layout.addLayout(row1)
+
+        # ── Row 2: Branch Status + Group Filter + Category ───────────────
+        row2 = QHBoxLayout()
+        row2.setSpacing(8)
 
         # Registration status filter
         reg_filter_label = QLabel("Branch Status:")
-        reg_filter_label.setFont(QFont("Arial", 12, QFont.Bold))
+        reg_filter_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.reg_filter_selector = QComboBox()
-        self.reg_filter_selector.setMinimumWidth(150)
-        self.reg_filter_selector.setMinimumHeight(40)
+        self.reg_filter_selector.setMinimumHeight(30)
+        self.reg_filter_selector.addItem("All", "all")
         self.reg_filter_selector.addItem("Registered Only", "registered")
+        self.reg_filter_selector.addItem("Unregistered", "not_registered")
+        self.reg_filter_selector.setCurrentIndex(1)  # Default to "Registered Only"
         self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
-        self.reg_filter_selector.setStyleSheet("""
-            QComboBox { padding:10px; border:2px solid #dee2e6; border-radius:6px;
-                        background-color:white; font-size:13px; }
-            QComboBox:focus { border-color:#007bff; }
-            QComboBox::drop-down { width: 30px; }
-        """)
-
-        selectors_layout.addWidget(corp_label)
-        selectors_layout.addWidget(self.corp_selector)
-        selectors_layout.addSpacing(30)
-        selectors_layout.addWidget(date_label)
-        selectors_layout.addWidget(self.date_selector)
-        selectors_layout.addSpacing(30)
-        selectors_layout.addWidget(reg_filter_label)
-        selectors_layout.addWidget(self.reg_filter_selector)
+        self.reg_filter_selector.setStyleSheet(_combo_ss)
 
         # OS (Operation Supervisor) filter
-        selectors_layout.addSpacing(30)
-        os_filter_label = QLabel("OS Filter:")
-        os_filter_label.setFont(QFont("Arial", 12, QFont.Bold))
+        os_filter_label = QLabel("Group Filter:" if self.account_type != 1 else "Group:")
+        os_filter_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.os_filter_selector = QComboBox()
-        self.os_filter_selector.setMinimumWidth(180)
-        self.os_filter_selector.setMinimumHeight(40)
-        self.os_filter_selector.addItem("All (by Corporation)", None)
+        self.os_filter_selector.setMinimumHeight(30)
+        if self.account_type != 1:
+            self.os_filter_selector.addItem("All (by Corporation)", None)
         self.os_filter_selector.currentIndexChanged.connect(self.populate_table)
-        self.os_filter_selector.setStyleSheet("""
-            QComboBox { padding:10px; border:2px solid #dee2e6; border-radius:6px;
-                        background-color:white; font-size:13px; }
-            QComboBox:focus { border-color:#007bff; }
-            QComboBox::drop-down { width: 30px; }
-        """)
-        selectors_layout.addWidget(os_filter_label)
-        selectors_layout.addWidget(self.os_filter_selector)
-        selectors_layout.addStretch()
+        self.os_filter_selector.setStyleSheet(_combo_ss)
+
+        # Category filter (60% / 30%)
+        category_filter_label = QLabel("Category:")
+        category_filter_label.setFont(QFont("Arial", 10, QFont.Bold))
+        self.category_filter_selector = QComboBox()
+        self.category_filter_selector.setMinimumHeight(30)
+        self.category_filter_selector.addItem("All", "all")
+        self.category_filter_selector.addItem("60%", "60")
+        self.category_filter_selector.addItem("30%", "30")
+        self.category_filter_selector.currentIndexChanged.connect(self.populate_table)
+        self.category_filter_selector.setStyleSheet(_combo_ss)
+
+        row2.addWidget(reg_filter_label)
+        row2.addWidget(self.reg_filter_selector, 1)
+        row2.addWidget(os_filter_label)
+        row2.addWidget(self.os_filter_selector, 1)
+        row2.addWidget(category_filter_label)
+        row2.addWidget(self.category_filter_selector, 1)
+        row2.addStretch()
+        controls_layout.addLayout(row2)
+
+        selectors_layout = QHBoxLayout()  # kept for backward-compat (create_group_headers_layout)
 
         controls_layout.addLayout(selectors_layout)
         self.main_layout.addWidget(controls_frame, 0)  # stretch=0, fixed size
@@ -788,7 +866,8 @@ class PayablesPage(QWidget):
         self.os_filter_selector.blockSignals(True)
         current = self.os_filter_selector.currentData()
         self.os_filter_selector.clear()
-        self.os_filter_selector.addItem("All (by Corporation)", None)
+        if self.account_type != 1:
+            self.os_filter_selector.addItem("All (by Corporation)", None)
         try:
             rows = db_manager.execute_query(
                 "SELECT DISTINCT os_name FROM branches WHERE os_name IS NOT NULL AND os_name != '' ORDER BY os_name"
@@ -935,7 +1014,8 @@ class PayablesPage(QWidget):
             return
         
         corp = self.corp_selector.currentText()
-        date = self.date_selector.date().toString("yyyy-MM-dd")
+        date_start, date_end = self.date_range_widget.get_date_range()
+        date = date_start if date_start == date_end else f"{date_start}_to_{date_end}"
         
         rows = self.table.rowCount()
         cols = self.table.columnCount()
@@ -1074,9 +1154,11 @@ class PayablesPage(QWidget):
                 .intl{background-color:#e3f2fd}.adj{background-color:#f3e5f5}
             </style></head><body>"""
             html += "<h2>Detailed Palawan Transaction Report</h2>"
+            date_start, date_end = self.date_range_widget.get_date_range()
+            date_display = date_start if date_start == date_end else f"{date_start} to {date_end}"
             html += (f'<div class="info">'
                      f'<strong>Corporation:</strong> {self.corp_selector.currentText()}<br>'
-                     f'<strong>Date:</strong> {self.date_selector.date().toString("yyyy-MM-dd")}<br>'
+                     f'<strong>Date:</strong> {date_display}<br>'
                      f'<strong>Generated:</strong> '
                      f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>')
             html += "<table><tr>"

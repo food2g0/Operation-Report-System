@@ -104,7 +104,7 @@ class QueryProfiler:
     
     def start(self):
         """Start profiling database queries"""
-        from db_connect import db_manager
+        from db_connect_pooled import db_manager
         self.is_profiling = True
         self.queries = []
         
@@ -131,7 +131,7 @@ class QueryProfiler:
     def stop(self):
         """Stop profiling and restore original execute_query"""
         if self.original_execute:
-            from db_connect import db_manager
+            from db_connect_pooled import db_manager
             db_manager.execute_query = self.original_execute
             self.original_execute = None
         

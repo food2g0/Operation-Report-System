@@ -7,6 +7,8 @@ from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from db_connect_pooled import db_manager
+from db_worker import run_query_async
+from date_range_widget import DateRangeWidget
 import datetime
 
 
@@ -22,21 +24,42 @@ class MCPage(QWidget):
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
 
-        # Corporation selector
+        # Corporation selector (hidden for Brand A)
+        self.corp_label = QLabel("Select Corporation:")
         self.corp_selector = QComboBox()
         self.corp_selector.currentTextChanged.connect(self.populate_table)
 
+        # Group selector (visible for Brand A)
+        self.group_label = QLabel("Select Group:")
+        self.group_selector = QComboBox()
+        self.group_selector.currentTextChanged.connect(self.populate_table)
+        self.group_label.setVisible(False)
+        self.group_selector.setVisible(False)
+
         # Date selector
-        self.date_selector = QDateEdit(calendarPopup=True)
-        self.date_selector.setDate(QDate.currentDate())
-        self.date_selector.setDisplayFormat("yyyy-MM-dd")
-        self.date_selector.dateChanged.connect(self.populate_table)
+        self.date_range_widget = DateRangeWidget()
+        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
+        self.date_selector = self.date_range_widget  # backward-compat
+
+        # Registration status filter
+        self.reg_filter_label = QLabel("Branch Status:")
+        self.reg_filter_selector = QComboBox()
+        self.reg_filter_selector.addItem("Registered Only", "registered")
+        self.reg_filter_selector.addItem("Not Registered", "not_registered")
+        self.reg_filter_selector.addItem("All Branches", "all")
+        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
+        self.reg_filter_label.setVisible(False)
+        self.reg_filter_selector.setVisible(False)
 
         # Add selectors to layout
-        self.layout.addWidget(QLabel("Select Corporation:"))
+        self.layout.addWidget(self.corp_label)
         self.layout.addWidget(self.corp_selector)
+        self.layout.addWidget(self.group_label)
+        self.layout.addWidget(self.group_selector)
         self.layout.addWidget(QLabel("Select Date:"))
-        self.layout.addWidget(self.date_selector)
+        self.layout.addWidget(self.date_range_widget)
+        self.layout.addWidget(self.reg_filter_label)
+        self.layout.addWidget(self.reg_filter_selector)
 
         # Table - Fixed to 3 columns
         self.table = QTableWidget()
@@ -75,6 +98,16 @@ class MCPage(QWidget):
         self.layout.addLayout(button_layout)
 
         self.load_corporations()
+        self.load_groups()
+
+        # Brand A: filter by Group only, hide Corporation
+        if self.account_type == 1:
+            self.corp_label.setVisible(False)
+            self.corp_selector.setVisible(False)
+            self.group_label.setVisible(True)
+            self.group_selector.setVisible(True)
+            self.reg_filter_label.setVisible(True)
+            self.reg_filter_selector.setVisible(True)
 
     def load_corporations(self):
         """Load unique corporations from the daily reports table"""
@@ -93,74 +126,166 @@ class MCPage(QWidget):
             self.corp_selector.blockSignals(False)
             QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
 
-    def populate_table(self):
-        """Populate table with MC transaction data from daily_reports"""
-        corp = self.corp_selector.currentText()
-        selected_date = self.date_selector.date().toString("yyyy-MM-dd")
-
-        if not corp:
-            return
-
+    def load_groups(self):
+        """Load OS/Group names from branches table"""
+        self.group_selector.blockSignals(True)
+        self.group_selector.clear()
         try:
-            # Query to get MC data for the selected corporation and date
-            query = f"""
-                    SELECT branch, 
-                           COALESCE(mc_out, 0) as mc_buying, 
-                           COALESCE(mc_in, 0) as mc_selling
-                    FROM {self.daily_table}
-                    WHERE corporation = %s 
-                      AND date = %s
-                    ORDER BY branch
-                    """
+            rows = db_manager.execute_query(
+                "SELECT DISTINCT os_name FROM branches "
+                "WHERE os_name IS NOT NULL AND os_name != '' "
+                "ORDER BY os_name"
+            )
+            if rows:
+                for r in rows:
+                    name = r['os_name'] if isinstance(r, dict) else r[0]
+                    self.group_selector.addItem(name)
+        except Exception as e:
+            print(f"Error loading groups: {e}")
+        finally:
+            self.group_selector.blockSignals(False)
 
-            results = db_manager.execute_query(query, (corp, selected_date))
+    def populate_table(self):
+        """Populate table with MC transaction data from daily_reports - shows ALL branches"""
+        date_start, date_end = self.date_range_widget.get_date_range()
+        is_range = self.date_range_widget.is_range_mode()
 
-            self.table.setRowCount(0)
+        # Brand A: filter by Group
+        if self.account_type == 1:
+            group = self.group_selector.currentText()
+            if not group:
+                return
+            reg_filter = self.reg_filter_selector.currentData()
 
-            if not results:
-                self.table.setRowCount(0)
+            # Build registration clause
+            reg_clause = ""
+            if reg_filter == "registered":
+                reg_clause = "AND b.is_registered = 1"
+            elif reg_filter == "not_registered":
+                reg_clause = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+
+            if is_range:
+                query = f"""
+                    SELECT b.name as branch,
+                           SUM(COALESCE(dr.mc_out, 0)) as mc_buying,
+                           SUM(COALESCE(dr.mc_in, 0)) as mc_selling
+                    FROM branches b
+                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date >= %s AND dr.date <= %s
+                    WHERE b.os_name = %s
+                      {reg_clause}
+                    GROUP BY b.name
+                    ORDER BY b.name
+                """
+                params = (date_start, date_end, group)
+            else:
+                query = f"""
+                    SELECT b.name as branch,
+                           COALESCE(dr.mc_out, 0) as mc_buying,
+                           COALESCE(dr.mc_in, 0) as mc_selling
+                    FROM branches b
+                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %s
+                    WHERE b.os_name = %s
+                      {reg_clause}
+                    ORDER BY b.name
+                """
+                params = (date_start, group)
+        else:
+            # Brand B: filter by Corporation - show all branches in corp
+            corp = self.corp_selector.currentText()
+            if not corp:
                 return
 
-            total_buying = 0.0
-            total_selling = 0.0
-            row_count = 0
+            if is_range:
+                query = f"""
+                    SELECT b.name as branch,
+                           SUM(COALESCE(dr.mc_out, 0)) as mc_buying,
+                           SUM(COALESCE(dr.mc_in, 0)) as mc_selling
+                    FROM branches b
+                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation = %s
+                        AND dr.date >= %s AND dr.date <= %s
+                    WHERE b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
+                       OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s)
+                    GROUP BY b.name
+                    ORDER BY b.name
+                """
+                params = (corp, date_start, date_end, corp, corp)
+            else:
+                query = f"""
+                    SELECT b.name as branch,
+                           COALESCE(dr.mc_out, 0) as mc_buying,
+                           COALESCE(dr.mc_in, 0) as mc_selling
+                    FROM branches b
+                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation = %s
+                        AND dr.date = %s
+                    WHERE b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
+                       OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s)
+                    ORDER BY b.name
+                """
+                params = (corp, date_start, corp, corp)
 
-            for row_data in results:
-                branch_name = row_data['branch']
-                mc_buying = float(row_data['mc_buying'] or 0)
-                mc_selling = float(row_data['mc_selling'] or 0)
-
-                # Add row to table
-                self.table.insertRow(row_count)
-                self.table.setItem(row_count, 0, QTableWidgetItem(branch_name))
-                self.table.setItem(row_count, 1, QTableWidgetItem(f"{mc_buying:.2f}"))
-                self.table.setItem(row_count, 2, QTableWidgetItem(f"{mc_selling:.2f}"))
-
-                total_buying += mc_buying
-                total_selling += mc_selling
-                row_count += 1
-
-            # Add totals row at the bottom
-            self.table.insertRow(row_count)
-            total_font = QFont()
-            total_font.setBold(True)
-
-            total_brush = QBrush(QColor("#f0f0f0"))
-
-            items = [
-                QTableWidgetItem("TOTAL"),
-                QTableWidgetItem(f"{total_buying:.2f}"),
-                QTableWidgetItem(f"{total_selling:.2f}")
-            ]
-
-            for col, item in enumerate(items):
-                item.setFont(total_font)
-                item.setBackground(total_brush)
-                item.setTextAlignment(Qt.AlignCenter)
-                self.table.setItem(row_count, col, item)
+        try:
+            run_query_async(
+                parent=self,
+                query=query,
+                params=params,
+                on_result=self._on_populate_result,
+                on_error=self._on_populate_error,
+                loading_message="\u23f3  Loading MC data\u2026",
+            )
 
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading data: {str(e)}")
+
+    def _on_populate_error(self, err):
+        QMessageBox.critical(self, "Database Error", f"Error loading data: {err}")
+
+    def _on_populate_result(self, results):
+        self.table.setRowCount(0)
+
+        if not results:
+            return
+
+        total_buying = 0.0
+        total_selling = 0.0
+        row_count = 0
+
+        for row_data in results:
+            branch_name = row_data['branch']
+            mc_buying = float(row_data['mc_buying'] or 0)
+            mc_selling = float(row_data['mc_selling'] or 0)
+
+            # Add row to table
+            self.table.insertRow(row_count)
+            self.table.setItem(row_count, 0, QTableWidgetItem(branch_name))
+            self.table.setItem(row_count, 1, QTableWidgetItem(f"{mc_buying:.2f}"))
+            self.table.setItem(row_count, 2, QTableWidgetItem(f"{mc_selling:.2f}"))
+
+            total_buying += mc_buying
+            total_selling += mc_selling
+            row_count += 1
+
+        # Add totals row at the bottom
+        self.table.insertRow(row_count)
+        total_font = QFont()
+        total_font.setBold(True)
+
+        total_brush = QBrush(QColor("#f0f0f0"))
+
+        items = [
+            QTableWidgetItem("TOTAL"),
+            QTableWidgetItem(f"{total_buying:.2f}"),
+            QTableWidgetItem(f"{total_selling:.2f}")
+        ]
+
+        for col, item in enumerate(items):
+            item.setFont(total_font)
+            item.setBackground(total_brush)
+            item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row_count, col, item)
 
     def export_to_excel(self):
         """Export table data to Excel with file dialog"""
@@ -175,8 +300,9 @@ class MCPage(QWidget):
             )
             return
         
-        corp = self.corp_selector.currentText()
-        date = self.date_selector.date().toString("yyyy-MM-dd")
+        corp = self.corp_selector.currentText() if self.account_type != 1 else self.group_selector.currentText()
+        date_start, date_end = self.date_range_widget.get_date_range()
+        date = date_start if date_start == date_end else f"{date_start}_to_{date_end}"
         
         rows = self.table.rowCount()
         cols = self.table.columnCount()
@@ -286,8 +412,12 @@ class MCPage(QWidget):
 
             doc = QTextDocument()
             html = "<h2>MC Transaction Report</h2>"
-            html += f"<p><b>Corporation:</b> {self.corp_selector.currentText()}<br>"
-            html += f"<b>Date:</b> {self.date_selector.date().toString('yyyy-MM-dd')}</p>"
+            date_start, date_end = self.date_range_widget.get_date_range()
+            date_display = date_start if date_start == date_end else f"{date_start} to {date_end}"
+            filter_label = "Group" if self.account_type == 1 else "Corporation"
+            filter_value = self.group_selector.currentText() if self.account_type == 1 else self.corp_selector.currentText()
+            html += f"<p><b>{filter_label}:</b> {filter_value}<br>"
+            html += f"<b>Date:</b> {date_display}</p>"
             html += "<table border='1' cellspacing='0' cellpadding='4' style='border-collapse: collapse;'>"
 
             # Add headers

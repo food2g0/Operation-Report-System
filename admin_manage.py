@@ -134,7 +134,15 @@ def init_schema():
     for q in queries:
         res = db_manager.execute_query(q)
 
-    print("Schema initialized (corporations, branches, users)")
+    db_manager.execute_query("""
+        CREATE TABLE IF NOT EXISTS operation_supervisors (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    """)
+
+    print("Schema initialized (corporations, branches, users, operation_supervisors)")
 
 
 def create_corporation(name: str):
@@ -150,9 +158,19 @@ def create_corporation(name: str):
         return row[0]['id']
 
 
-def create_branch(name: str, corporation_id: int):
-    q = "INSERT INTO branches (corporation_id, name) VALUES (%s, %s)"
-    res = db_manager.execute_query(q, (corporation_id, name))
+def create_branch(name: str, corporation_id: int, os_name: str = None, sub_corporation_id: int = None):
+    if os_name and sub_corporation_id:
+        q = "INSERT INTO branches (corporation_id, name, os_name, sub_corporation_id) VALUES (%s, %s, %s, %s)"
+        res = db_manager.execute_query(q, (corporation_id, name, os_name, sub_corporation_id))
+    elif os_name:
+        q = "INSERT INTO branches (corporation_id, name, os_name) VALUES (%s, %s, %s)"
+        res = db_manager.execute_query(q, (corporation_id, name, os_name))
+    elif sub_corporation_id:
+        q = "INSERT INTO branches (corporation_id, name, sub_corporation_id) VALUES (%s, %s, %s)"
+        res = db_manager.execute_query(q, (corporation_id, name, sub_corporation_id))
+    else:
+        q = "INSERT INTO branches (corporation_id, name) VALUES (%s, %s)"
+        res = db_manager.execute_query(q, (corporation_id, name))
     if res is None:
         print("Failed to create branch")
         return None
@@ -164,7 +182,7 @@ def create_branch(name: str, corporation_id: int):
 
 
 def _next_username():
-    """Generate next username in format CL-0000, CL-0001, ..."""
+
     row = db_manager.execute_query("SELECT MAX(CAST(SUBSTRING(username,4) AS UNSIGNED)) AS maxnum FROM users WHERE username LIKE 'CL-%'")
     maxnum = 0
     if row and row[0] and row[0].get('maxnum') is not None:
@@ -178,13 +196,12 @@ def _next_username():
     return username
 
 
-def create_client(first_name: str, last_name: str, corporation_id: int, branch_id: int, password: str = None):
+def create_client(first_name: str = None, last_name: str = None, corporation_id: int = None, branch_id: int = None, password: str = None):
     username = _next_username()
     
     # Hash password if provided
     hashed_password = hash_password(password) if password else None
     
-    # Resolve corporation and branch names
     corp_name = None
     branch_name = None
     cres = db_manager.execute_query("SELECT name FROM corporations WHERE id=%s", (corporation_id,))
@@ -194,16 +211,16 @@ def create_client(first_name: str, last_name: str, corporation_id: int, branch_i
     if bres:
         branch_name = bres[0].get('name')
 
-    # Insert directly into users table with hashed password with hashed password
-    q = "INSERT INTO users (username, password, first_name, last_name, corporation, branch, role) VALUES (%s, %s, %s, %s, %s, %s, 'user')"
-    res = db_manager.execute_query(q, (username, hashed_password, first_name, last_name, corp_name, branch_name))
+
+    q = "INSERT INTO users (username, password, corporation, branch, role) VALUES (%s, %s, %s, %s, 'user')"
+    res = db_manager.execute_query(q, (username, hashed_password, corp_name, branch_name))
     if res is None:
         print("Failed to create client")
         return None
 
     row = db_manager.execute_query("SELECT id, username FROM users WHERE username=%s", (username,))
     if row:
-        print(f"Client created: {first_name} {last_name} -> username {row[0]['username']} (id={row[0]['id']})")
+        print(f"Client created: username {row[0]['username']} (id={row[0]['id']})")
         return row[0]
     
     return None
@@ -277,6 +294,40 @@ def main():
         list_branches()
     else:
         parser.print_help()
+
+
+def get_all_supervisors():
+
+    rows = db_manager.execute_query(
+        "SELECT id, name FROM operation_supervisors ORDER BY name"
+    )
+    return rows or []
+
+
+def create_supervisor(name: str):
+    """Create a new operation supervisor. Returns id or None."""
+    db_manager.execute_query(
+        "INSERT INTO operation_supervisors (name) VALUES (%s)", (name,)
+    )
+    row = db_manager.execute_query(
+        "SELECT id FROM operation_supervisors WHERE name=%s", (name,)
+    )
+    return row[0]['id'] if row else None
+
+
+def delete_supervisor(supervisor_id: int):
+    """Delete an operation supervisor by id."""
+    db_manager.execute_query(
+        "DELETE FROM operation_supervisors WHERE id=%s", (supervisor_id,)
+    )
+
+
+def update_supervisor(supervisor_id: int, new_name: str):
+    """Rename an operation supervisor."""
+    db_manager.execute_query(
+        "UPDATE operation_supervisors SET name=%s WHERE id=%s",
+        (new_name, supervisor_id)
+    )
 
 
 if __name__ == '__main__':

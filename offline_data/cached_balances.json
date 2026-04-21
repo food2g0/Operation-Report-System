@@ -1,0 +1,110 @@
+{
+  "cl_0003_camacal_branch_atlantic_stargem_pawnshop_inc__brand_a": {
+    "username": "CL-0003",
+    "branch": "CAMACAL BRANCH",
+    "corporation": "ATLANTIC STARGEM PAWNSHOP INC.",
+    "brand": "Brand A",
+    "date": "2026-01-06",
+    "ending_balance": 73067.0,
+    "cached_at": "2026-03-04T15:16:29.390169"
+  },
+  "cl_0003_camacal_branch_atlantic_stargem_pawnshop_inc__brand_b": {
+    "username": "CL-0003",
+    "branch": "CAMACAL BRANCH",
+    "corporation": "ATLANTIC STARGEM PAWNSHOP INC.",
+    "brand": "Brand B",
+    "date": "2026-01-06",
+    "ending_balance": 470829.0,
+    "cached_at": "2026-03-04T15:16:29.503718"
+  },
+  "cl_0001_it_department_tambunting_corp_brand_b": {
+    "username": "CL-0001",
+    "branch": "IT DEPARTMENT",
+    "corporation": "TAMBUNTING CORP",
+    "brand": "Brand B",
+    "date": "2026-02-04",
+    "ending_balance": 1065.0,
+    "cached_at": "2026-03-07T09:53:28.159754"
+  },
+  "cl_0001_it_department_tambunting_corp_brand_a": {
+    "username": "CL-0001",
+    "branch": "IT DEPARTMENT",
+    "corporation": "TAMBUNTING CORP",
+    "brand": "Brand A",
+    "date": "2026-02-04",
+    "ending_balance": 13.0,
+    "cached_at": "2026-03-07T09:53:28.001176"
+  },
+  "cl_0011_test_branch_homeneeds_pawnshop_inc__brand_a": {
+    "username": "CL-0011",
+    "branch": "test branch",
+    "corporation": "HOMENEEDS PAWNSHOP INC.",
+    "brand": "Brand A",
+    "date": "2026-03-06",
+    "ending_balance": 101.0,
+    "cached_at": "2026-03-06T15:31:34.809103"
+  },
+  "cl_0011_test_branch_homeneeds_pawnshop_inc__brand_b": {
+    "username": "CL-0011",
+    "branch": "test branch",
+    "corporation": "HOMENEEDS PAWNSHOP INC.",
+    "brand": "Brand B",
+    "date": "2026-03-06",
+    "ending_balance": 98.0,
+    "cached_at": "2026-03-06T15:31:34.933342"
+  },
+  "cl_0001_test_branch_homeneeds_pawnshop_inc__brand_a": {
+    "username": "CL-0001",
+    "branch": "Test Branch",
+    "corporation": "HOMENEEDS PAWNSHOP INC.",
+    "brand": "Brand A",
+    "date": "2026-03-09",
+    "ending_balance": 123.21,
+    "cached_at": "2026-03-09T13:31:01.247562"
+  },
+  "cl_0001_test_branch_homeneeds_pawnshop_inc__brand_b": {
+    "username": "CL-0001",
+    "branch": "Test Branch",
+    "corporation": "HOMENEEDS PAWNSHOP INC.",
+    "brand": "Brand B",
+    "date": "2026-03-09",
+    "ending_balance": 124.0,
+    "cached_at": "2026-03-09T13:31:01.386366"
+  },
+  "cl_0001_test_allexite_jewelry_pawnshop_inc__brand_a": {
+    "username": "CL-0001",
+    "branch": "Test",
+    "corporation": "ALLEXITE JEWELRY PAWNSHOP INC.",
+    "brand": "Brand A",
+    "date": "2026-03-11",
+    "ending_balance": 401.0799999999999,
+    "cached_at": "2026-03-10T09:37:36.404447"
+  },
+  "cl_0001_test_allexite_jewelry_pawnshop_inc__brand_b": {
+    "username": "CL-0001",
+    "branch": "Test",
+    "corporation": "ALLEXITE JEWELRY PAWNSHOP INC.",
+    "brand": "Brand B",
+    "date": "2026-03-11",
+    "ending_balance": 1001.1599999999999,
+    "cached_at": "2026-03-10T09:37:36.546170"
+  },
+  "cl_0074_head_office_head_office_brand_a": {
+    "username": "CL-0074",
+    "branch": "HEAD OFFICE",
+    "corporation": "HEAD OFFICE",
+    "brand": "Brand A",
+    "date": "2026-04-26",
+    "ending_balance": 92224.63,
+    "cached_at": "2026-04-18T10:36:02.504640"
+  },
+  "cl_0074_head_office_head_office_brand_b": {
+    "username": "CL-0074",
+    "branch": "HEAD OFFICE",
+    "corporation": "HEAD OFFICE",
+    "brand": "Brand B",
+    "date": "2026-04-26",
+    "ending_balance": 10166.21,
+    "cached_at": "2026-04-18T10:36:02.688607"
+  }
+}

@@ -14,6 +14,7 @@ def clear_all_data():
     tables = [
         "daily_reports_summary",
         "payable_tbl",
+        "payable_tbl_brand_a",
         "daily_reports_brand_a",
         "daily_reports",
         "users",
