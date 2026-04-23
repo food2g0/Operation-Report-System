@@ -222,7 +222,6 @@
         "ecbills",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -233,7 +232,6 @@
         "ecload",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -244,7 +242,6 @@
         "ecpins",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -255,7 +252,6 @@
         "eccash",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -266,7 +262,6 @@
         "ectickets",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -277,7 +272,6 @@
         "eccatalogue",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -288,7 +282,6 @@
         "eclink",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -299,7 +292,6 @@
         "ecgift",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }
@@ -502,7 +494,6 @@
         "eccash_out",
         {
           "reports": [
-            "daily_transaction",
             "other_services"
           ]
         }

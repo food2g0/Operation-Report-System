@@ -179,14 +179,14 @@ class MCCurrencyTab(QWidget):
         currency_combo.setStyleSheet("min-width: 180px; padding: 6px;")
         currency_combo.currentTextChanged.connect(self.calculate_totals)
 
-        # Pieces input (quantity of bills)
+
         quantity_input = QLineEdit()
         quantity_input.setValidator(QIntValidator(0, 999999))
         quantity_input.setPlaceholderText("Pcs")
         quantity_input.setStyleSheet("min-width: 60px; padding: 6px;")
         quantity_input.textChanged.connect(self.calculate_totals)
 
-        # Denomination input (bill value, e.g. 100 for $100 bill)
+  
         denomination_input = QLineEdit()
         denomination_input.setValidator(QDoubleValidator(0.0, 999999.99, 2))
         denomination_input.setPlaceholderText("Denom")
@@ -225,7 +225,7 @@ class MCCurrencyTab(QWidget):
         """)
         type_combo.currentTextChanged.connect(self.calculate_totals)
 
-        # Layout - Order: Currency, Pcs, Denomination, Rate, Total, Type
+  
         entry_layout.addWidget(num_label)
         cur_lbl = QLabel("Currency:")
         cur_lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #64748B;")
@@ -267,7 +267,7 @@ class MCCurrencyTab(QWidget):
         self.currency_entries.append(entry_data)
         self.entries_layout.addWidget(entry_frame)
 
-        # Update calculations only if grand_total_display exists
+
         if hasattr(self, 'grand_total_display') and self.grand_total_display is not None:
             self.calculate_totals()
 
@@ -278,12 +278,11 @@ class MCCurrencyTab(QWidget):
             last_entry['frame'].setParent(None)
             last_entry['frame'].deleteLater()
 
-            # Renumber remaining entries
             self.renumber_entries()
             self.calculate_totals()
 
     def renumber_entries(self):
-        """Renumber all entries after removal"""
+ 
         for i, entry in enumerate(self.currency_entries):
             entry['number'] = i + 1
             # Find the number label (first widget in the layout)

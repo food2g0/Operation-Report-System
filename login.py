@@ -564,6 +564,7 @@ class LoginWindow(QWidget):
 
                         role = user_data.get('role', 'admin')
                         ping_monitor.start(db_manager, username, role)
+                        ping_monitor.log_event('login_success', username, f'role={role}')
                         if hasattr(self.dashboard, 'logout_requested'):
                             self.dashboard.logout_requested.connect(self.handle_logout)
                         self.dashboard.showMaximized()
@@ -619,6 +620,7 @@ class LoginWindow(QWidget):
                         })
                     
                     ping_monitor.start(db_manager, db_username, role)
+                    ping_monitor.log_event('login_success', db_username, f'role={role} branch={branch}')
                     self.show_message("Login Success", f"Welcome, {db_username}!", QMessageBox.Information)
                     self.save_credentials(db_username)
                     if role == 'super_admin':
@@ -658,6 +660,9 @@ class LoginWindow(QWidget):
                 else:
         
                     is_locked, remaining, lockout_time = login_rate_limiter.record_failed_attempt(username)
+                    ping_monitor.log_event('login_failed', username,
+                                          'account locked' if is_locked else 'wrong password',
+                                          db=db_manager)
                     if is_locked:
                         self.show_message(
                             "Account Locked",
@@ -671,6 +676,7 @@ class LoginWindow(QWidget):
                 return
             
             login_rate_limiter.record_failed_attempt(username)
+            ping_monitor.log_event('login_failed', username, 'user not found', db=db_manager)
             self.show_message("Login Failed", "Invalid username or password.", QMessageBox.Warning)
 
         except Exception as e:

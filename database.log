@@ -8860,3 +8860,759 @@ Params: (50,)
 2026-04-21 08:37:07,943 - INFO - Silent updater: Already on latest version (1.0.0)
 2026-04-21 08:37:07,943 - INFO - Silent update status: Already up to date
 2026-04-21 08:38:07,150 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 13:20:41,433 - INFO - MySQL connection pool created successfully
+2026-04-21 13:20:41,435 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 13:20:41,449 - INFO - Silent updater: Checking for updates...
+2026-04-21 13:20:41,489 - INFO - Silent update status: Checking for updates...
+2026-04-21 13:20:42,150 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 13:20:42,150 - INFO - Silent update status: Already up to date
+2026-04-21 14:27:14,385 - INFO - MySQL connection pool created successfully
+2026-04-21 14:27:14,387 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 14:27:14,402 - INFO - Silent updater: Checking for updates...
+2026-04-21 14:27:14,445 - INFO - Silent update status: Checking for updates...
+2026-04-21 14:27:15,106 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 14:27:15,106 - INFO - Silent update status: Already up to date
+2026-04-21 14:28:44,389 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:32:20,527 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:32:20,588 - INFO - MySQL connection pool created successfully
+2026-04-21 14:34:44,396 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:35:33,074 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:35:33,133 - INFO - MySQL connection pool created successfully
+2026-04-21 14:36:44,399 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:37:20,526 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:37:20,590 - INFO - MySQL connection pool created successfully
+2026-04-21 14:38:44,403 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:40:10,428 - INFO - MySQL connection pool created successfully
+2026-04-21 14:40:10,430 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 14:40:10,444 - INFO - Silent updater: Checking for updates...
+2026-04-21 14:40:10,483 - INFO - Silent update status: Checking for updates...
+2026-04-21 14:40:11,212 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 14:40:11,212 - INFO - Silent update status: Already up to date
+2026-04-21 14:41:40,431 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:42:06,333 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:42:06,407 - INFO - MySQL connection pool created successfully
+2026-04-21 14:44:40,437 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:45:57,876 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:45:57,953 - INFO - MySQL connection pool created successfully
+2026-04-21 14:49:10,443 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:52:24,127 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:52:24,183 - INFO - MySQL connection pool created successfully
+2026-04-21 14:54:10,446 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:55:07,232 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:55:07,303 - INFO - MySQL connection pool created successfully
+2026-04-21 14:56:40,449 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 14:57:51,942 - INFO - Reconnecting after idle disconnect...
+2026-04-21 14:57:52,006 - INFO - MySQL connection pool created successfully
+2026-04-21 14:59:10,453 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:00:35,835 - INFO - MySQL connection pool created successfully
+2026-04-21 15:00:35,837 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 15:00:35,851 - INFO - Silent updater: Checking for updates...
+2026-04-21 15:00:35,888 - INFO - Silent update status: Checking for updates...
+2026-04-21 15:00:36,504 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 15:00:36,504 - INFO - Silent update status: Already up to date
+2026-04-21 15:02:05,839 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:05:40,660 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:05:40,736 - INFO - MySQL connection pool created successfully
+2026-04-21 15:07:05,847 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:10:40,653 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:10:40,715 - INFO - MySQL connection pool created successfully
+2026-04-21 15:12:05,854 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:15:40,660 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:15:40,720 - INFO - MySQL connection pool created successfully
+2026-04-21 15:17:05,861 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:20:40,666 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:20:40,727 - INFO - MySQL connection pool created successfully
+2026-04-21 15:22:05,868 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:24:46,268 - INFO - MySQL connection pool created successfully
+2026-04-21 15:24:46,269 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 15:24:46,698 - INFO - MySQL connection pool created successfully
+2026-04-21 15:24:46,699 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 15:25:39,339 - INFO - MySQL connection pool created successfully
+2026-04-21 15:25:39,343 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 15:25:40,658 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:25:40,722 - INFO - MySQL connection pool created successfully
+2026-04-21 15:27:05,874 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:30:40,658 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:30:40,723 - INFO - MySQL connection pool created successfully
+2026-04-21 15:32:05,883 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:35:40,660 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:35:40,724 - INFO - MySQL connection pool created successfully
+2026-04-21 15:37:05,889 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:38:26,904 - INFO - MySQL connection pool created successfully
+2026-04-21 15:38:26,905 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 15:39:19,513 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:39:19,581 - INFO - MySQL connection pool created successfully
+2026-04-21 15:39:24,415 - INFO - MySQL connection pool created successfully
+2026-04-21 15:39:24,416 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 15:39:24,429 - INFO - Silent updater: Checking for updates...
+2026-04-21 15:39:24,466 - INFO - Silent update status: Checking for updates...
+2026-04-21 15:39:25,283 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 15:39:25,283 - INFO - Silent update status: Already up to date
+2026-04-21 15:39:31,254 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00
+Params: None
+2026-04-21 15:39:31,289 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance_lotes'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0
+Params: None
+2026-04-21 15:40:54,417 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:44:31,823 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:44:31,884 - INFO - MySQL connection pool created successfully
+2026-04-21 15:45:54,424 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:49:31,839 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:49:31,906 - INFO - MySQL connection pool created successfully
+2026-04-21 15:50:54,430 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:54:31,839 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:54:31,899 - INFO - MySQL connection pool created successfully
+2026-04-21 15:55:54,437 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 15:59:31,843 - INFO - Reconnecting after idle disconnect...
+2026-04-21 15:59:31,925 - INFO - MySQL connection pool created successfully
+2026-04-21 15:59:38,054 - INFO - MySQL connection pool created successfully
+2026-04-21 15:59:38,055 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 16:00:54,445 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:04:31,843 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:04:31,906 - INFO - MySQL connection pool created successfully
+2026-04-21 16:05:54,451 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:09:31,848 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:09:31,908 - INFO - MySQL connection pool created successfully
+2026-04-21 16:10:54,457 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:12:48,051 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:12:48,117 - INFO - MySQL connection pool created successfully
+2026-04-21 16:12:55,173 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00
+Params: None
+2026-04-21 16:12:55,198 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance_lotes'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0
+Params: None
+2026-04-21 16:14:17,205 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00
+Params: None
+2026-04-21 16:14:17,229 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance_lotes'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0
+Params: None
+2026-04-21 16:15:54,464 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:19:17,545 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:19:17,611 - INFO - MySQL connection pool created successfully
+2026-04-21 16:20:24,470 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:24:17,555 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:24:17,628 - INFO - MySQL connection pool created successfully
+2026-04-21 16:25:24,477 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:29:17,544 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:29:17,617 - INFO - MySQL connection pool created successfully
+2026-04-21 16:30:24,482 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:34:17,551 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:34:17,611 - INFO - MySQL connection pool created successfully
+2026-04-21 16:35:24,488 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:38:22,325 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:38:22,385 - INFO - MySQL connection pool created successfully
+2026-04-21 16:39:41,854 - INFO - MySQL connection pool created successfully
+2026-04-21 16:39:41,855 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 16:40:24,494 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:41:30,366 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:41:30,425 - INFO - MySQL connection pool created successfully
+2026-04-21 16:41:52,071 - INFO - MySQL connection pool created successfully
+2026-04-21 16:41:52,073 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 16:41:52,087 - INFO - Silent updater: Checking for updates...
+2026-04-21 16:41:52,123 - INFO - Silent update status: Checking for updates...
+2026-04-21 16:41:52,943 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 16:41:52,943 - INFO - Silent update status: Already up to date
+2026-04-21 16:41:55,136 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00
+Params: None
+2026-04-21 16:41:55,163 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance_lotes'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0
+Params: None
+2026-04-21 16:45:22,077 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-21 16:46:55,707 - INFO - Reconnecting after idle disconnect...
+2026-04-21 16:46:55,779 - INFO - MySQL connection pool created successfully
+2026-04-21 16:47:18,005 - INFO - MySQL connection pool created successfully
+2026-04-21 16:47:18,006 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 16:47:18,019 - INFO - Silent updater: Checking for updates...
+2026-04-21 16:47:18,048 - INFO - Silent update status: Checking for updates...
+2026-04-21 16:47:18,705 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 16:47:18,705 - INFO - Silent update status: Already up to date
+2026-04-21 16:47:21,771 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00
+Params: None
+2026-04-21 16:47:21,796 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance_lotes'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0
+Params: None
+2026-04-21 16:47:27,882 - ERROR - Query failed: (pymysql.err.OperationalError) (1055, "Expression #3 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'operation_db.c.name' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by")
+[SQL: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %(param0)s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %(param1)s
+                      AND b.is_registered = 1
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                ]
+[parameters: {'param0': '2026-04-21', 'param1': 'RICHELLE TECSON'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %s
+                      AND b.is_registered = 1
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                
+Params: ('2026-04-21', 'RICHELLE TECSON')
+2026-04-21 16:47:33,722 - ERROR - Query failed: (pymysql.err.OperationalError) (1055, "Expression #3 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'operation_db.c.name' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by")
+[SQL: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %(param0)s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %(param1)s
+                      AND b.is_registered = 1
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                ]
+[parameters: {'param0': '2026-03-19', 'param1': 'RICHELLE TECSON'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %s
+                      AND b.is_registered = 1
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                
+Params: ('2026-03-19', 'RICHELLE TECSON')
+2026-04-21 16:47:39,049 - ERROR - Query failed: (pymysql.err.OperationalError) (1055, "Expression #3 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'operation_db.c.name' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by")
+[SQL: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %(param0)s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %(param1)s
+                      
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                ]
+[parameters: {'param0': '2026-03-19', 'param1': 'RICHELLE TECSON'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %s
+                      
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                
+Params: ('2026-03-19', 'RICHELLE TECSON')
+2026-04-21 16:48:35,111 - ERROR - Query failed: (pymysql.err.OperationalError) (1055, "Expression #3 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'operation_db.c.name' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by")
+[SQL: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %(param0)s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %(param1)s
+                      
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                ]
+[parameters: {'param0': '2026-03-20', 'param1': 'RICHELLE TECSON'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %s
+                      
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                
+Params: ('2026-03-20', 'RICHELLE TECSON')
+2026-04-21 16:48:36,577 - ERROR - Query failed: (pymysql.err.OperationalError) (1055, "Expression #3 of SELECT list is not in GROUP BY clause and contains nonaggregated column 'operation_db.c.name' which is not functionally dependent on columns in GROUP BY clause; this is incompatible with sql_mode=only_full_group_by")
+[SQL: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %(param0)s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %(param1)s
+                      
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                ]
+[parameters: {'param0': '2026-03-19', 'param1': 'RICHELLE TECSON'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: 
+                    SELECT b.name as branch,
+                           COALESCE(b.area, 'UNASSIGNED') as area,
+                           COALESCE(c.name, '') as corporation_name,
+                           COALESCE(b.line_of_business, '') as line_of_business,
+                           COALESCE(b.global_tag, '') as global_tag,
+                           COALESCE(b.sunday, '') as sunday,
+                           COALESCE(SUM(dr.cash_count), 0) as cash_count,
+                           COALESCE(SUM(cf.cash_float), 0) as cash_float
+                    FROM branches b
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                        AND dr.date = %s
+                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
+                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
+                    WHERE b.os_name = %s
+                      
+                    GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
+                    ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
+                
+Params: ('2026-03-19', 'RICHELLE TECSON')
+2026-04-21 16:48:41,038 - INFO - MySQL connection pool created successfully
+2026-04-21 16:48:41,039 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 16:48:41,050 - INFO - Silent updater: Checking for updates...
+2026-04-21 16:48:41,082 - INFO - Silent update status: Checking for updates...
+2026-04-21 16:48:41,733 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 16:48:41,733 - INFO - Silent update status: Already up to date
+2026-04-21 16:48:46,249 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance DECIMAL(15,2) DEFAULT 0.00
+Params: None
+2026-04-21 16:48:46,273 - ERROR - Query failed: (pymysql.err.OperationalError) (1060, "Duplicate column name 'pc_inc_insurance_lotes'")
+[SQL: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: ALTER TABLE daily_reports_brand_a ADD COLUMN pc_inc_insurance_lotes INT DEFAULT 0
+Params: None
+2026-04-21 16:50:07,002 - INFO - MySQL connection pool created successfully
+2026-04-21 16:50:07,003 - INFO - Idle monitor started (timeout: 60s)
+2026-04-21 16:50:07,017 - INFO - Silent updater: Checking for updates...
+2026-04-21 16:50:07,051 - INFO - Silent update status: Checking for updates...
+2026-04-21 16:50:07,707 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-21 16:50:07,708 - INFO - Silent update status: Already up to date
+2026-04-21 16:52:07,005 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:08:45,016 - INFO - MySQL connection pool created successfully
+2026-04-22 08:08:45,019 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:08:45,047 - INFO - Silent updater: Checking for updates...
+2026-04-22 08:08:45,118 - INFO - Silent update status: Checking for updates...
+2026-04-22 08:08:45,847 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 08:08:45,847 - INFO - Silent update status: Already up to date
+2026-04-22 08:10:15,020 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:12:41,989 - INFO - Reconnecting after idle disconnect...
+2026-04-22 08:12:42,056 - INFO - MySQL connection pool created successfully
+2026-04-22 08:16:45,031 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:20:40,307 - INFO - Reconnecting after idle disconnect...
+2026-04-22 08:20:40,371 - INFO - MySQL connection pool created successfully
+2026-04-22 08:20:51,163 - INFO - MySQL connection pool created successfully
+2026-04-22 08:20:51,164 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:21:45,037 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:21:53,836 - INFO - MySQL connection pool created successfully
+2026-04-22 08:21:53,838 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:22:32,124 - INFO - MySQL connection pool created successfully
+2026-04-22 08:22:32,125 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:22:32,138 - INFO - Silent updater: Checking for updates...
+2026-04-22 08:22:32,180 - INFO - Silent update status: Checking for updates...
+2026-04-22 08:22:32,845 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 08:22:32,845 - INFO - Silent update status: Already up to date
+2026-04-22 08:24:32,127 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:27:40,391 - INFO - Reconnecting after idle disconnect...
+2026-04-22 08:27:40,456 - INFO - MySQL connection pool created successfully
+2026-04-22 08:28:42,371 - INFO - MySQL connection pool created successfully
+2026-04-22 08:28:42,372 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:29:02,133 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:29:24,335 - INFO - MySQL connection pool created successfully
+2026-04-22 08:29:24,336 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:29:33,736 - INFO - MySQL connection pool created successfully
+2026-04-22 08:29:33,737 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:29:47,846 - INFO - MySQL connection pool created successfully
+2026-04-22 08:29:47,847 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:30:47,391 - INFO - MySQL connection pool created successfully
+2026-04-22 08:30:47,392 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:30:47,407 - ERROR - Query failed: (pymysql.err.OperationalError) (1054, "Unknown column 'created_at' in 'field list'")
+[SQL: SELECT date, branch, corporation, created_at FROM daily_reports_brand_a ORDER BY created_at DESC LIMIT 5]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: SELECT date, branch, corporation, created_at FROM daily_reports_brand_a ORDER BY created_at DESC LIMIT 5
+Params: None
+2026-04-22 08:32:00,805 - INFO - MySQL connection pool created successfully
+2026-04-22 08:32:00,807 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:32:00,819 - INFO - Silent updater: Checking for updates...
+2026-04-22 08:32:00,855 - INFO - Silent update status: Checking for updates...
+2026-04-22 08:32:01,527 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 08:32:01,527 - INFO - Silent update status: Already up to date
+2026-04-22 08:38:55,059 - INFO - MySQL connection pool created successfully
+2026-04-22 08:38:55,060 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:38:55,069 - INFO - Silent updater: Checking for updates...
+2026-04-22 08:38:55,113 - INFO - Silent update status: Checking for updates...
+2026-04-22 08:38:55,797 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 08:38:55,797 - INFO - Silent update status: Already up to date
+2026-04-22 08:40:55,061 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:41:03,096 - INFO - MySQL connection pool created successfully
+2026-04-22 08:41:03,097 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:42:21,277 - INFO - Reconnecting after idle disconnect...
+2026-04-22 08:42:21,347 - INFO - MySQL connection pool created successfully
+2026-04-22 08:43:30,219 - INFO - MySQL connection pool created successfully
+2026-04-22 08:43:30,221 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:43:55,065 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:44:29,573 - INFO - Reconnecting after idle disconnect...
+2026-04-22 08:44:29,633 - INFO - MySQL connection pool created successfully
+2026-04-22 08:45:55,068 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:46:40,274 - INFO - MySQL connection pool created successfully
+2026-04-22 08:46:40,275 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:46:40,287 - INFO - Silent updater: Checking for updates...
+2026-04-22 08:46:40,321 - INFO - Silent update status: Checking for updates...
+2026-04-22 08:46:41,054 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 08:46:41,054 - INFO - Silent update status: Already up to date
+2026-04-22 08:52:35,106 - INFO - MySQL connection pool created successfully
+2026-04-22 08:52:35,108 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 08:52:35,129 - INFO - Silent updater: Checking for updates...
+2026-04-22 08:52:35,177 - INFO - Silent update status: Checking for updates...
+2026-04-22 08:52:35,879 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 08:52:35,880 - INFO - Silent update status: Already up to date
+2026-04-22 08:54:05,110 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 08:57:20,532 - INFO - Reconnecting after idle disconnect...
+2026-04-22 08:57:20,597 - INFO - MySQL connection pool created successfully
+2026-04-22 08:59:05,115 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 09:02:53,551 - INFO - Reconnecting after idle disconnect...
+2026-04-22 09:02:53,615 - INFO - MySQL connection pool created successfully
+2026-04-22 09:04:05,121 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 09:07:23,834 - INFO - MySQL connection pool created successfully
+2026-04-22 09:07:23,835 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 09:07:53,554 - INFO - Reconnecting after idle disconnect...
+2026-04-22 09:07:53,616 - INFO - MySQL connection pool created successfully
+2026-04-22 09:09:05,127 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 09:12:48,410 - INFO - MySQL connection pool created successfully
+2026-04-22 09:12:48,411 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 09:12:53,552 - INFO - Reconnecting after idle disconnect...
+2026-04-22 09:12:53,609 - INFO - MySQL connection pool created successfully
+2026-04-22 09:14:05,132 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 09:14:40,576 - INFO - MySQL connection pool created successfully
+2026-04-22 09:14:40,577 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 09:16:16,260 - INFO - MySQL connection pool created successfully
+2026-04-22 09:16:16,261 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 09:17:26,240 - INFO - MySQL connection pool created successfully
+2026-04-22 09:17:26,241 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 09:17:26,256 - INFO - Silent updater: Checking for updates...
+2026-04-22 09:17:26,293 - INFO - Silent update status: Checking for updates...
+2026-04-22 09:17:27,014 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 09:17:27,015 - INFO - Silent update status: Already up to date
+2026-04-22 09:21:26,245 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 09:31:03,554 - INFO - MySQL connection pool created successfully
+2026-04-22 09:31:03,555 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 09:31:03,567 - INFO - Silent updater: Checking for updates...
+2026-04-22 09:31:03,602 - INFO - Silent update status: Checking for updates...
+2026-04-22 09:31:04,337 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 09:31:04,337 - INFO - Silent update status: Already up to date
+2026-04-22 15:51:03,278 - INFO - MySQL connection pool created successfully
+2026-04-22 15:51:03,280 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 15:51:03,322 - INFO - Silent updater: Checking for updates...
+2026-04-22 15:51:03,407 - INFO - Silent update status: Checking for updates...
+2026-04-22 15:51:04,058 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 15:51:04,059 - INFO - Silent update status: Already up to date
+2026-04-22 15:52:33,281 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 15:53:03,124 - INFO - Reconnecting after idle disconnect...
+2026-04-22 15:53:03,312 - INFO - MySQL connection pool created successfully
+2026-04-22 15:54:33,313 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 15:56:09,994 - INFO - Reconnecting after idle disconnect...
+2026-04-22 15:56:10,145 - INFO - MySQL connection pool created successfully
+2026-04-22 15:57:33,316 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:01:09,999 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:01:10,064 - INFO - MySQL connection pool created successfully
+2026-04-22 16:02:33,320 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:06:09,998 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:06:10,145 - INFO - MySQL connection pool created successfully
+2026-04-22 16:07:33,324 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:11:09,998 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:11:10,202 - INFO - MySQL connection pool created successfully
+2026-04-22 16:12:33,328 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:16:10,000 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:16:10,067 - INFO - MySQL connection pool created successfully
+2026-04-22 16:17:33,334 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:21:10,000 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:21:10,067 - INFO - MySQL connection pool created successfully
+2026-04-22 16:22:33,340 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:26:10,000 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:26:10,066 - INFO - MySQL connection pool created successfully
+2026-04-22 16:27:33,347 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:31:10,003 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:31:10,077 - INFO - MySQL connection pool created successfully
+2026-04-22 16:31:37,834 - INFO - MySQL connection pool created successfully
+2026-04-22 16:31:37,835 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 16:31:37,848 - INFO - Silent updater: Checking for updates...
+2026-04-22 16:31:37,888 - INFO - Silent update status: Checking for updates...
+2026-04-22 16:31:38,563 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 16:31:38,564 - INFO - Silent update status: Already up to date
+2026-04-22 16:33:07,836 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:34:33,709 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:34:33,778 - INFO - MySQL connection pool created successfully
+2026-04-22 16:34:34,193 - ERROR - Query failed: (pymysql.err.OperationalError) (1054, "Unknown column 'dr.insurance_20' in 'field list'")
+[SQL: SELECT dr.branch, SUM(COALESCE(dr.`empeno_jew_new_lotes`, 0) + COALESCE(dr.`empeno_jew_renew_lotes`, 0)) AS `empeno_jew_new_lotes`, SUM(COALESCE(dr.`empeno_jew_new`, 0) + COALESCE(dr.`empeno_jew_renew`, 0)) AS `empeno_jew_new`, SUM(COALESCE(dr.`empeno_sto_new_lotes`, 0) + COALESCE(dr.`fund_empeno_sto_renew_lotes`, 0)) AS `empeno_sto_new_lotes`, SUM(COALESCE(dr.`empeno_sto_new`, 0) + COALESCE(dr.`fund_empeno_sto_renew`, 0)) AS `empeno_sto_new`, SUM(COALESCE(dr.`empeno_motor_car_lotes`, 0)) AS `empeno_motor_car_lotes`, SUM(COALESCE(dr.`empeno_motor_car`, 0)) AS `empeno_motor_car`, SUM(COALESCE(dr.`mc_out_lotes`, 0)) AS `mc_out_lotes`, SUM(COALESCE(dr.`mc_out`, 0)) AS `mc_out`, SUM(COALESCE(dr.`empeno_silver_lotes`, 0)) AS `empeno_silver_lotes`, SUM(COALESCE(dr.`empeno_silver`, 0)) AS `empeno_silver`, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0) + COALESCE(dr.`palawan_sc_lotes`, 0) + COALESCE(dr.`palawan_pay_out_lotes`, 0) + COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0) + COALESCE(dr.`palawan_sc`, 0) + COALESCE(dr.`palawan_pay_out`, 0) + COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`insurance_20`, 0)) AS `insurance_20`, SUM(COALESCE(dr.`insurance_philam_30`, 0)) AS `insurance_philam_30`, SUM(COALESCE(dr.`insurance_philam_60`, 0)) AS `insurance_philam_60`, SUM(COALESCE(dr.`insurance_philam_90`, 0)) AS `insurance_philam_90`, SUM(COALESCE(dr.`osf_storage_lotes`, 0) + COALESCE(dr.`osf_silver_lotes`, 0) + COALESCE(dr.`osf_motor_lotes`, 0)) AS `osf_storage_lotes`, SUM(COALESCE(dr.`osf_storage`, 0) + COALESCE(dr.`osf_silver`, 0) + COALESCE(dr.`osf_motor`, 0)) AS `osf_storage`, SUM(COALESCE(dr.`rescate_jewelry_lotes`, 0)) AS `rescate_jewelry_lotes`, SUM(COALESCE(dr.`rescate_jewelry`, 0)) AS `rescate_jewelry`, SUM(COALESCE(dr.`cr_storage_lotes`, 0) + COALESCE(dr.`rescate_silver_lotes`, 0) + COALESCE(dr.`res_storage_lotes`, 0) + COALESCE(dr.`res_motor_lotes`, 0)) AS `cr_storage_lotes`, SUM(COALESCE(dr.`cr_storage`, 0) + COALESCE(dr.`rescate_silver`, 0) + COALESCE(dr.`res_storage`, 0) + COALESCE(dr.`res_motor`, 0)) AS `cr_storage`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ria_out_lotes`, 0)) AS `ria_out_lotes`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly` FROM `daily_reports_brand_a` dr WHERE dr.date BETWEEN %(param0)s AND %(param1)s  GROUP BY dr.branch ORDER BY dr.branch]
+[parameters: {'param0': '2026-03-19', 'param1': '2026-03-19'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: SELECT dr.branch, SUM(COALESCE(dr.`empeno_jew_new_lotes`, 0) + COALESCE(dr.`empeno_jew_renew_lotes`, 0)) AS `empeno_jew_new_lotes`, SUM(COALESCE(dr.`empeno_jew_new`, 0) + COALESCE(dr.`empeno_jew_renew`, 0)) AS `empeno_jew_new`, SUM(COALESCE(dr.`empeno_sto_new_lotes`, 0) + COALESCE(dr.`fund_empeno_sto_renew_lotes`, 0)) AS `empeno_sto_new_lotes`, SUM(COALESCE(dr.`empeno_sto_new`, 0) + COALESCE(dr.`fund_empeno_sto_renew`, 0)) AS `empeno_sto_new`, SUM(COALESCE(dr.`empeno_motor_car_lotes`, 0)) AS `empeno_motor_car_lotes`, SUM(COALESCE(dr.`empeno_motor_car`, 0)) AS `empeno_motor_car`, SUM(COALESCE(dr.`mc_out_lotes`, 0)) AS `mc_out_lotes`, SUM(COALESCE(dr.`mc_out`, 0)) AS `mc_out`, SUM(COALESCE(dr.`empeno_silver_lotes`, 0)) AS `empeno_silver_lotes`, SUM(COALESCE(dr.`empeno_silver`, 0)) AS `empeno_silver`, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0) + COALESCE(dr.`palawan_sc_lotes`, 0) + COALESCE(dr.`palawan_pay_out_lotes`, 0) + COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0) + COALESCE(dr.`palawan_sc`, 0) + COALESCE(dr.`palawan_pay_out`, 0) + COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`insurance_20`, 0)) AS `insurance_20`, SUM(COALESCE(dr.`insurance_philam_30`, 0)) AS `insurance_philam_30`, SUM(COALESCE(dr.`insurance_philam_60`, 0)) AS `insurance_philam_60`, SUM(COALESCE(dr.`insurance_philam_90`, 0)) AS `insurance_philam_90`, SUM(COALESCE(dr.`osf_storage_lotes`, 0) + COALESCE(dr.`osf_silver_lotes`, 0) + COALESCE(dr.`osf_motor_lotes`, 0)) AS `osf_storage_lotes`, SUM(COALESCE(dr.`osf_storage`, 0) + COALESCE(dr.`osf_silver`, 0) + COALESCE(dr.`osf_motor`, 0)) AS `osf_storage`, SUM(COALESCE(dr.`rescate_jewelry_lotes`, 0)) AS `rescate_jewelry_lotes`, SUM(COALESCE(dr.`rescate_jewelry`, 0)) AS `rescate_jewelry`, SUM(COALESCE(dr.`cr_storage_lotes`, 0) + COALESCE(dr.`rescate_silver_lotes`, 0) + COALESCE(dr.`res_storage_lotes`, 0) + COALESCE(dr.`res_motor_lotes`, 0)) AS `cr_storage_lotes`, SUM(COALESCE(dr.`cr_storage`, 0) + COALESCE(dr.`rescate_silver`, 0) + COALESCE(dr.`res_storage`, 0) + COALESCE(dr.`res_motor`, 0)) AS `cr_storage`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ria_out_lotes`, 0)) AS `ria_out_lotes`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly` FROM `daily_reports_brand_a` dr WHERE dr.date BETWEEN %s AND %s  GROUP BY dr.branch ORDER BY dr.branch
+Params: ('2026-03-19', '2026-03-19')
+2026-04-22 16:34:34,225 - ERROR - Query failed: (pymysql.err.OperationalError) (1054, "Unknown column 'dr.sendah_load_sc_lotes' in 'field list'")
+[SQL: SELECT dr.branch, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`palawan_sc_lotes`, 0)) AS `palawan_sc_lotes`, SUM(COALESCE(dr.`palawan_sc`, 0)) AS `palawan_sc`, SUM(COALESCE(dr.`palawan_pay_out_lotes`, 0)) AS `palawan_pay_out_lotes`, SUM(COALESCE(dr.`palawan_pay_out`, 0)) AS `palawan_pay_out`, SUM(COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_pay_out_incentives_lotes`, SUM(COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_pay_out_incentives`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_bills_sc`, 0)) AS `palawan_pay_bills_sc`, SUM(COALESCE(dr.`palawan_load_sc`, 0)) AS `palawan_load_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`palawan_suki_card`, 0)) AS `palawan_suki_card`, SUM(COALESCE(dr.`palawan_pay_cash_out_sc`, 0)) AS `palawan_pay_cash_out_sc`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`abra_so_sc`, 0)) AS `abra_so_sc`, SUM(COALESCE(dr.`abra_po`, 0)) AS `abra_po`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`paymaya_out`, 0)) AS `paymaya_out`, SUM(COALESCE(dr.`ria_in_sc_lotes`, 0)) AS `ria_in_sc_lotes`, SUM(COALESCE(dr.`ria_in_sc`, 0)) AS `ria_in_sc`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`bdo_sc`, 0)) AS `bdo_sc`, SUM(COALESCE(dr.`bdo_po`, 0)) AS `bdo_po`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ayanah_sc`, 0)) AS `ayanah_sc`, SUM(COALESCE(dr.`ayanah_out`, 0)) AS `ayanah_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_bank_transfer`, 0)) AS `i2i_bank_transfer`, SUM(COALESCE(dr.`i2i_pesonet`, 0)) AS `i2i_pesonet`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`fixco`, 0)) AS `fixco`, SUM(COALESCE(dr.`i2i_remittance_out`, 0)) AS `i2i_remittance_out` FROM `other_services_tbl_brand_a` dr WHERE dr.date BETWEEN %(param0)s AND %(param1)s  GROUP BY dr.branch ORDER BY dr.branch]
+[parameters: {'param0': '2026-03-19', 'param1': '2026-03-19'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: SELECT dr.branch, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`palawan_sc_lotes`, 0)) AS `palawan_sc_lotes`, SUM(COALESCE(dr.`palawan_sc`, 0)) AS `palawan_sc`, SUM(COALESCE(dr.`palawan_pay_out_lotes`, 0)) AS `palawan_pay_out_lotes`, SUM(COALESCE(dr.`palawan_pay_out`, 0)) AS `palawan_pay_out`, SUM(COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_pay_out_incentives_lotes`, SUM(COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_pay_out_incentives`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_bills_sc`, 0)) AS `palawan_pay_bills_sc`, SUM(COALESCE(dr.`palawan_load_sc`, 0)) AS `palawan_load_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`palawan_suki_card`, 0)) AS `palawan_suki_card`, SUM(COALESCE(dr.`palawan_pay_cash_out_sc`, 0)) AS `palawan_pay_cash_out_sc`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`abra_so_sc`, 0)) AS `abra_so_sc`, SUM(COALESCE(dr.`abra_po`, 0)) AS `abra_po`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`paymaya_out`, 0)) AS `paymaya_out`, SUM(COALESCE(dr.`ria_in_sc_lotes`, 0)) AS `ria_in_sc_lotes`, SUM(COALESCE(dr.`ria_in_sc`, 0)) AS `ria_in_sc`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`bdo_sc`, 0)) AS `bdo_sc`, SUM(COALESCE(dr.`bdo_po`, 0)) AS `bdo_po`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ayanah_sc`, 0)) AS `ayanah_sc`, SUM(COALESCE(dr.`ayanah_out`, 0)) AS `ayanah_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_bank_transfer`, 0)) AS `i2i_bank_transfer`, SUM(COALESCE(dr.`i2i_pesonet`, 0)) AS `i2i_pesonet`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`fixco`, 0)) AS `fixco`, SUM(COALESCE(dr.`i2i_remittance_out`, 0)) AS `i2i_remittance_out` FROM `other_services_tbl_brand_a` dr WHERE dr.date BETWEEN %s AND %s  GROUP BY dr.branch ORDER BY dr.branch
+Params: ('2026-03-19', '2026-03-19')
+2026-04-22 16:35:37,841 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:36:41,504 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:36:41,568 - INFO - MySQL connection pool created successfully
+2026-04-22 16:38:07,846 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:41:41,499 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:41:41,567 - INFO - MySQL connection pool created successfully
+2026-04-22 16:43:07,854 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:44:45,699 - INFO - MySQL connection pool created successfully
+2026-04-22 16:44:45,701 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 16:44:45,714 - INFO - Silent updater: Checking for updates...
+2026-04-22 16:44:45,747 - INFO - Silent update status: Checking for updates...
+2026-04-22 16:44:46,483 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 16:44:46,483 - INFO - Silent update status: Already up to date
+2026-04-22 16:45:06,132 - ERROR - Query failed: (pymysql.err.OperationalError) (1054, "Unknown column 'dr.insurance_20' in 'field list'")
+[SQL: SELECT dr.branch, SUM(COALESCE(dr.`empeno_jew_new_lotes`, 0) + COALESCE(dr.`empeno_jew_renew_lotes`, 0)) AS `empeno_jew_new_lotes`, SUM(COALESCE(dr.`empeno_jew_new`, 0) + COALESCE(dr.`empeno_jew_renew`, 0)) AS `empeno_jew_new`, SUM(COALESCE(dr.`empeno_sto_new_lotes`, 0) + COALESCE(dr.`fund_empeno_sto_renew_lotes`, 0)) AS `empeno_sto_new_lotes`, SUM(COALESCE(dr.`empeno_sto_new`, 0) + COALESCE(dr.`fund_empeno_sto_renew`, 0)) AS `empeno_sto_new`, SUM(COALESCE(dr.`empeno_motor_car_lotes`, 0)) AS `empeno_motor_car_lotes`, SUM(COALESCE(dr.`empeno_motor_car`, 0)) AS `empeno_motor_car`, SUM(COALESCE(dr.`mc_out_lotes`, 0)) AS `mc_out_lotes`, SUM(COALESCE(dr.`mc_out`, 0)) AS `mc_out`, SUM(COALESCE(dr.`empeno_silver_lotes`, 0)) AS `empeno_silver_lotes`, SUM(COALESCE(dr.`empeno_silver`, 0)) AS `empeno_silver`, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0) + COALESCE(dr.`palawan_sc_lotes`, 0) + COALESCE(dr.`palawan_pay_out_lotes`, 0) + COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0) + COALESCE(dr.`palawan_sc`, 0) + COALESCE(dr.`palawan_pay_out`, 0) + COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`insurance_20`, 0)) AS `insurance_20`, SUM(COALESCE(dr.`insurance_philam_30`, 0)) AS `insurance_philam_30`, SUM(COALESCE(dr.`insurance_philam_60`, 0)) AS `insurance_philam_60`, SUM(COALESCE(dr.`insurance_philam_90`, 0)) AS `insurance_philam_90`, SUM(COALESCE(dr.`osf_storage_lotes`, 0) + COALESCE(dr.`osf_silver_lotes`, 0) + COALESCE(dr.`osf_motor_lotes`, 0)) AS `osf_storage_lotes`, SUM(COALESCE(dr.`osf_storage`, 0) + COALESCE(dr.`osf_silver`, 0) + COALESCE(dr.`osf_motor`, 0)) AS `osf_storage`, SUM(COALESCE(dr.`rescate_jewelry_lotes`, 0)) AS `rescate_jewelry_lotes`, SUM(COALESCE(dr.`rescate_jewelry`, 0)) AS `rescate_jewelry`, SUM(COALESCE(dr.`cr_storage_lotes`, 0) + COALESCE(dr.`rescate_silver_lotes`, 0) + COALESCE(dr.`res_storage_lotes`, 0) + COALESCE(dr.`res_motor_lotes`, 0)) AS `cr_storage_lotes`, SUM(COALESCE(dr.`cr_storage`, 0) + COALESCE(dr.`rescate_silver`, 0) + COALESCE(dr.`res_storage`, 0) + COALESCE(dr.`res_motor`, 0)) AS `cr_storage`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ria_out_lotes`, 0)) AS `ria_out_lotes`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly` FROM `daily_reports_brand_a` dr INNER JOIN branches b ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci AND b.os_name = %(param0)s WHERE dr.date = %(param1)s  GROUP BY dr.branch ORDER BY dr.branch]
+[parameters: {'param0': 'RICHELLE TECSON', 'param1': '2026-03-19'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: SELECT dr.branch, SUM(COALESCE(dr.`empeno_jew_new_lotes`, 0) + COALESCE(dr.`empeno_jew_renew_lotes`, 0)) AS `empeno_jew_new_lotes`, SUM(COALESCE(dr.`empeno_jew_new`, 0) + COALESCE(dr.`empeno_jew_renew`, 0)) AS `empeno_jew_new`, SUM(COALESCE(dr.`empeno_sto_new_lotes`, 0) + COALESCE(dr.`fund_empeno_sto_renew_lotes`, 0)) AS `empeno_sto_new_lotes`, SUM(COALESCE(dr.`empeno_sto_new`, 0) + COALESCE(dr.`fund_empeno_sto_renew`, 0)) AS `empeno_sto_new`, SUM(COALESCE(dr.`empeno_motor_car_lotes`, 0)) AS `empeno_motor_car_lotes`, SUM(COALESCE(dr.`empeno_motor_car`, 0)) AS `empeno_motor_car`, SUM(COALESCE(dr.`mc_out_lotes`, 0)) AS `mc_out_lotes`, SUM(COALESCE(dr.`mc_out`, 0)) AS `mc_out`, SUM(COALESCE(dr.`empeno_silver_lotes`, 0)) AS `empeno_silver_lotes`, SUM(COALESCE(dr.`empeno_silver`, 0)) AS `empeno_silver`, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0) + COALESCE(dr.`palawan_sc_lotes`, 0) + COALESCE(dr.`palawan_pay_out_lotes`, 0) + COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0) + COALESCE(dr.`palawan_sc`, 0) + COALESCE(dr.`palawan_pay_out`, 0) + COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`insurance_20`, 0)) AS `insurance_20`, SUM(COALESCE(dr.`insurance_philam_30`, 0)) AS `insurance_philam_30`, SUM(COALESCE(dr.`insurance_philam_60`, 0)) AS `insurance_philam_60`, SUM(COALESCE(dr.`insurance_philam_90`, 0)) AS `insurance_philam_90`, SUM(COALESCE(dr.`osf_storage_lotes`, 0) + COALESCE(dr.`osf_silver_lotes`, 0) + COALESCE(dr.`osf_motor_lotes`, 0)) AS `osf_storage_lotes`, SUM(COALESCE(dr.`osf_storage`, 0) + COALESCE(dr.`osf_silver`, 0) + COALESCE(dr.`osf_motor`, 0)) AS `osf_storage`, SUM(COALESCE(dr.`rescate_jewelry_lotes`, 0)) AS `rescate_jewelry_lotes`, SUM(COALESCE(dr.`rescate_jewelry`, 0)) AS `rescate_jewelry`, SUM(COALESCE(dr.`cr_storage_lotes`, 0) + COALESCE(dr.`rescate_silver_lotes`, 0) + COALESCE(dr.`res_storage_lotes`, 0) + COALESCE(dr.`res_motor_lotes`, 0)) AS `cr_storage_lotes`, SUM(COALESCE(dr.`cr_storage`, 0) + COALESCE(dr.`rescate_silver`, 0) + COALESCE(dr.`res_storage`, 0) + COALESCE(dr.`res_motor`, 0)) AS `cr_storage`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ria_out_lotes`, 0)) AS `ria_out_lotes`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly` FROM `daily_reports_brand_a` dr INNER JOIN branches b ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci AND b.os_name = %s WHERE dr.date = %s  GROUP BY dr.branch ORDER BY dr.branch
+Params: ('RICHELLE TECSON', '2026-03-19')
+2026-04-22 16:45:06,163 - ERROR - Query failed: (pymysql.err.OperationalError) (1054, "Unknown column 'dr.sendah_load_sc_lotes' in 'field list'")
+[SQL: SELECT dr.branch, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`palawan_sc_lotes`, 0)) AS `palawan_sc_lotes`, SUM(COALESCE(dr.`palawan_sc`, 0)) AS `palawan_sc`, SUM(COALESCE(dr.`palawan_pay_out_lotes`, 0)) AS `palawan_pay_out_lotes`, SUM(COALESCE(dr.`palawan_pay_out`, 0)) AS `palawan_pay_out`, SUM(COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_pay_out_incentives_lotes`, SUM(COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_pay_out_incentives`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_bills_sc`, 0)) AS `palawan_pay_bills_sc`, SUM(COALESCE(dr.`palawan_load_sc`, 0)) AS `palawan_load_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`palawan_suki_card`, 0)) AS `palawan_suki_card`, SUM(COALESCE(dr.`palawan_pay_cash_out_sc`, 0)) AS `palawan_pay_cash_out_sc`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`abra_so_sc`, 0)) AS `abra_so_sc`, SUM(COALESCE(dr.`abra_po`, 0)) AS `abra_po`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`paymaya_out`, 0)) AS `paymaya_out`, SUM(COALESCE(dr.`ria_in_sc_lotes`, 0)) AS `ria_in_sc_lotes`, SUM(COALESCE(dr.`ria_in_sc`, 0)) AS `ria_in_sc`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`bdo_sc`, 0)) AS `bdo_sc`, SUM(COALESCE(dr.`bdo_po`, 0)) AS `bdo_po`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ayanah_sc`, 0)) AS `ayanah_sc`, SUM(COALESCE(dr.`ayanah_out`, 0)) AS `ayanah_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_bank_transfer`, 0)) AS `i2i_bank_transfer`, SUM(COALESCE(dr.`i2i_pesonet`, 0)) AS `i2i_pesonet`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`fixco`, 0)) AS `fixco`, SUM(COALESCE(dr.`i2i_remittance_out`, 0)) AS `i2i_remittance_out` FROM `other_services_tbl_brand_a` dr INNER JOIN branches b ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci AND b.os_name = %(param0)s WHERE dr.date = %(param1)s  GROUP BY dr.branch ORDER BY dr.branch]
+[parameters: {'param0': 'RICHELLE TECSON', 'param1': '2026-03-19'}]
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+Query: SELECT dr.branch, SUM(COALESCE(dr.`palawan_send_out_lotes`, 0)) AS `palawan_send_out_lotes`, SUM(COALESCE(dr.`palawan_send_out`, 0)) AS `palawan_send_out`, SUM(COALESCE(dr.`palawan_sc_lotes`, 0)) AS `palawan_sc_lotes`, SUM(COALESCE(dr.`palawan_sc`, 0)) AS `palawan_sc`, SUM(COALESCE(dr.`palawan_pay_out_lotes`, 0)) AS `palawan_pay_out_lotes`, SUM(COALESCE(dr.`palawan_pay_out`, 0)) AS `palawan_pay_out`, SUM(COALESCE(dr.`palawan_pay_out_incentives_lotes`, 0)) AS `palawan_pay_out_incentives_lotes`, SUM(COALESCE(dr.`palawan_pay_out_incentives`, 0)) AS `palawan_pay_out_incentives`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc_lotes`, 0)) AS `palawan_pay_cash_in_sc_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_in_sc`, 0)) AS `palawan_pay_cash_in_sc`, SUM(COALESCE(dr.`palawan_pay_bills_sc`, 0)) AS `palawan_pay_bills_sc`, SUM(COALESCE(dr.`palawan_load_sc`, 0)) AS `palawan_load_sc`, SUM(COALESCE(dr.`palawan_pay_cash_out_lotes`, 0)) AS `palawan_pay_cash_out_lotes`, SUM(COALESCE(dr.`palawan_pay_cash_out`, 0)) AS `palawan_pay_cash_out`, SUM(COALESCE(dr.`palawan_suki_card`, 0)) AS `palawan_suki_card`, SUM(COALESCE(dr.`palawan_pay_cash_out_sc`, 0)) AS `palawan_pay_cash_out_sc`, SUM(COALESCE(dr.`sendah_load_sc_lotes`, 0)) AS `sendah_load_sc_lotes`, SUM(COALESCE(dr.`sendah_load_sc`, 0)) AS `sendah_load_sc`, SUM(COALESCE(dr.`sendah_bills_sc_lotes`, 0)) AS `sendah_bills_sc_lotes`, SUM(COALESCE(dr.`sendah_bills_sc`, 0)) AS `sendah_bills_sc`, SUM(COALESCE(dr.`smart_money_sc_lotes`, 0)) AS `smart_money_sc_lotes`, SUM(COALESCE(dr.`smart_money_sc`, 0)) AS `smart_money_sc`, SUM(COALESCE(dr.`smart_money_po_lotes`, 0)) AS `smart_money_po_lotes`, SUM(COALESCE(dr.`smart_money_po`, 0)) AS `smart_money_po`, SUM(COALESCE(dr.`gcash_in_lotes`, 0)) AS `gcash_in_lotes`, SUM(COALESCE(dr.`gcash_in`, 0)) AS `gcash_in`, SUM(COALESCE(dr.`gcash_out_lotes`, 0)) AS `gcash_out_lotes`, SUM(COALESCE(dr.`gcash_out`, 0)) AS `gcash_out`, SUM(COALESCE(dr.`gcash_padala_sendah_lotes`, 0)) AS `gcash_padala_sendah_lotes`, SUM(COALESCE(dr.`gcash_padala_sendah`, 0)) AS `gcash_padala_sendah`, SUM(COALESCE(dr.`abra_so_sc`, 0)) AS `abra_so_sc`, SUM(COALESCE(dr.`abra_po`, 0)) AS `abra_po`, SUM(COALESCE(dr.`remitly_lotes`, 0)) AS `remitly_lotes`, SUM(COALESCE(dr.`remitly`, 0)) AS `remitly`, SUM(COALESCE(dr.`paymaya_in_lotes`, 0)) AS `paymaya_in_lotes`, SUM(COALESCE(dr.`paymaya_in`, 0)) AS `paymaya_in`, SUM(COALESCE(dr.`paymaya_out`, 0)) AS `paymaya_out`, SUM(COALESCE(dr.`ria_in_sc_lotes`, 0)) AS `ria_in_sc_lotes`, SUM(COALESCE(dr.`ria_in_sc`, 0)) AS `ria_in_sc`, SUM(COALESCE(dr.`ria_out`, 0)) AS `ria_out`, SUM(COALESCE(dr.`bdo_sc`, 0)) AS `bdo_sc`, SUM(COALESCE(dr.`bdo_po`, 0)) AS `bdo_po`, SUM(COALESCE(dr.`transfast_lotes`, 0)) AS `transfast_lotes`, SUM(COALESCE(dr.`transfast`, 0)) AS `transfast`, SUM(COALESCE(dr.`ayanah_sc`, 0)) AS `ayanah_sc`, SUM(COALESCE(dr.`ayanah_out`, 0)) AS `ayanah_out`, SUM(COALESCE(dr.`moneygram_lotes`, 0)) AS `moneygram_lotes`, SUM(COALESCE(dr.`moneygram`, 0)) AS `moneygram`, SUM(COALESCE(dr.`i2i_remittance_in_lotes`, 0)) AS `i2i_remittance_in_lotes`, SUM(COALESCE(dr.`i2i_remittance_in`, 0)) AS `i2i_remittance_in`, SUM(COALESCE(dr.`i2i_bills_payment_lotes`, 0)) AS `i2i_bills_payment_lotes`, SUM(COALESCE(dr.`i2i_bills_payment`, 0)) AS `i2i_bills_payment`, SUM(COALESCE(dr.`i2i_bank_transfer`, 0)) AS `i2i_bank_transfer`, SUM(COALESCE(dr.`i2i_pesonet`, 0)) AS `i2i_pesonet`, SUM(COALESCE(dr.`i2i_instapay_lotes`, 0)) AS `i2i_instapay_lotes`, SUM(COALESCE(dr.`i2i_instapay`, 0)) AS `i2i_instapay`, SUM(COALESCE(dr.`fixco`, 0)) AS `fixco`, SUM(COALESCE(dr.`i2i_remittance_out`, 0)) AS `i2i_remittance_out` FROM `other_services_tbl_brand_a` dr INNER JOIN branches b ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci AND b.os_name = %s WHERE dr.date = %s  GROUP BY dr.branch ORDER BY dr.branch
+Params: ('RICHELLE TECSON', '2026-03-19')
+2026-04-22 16:46:15,702 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:49:52,016 - INFO - Reconnecting after idle disconnect...
+2026-04-22 16:49:52,080 - INFO - MySQL connection pool created successfully
+2026-04-22 16:51:15,708 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-22 16:52:47,721 - INFO - MySQL connection pool created successfully
+2026-04-22 16:52:47,722 - INFO - Idle monitor started (timeout: 60s)
+2026-04-22 16:52:47,734 - INFO - Silent updater: Checking for updates...
+2026-04-22 16:52:47,772 - INFO - Silent update status: Checking for updates...
+2026-04-22 16:52:48,414 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-22 16:52:48,414 - INFO - Silent update status: Already up to date
+2026-04-23 09:04:50,969 - INFO - MySQL connection pool created successfully
+2026-04-23 09:04:50,971 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:04:50,984 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:04:51,029 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:04:51,701 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:04:51,702 - INFO - Silent update status: Already up to date
+2026-04-23 09:06:50,972 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:10:22,698 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:10:22,768 - INFO - MySQL connection pool created successfully
+2026-04-23 09:10:37,643 - INFO - MySQL connection pool created successfully
+2026-04-23 09:10:37,645 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:10:37,661 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:10:37,708 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:10:38,358 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:10:38,358 - INFO - Silent update status: Already up to date
+2026-04-23 09:13:07,653 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:13:12,124 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:13:12,187 - INFO - MySQL connection pool created successfully
+2026-04-23 09:15:07,659 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:15:42,030 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:15:42,093 - INFO - MySQL connection pool created successfully
+2026-04-23 09:17:07,661 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:20:03,447 - INFO - MySQL connection pool created successfully
+2026-04-23 09:20:03,448 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:20:03,461 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:20:03,499 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:20:04,136 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:20:04,136 - INFO - Silent update status: Already up to date
+2026-04-23 09:23:03,451 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:25:25,775 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:25:25,841 - INFO - MySQL connection pool created successfully
+2026-04-23 09:26:33,454 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:27:56,595 - INFO - MySQL connection pool created successfully
+2026-04-23 09:27:56,596 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:27:56,608 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:27:56,645 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:27:57,303 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:27:57,303 - INFO - Silent update status: Already up to date
+2026-04-23 09:29:26,597 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:29:44,120 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:29:44,199 - INFO - MySQL connection pool created successfully
+2026-04-23 09:30:56,602 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:33:01,478 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:33:01,546 - INFO - MySQL connection pool created successfully
+2026-04-23 09:34:26,607 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:38:01,481 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:38:01,577 - INFO - MySQL connection pool created successfully
+2026-04-23 09:38:49,052 - INFO - MySQL connection pool created successfully
+2026-04-23 09:38:49,054 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:38:49,068 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:38:49,104 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:38:49,767 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:38:49,769 - INFO - Silent update status: Already up to date
+2026-04-23 09:41:49,056 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:42:04,199 - INFO - MySQL connection pool created successfully
+2026-04-23 09:42:04,200 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:42:31,058 - INFO - MySQL connection pool created successfully
+2026-04-23 09:42:31,058 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:42:31,071 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:42:31,106 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:42:31,740 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:42:31,740 - INFO - Silent update status: Already up to date
+2026-04-23 09:45:01,060 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:47:40,744 - INFO - MySQL connection pool created successfully
+2026-04-23 09:47:40,745 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:47:40,758 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:47:40,798 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:47:41,488 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:47:41,489 - INFO - Silent update status: Already up to date
+2026-04-23 09:58:04,016 - INFO - MySQL connection pool created successfully
+2026-04-23 09:58:04,017 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 09:58:04,032 - INFO - Silent updater: Checking for updates...
+2026-04-23 09:58:04,075 - INFO - Silent update status: Checking for updates...
+2026-04-23 09:58:04,701 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 09:58:04,701 - INFO - Silent update status: Already up to date
+2026-04-23 09:59:34,018 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 09:59:34,671 - INFO - Reconnecting after idle disconnect...
+2026-04-23 09:59:34,732 - INFO - MySQL connection pool created successfully
+2026-04-23 10:16:21,431 - INFO - MySQL connection pool created successfully
+2026-04-23 10:16:21,432 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 10:16:21,445 - INFO - Silent updater: Checking for updates...
+2026-04-23 10:16:21,491 - INFO - Silent update status: Checking for updates...
+2026-04-23 10:16:22,136 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 10:16:22,136 - INFO - Silent update status: Already up to date
+2026-04-23 10:34:51,453 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 10:37:39,889 - INFO - Reconnecting after idle disconnect...
+2026-04-23 10:37:39,966 - INFO - MySQL connection pool created successfully
+2026-04-23 10:38:51,465 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 10:42:39,895 - INFO - Reconnecting after idle disconnect...
+2026-04-23 10:42:39,957 - INFO - MySQL connection pool created successfully
+2026-04-23 10:43:51,473 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 10:47:39,893 - INFO - Reconnecting after idle disconnect...
+2026-04-23 10:47:39,975 - INFO - MySQL connection pool created successfully
+2026-04-23 10:48:51,481 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 10:52:39,895 - INFO - Reconnecting after idle disconnect...
+2026-04-23 10:52:39,958 - INFO - MySQL connection pool created successfully
+2026-04-23 10:53:51,490 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 10:57:39,898 - INFO - Reconnecting after idle disconnect...
+2026-04-23 10:57:39,986 - INFO - MySQL connection pool created successfully
+2026-04-23 10:58:51,499 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 11:02:39,904 - INFO - Reconnecting after idle disconnect...
+2026-04-23 11:02:39,968 - INFO - MySQL connection pool created successfully
+2026-04-23 11:03:51,504 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 11:07:39,905 - INFO - Reconnecting after idle disconnect...
+2026-04-23 11:07:39,966 - INFO - MySQL connection pool created successfully
+2026-04-23 11:08:51,509 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 11:12:39,897 - INFO - Reconnecting after idle disconnect...
+2026-04-23 11:12:39,961 - INFO - MySQL connection pool created successfully
+2026-04-23 11:13:51,515 - INFO - Idle timeout (60s) reached — disconnecting from database
+2026-04-23 13:26:21,856 - INFO - Reconnecting after idle disconnect...
+2026-04-23 13:26:21,939 - INFO - MySQL connection pool created successfully
+2026-04-23 13:34:15,075 - INFO - MySQL connection pool created successfully
+2026-04-23 13:34:15,077 - INFO - Idle monitor started (timeout: 60s)
+2026-04-23 13:34:15,090 - INFO - Silent updater: Checking for updates...
+2026-04-23 13:34:15,132 - INFO - Silent update status: Checking for updates...
+2026-04-23 13:34:15,842 - INFO - Silent updater: Already on latest version (1.0.0)
+2026-04-23 13:34:15,843 - INFO - Silent update status: Already up to date

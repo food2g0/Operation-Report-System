@@ -50,8 +50,8 @@ class DatabaseManagerPooled:
             self.engine = create_engine(
                 connection_string,
                 poolclass=pool.QueuePool,
-                pool_size=5,           
-                max_overflow=5,        
+                pool_size=2,           
+                max_overflow=3,        
                 pool_recycle=1800,     
                 pool_pre_ping=True,     
                 echo=False,           
