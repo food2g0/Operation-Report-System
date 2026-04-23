@@ -316,6 +316,51 @@ class PalawanDetailsTab(QWidget):
 
         return palawan_values
 
+    def load_data(self, data: dict):
+        """Populate all Palawan tab fields from a DB row dict."""
+        def _set(widget, value):
+            if widget is None:
+                return
+            try:
+                v = float(value or 0)
+            except (TypeError, ValueError):
+                v = 0.0
+            widget.blockSignals(True)
+            widget.setText(f"{v:.2f}" if v else "")
+            widget.blockSignals(False)
+
+        # Main sections: principal / sc / commission
+        for section, attr in [
+            ('sendout',       'sendout_inputs'),
+            ('payout',        'payout_inputs'),
+            ('international', 'international_inputs'),
+        ]:
+            inputs = getattr(self, attr, {})
+            for label in ('Principal', 'SC', 'Commission'):
+                db_col = f'palawan_{section}_{label.lower()}'
+                _set(inputs.get(label), data.get(db_col, 0))
+
+        # Lotes section
+        lotes_map = [
+            ('palawan_sendout_lotes_total',       'Lotes Send-Out'),
+            ('palawan_payout_lotes_total',        'Lotes Pay-Out'),
+            ('palawan_international_lotes_total', 'Lotes International'),
+        ]
+        lotes_inputs = getattr(self, 'lotes_inputs', {})
+        for db_col, label in lotes_map:
+            _set(lotes_inputs.get(label), data.get(db_col, 0))
+
+        # Adjustments section (uses db_column property stored on each widget)
+        for label, field in getattr(self, 'adjustments_inputs', {}).items():
+            db_col = field.property('db_column')
+            if db_col:
+                _set(field, data.get(db_col, 0))
+
+        # Recalculate totals
+        self.calculate_palawan_totals()
+        self.calculate_lotes_total()
+        self.calculate_adjustments_total()
+
     def clear_fields(self):
 
         for field in getattr(self, 'sendout_inputs', {}).values():

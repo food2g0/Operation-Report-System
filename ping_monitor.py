@@ -1,16 +1,3 @@
-"""
-Ping Monitor — logs user login sessions and periodic DB ping latency.
-
-Table: user_ping_logs (one row per login session)
-  id           INT AUTO_INCREMENT PK
-  username     VARCHAR(255)
-  role         VARCHAR(50)
-  hostname     VARCHAR(255)
-  login_time   DATETIME  -- when they logged in
-  last_seen    DATETIME  -- updated every 5 minutes while active
-  last_ping_ms INT       -- latest ping latency (-1 = failed)
-  logout_time  DATETIME  -- set on logout (NULL = still active)
-"""
 
 import socket
 import time
@@ -21,6 +8,7 @@ from PyQt5.QtGui import QColor, QFont
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox, QFrame,
+    QWidget, QTabWidget,
 )
 
 
@@ -48,6 +36,7 @@ class PingMonitor(QObject):
         self._db = None
         self._session_id = None  # PK of the current session row
         self._ip_address = self._get_ip_address()
+        self._activity_table_ok = False
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -78,7 +67,49 @@ class PingMonitor(QObject):
         self._db = None
         self._session_id = None
 
-    # ── Internal ──────────────────────────────────────────────────────────
+    def log_event(self, event_type: str, username: str, details: str = '', db=None):
+        """Log a login or post event. Fire-and-forget — never raises.
+
+        event_type examples: 'login_success', 'login_failed',
+                             'post_success', 'post_failed'
+        Pass db= explicitly when self._db is not yet set (e.g. login failures).
+        """
+        _db = db or self._db
+        if not _db:
+            return
+        try:
+            self._ensure_activity_table(_db)
+            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            _db.execute_query(
+                "INSERT INTO activity_log "
+                "(event_time, event_type, username, ip_address, hostname, details) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (now, event_type, username, self._ip_address, self._hostname,
+                 details or None)
+            )
+        except Exception as e:
+            print(f"[PingMonitor] log_event failed: {e}")
+
+    def _ensure_activity_table(self, db):
+        if self._activity_table_ok or not db:
+            return
+        try:
+            db.execute_query("""
+                CREATE TABLE IF NOT EXISTS activity_log (
+                    id          INT AUTO_INCREMENT PRIMARY KEY,
+                    event_time  DATETIME     NOT NULL,
+                    event_type  VARCHAR(50)  NOT NULL,
+                    username    VARCHAR(255) NOT NULL,
+                    ip_address  VARCHAR(45)  DEFAULT NULL,
+                    hostname    VARCHAR(255) DEFAULT NULL,
+                    details     TEXT         DEFAULT NULL,
+                    INDEX idx_al_time (event_time),
+                    INDEX idx_al_user (username)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+            """)
+            self._activity_table_ok = True
+        except Exception as e:
+            print(f"[PingMonitor] activity_log table create failed: {e}")
 
     def _create_session(self):
         """Close any stale open sessions, then INSERT a new session row and return its id."""
@@ -147,7 +178,13 @@ class PingMonitor(QObject):
                 "DELETE FROM user_ping_logs WHERE login_time < CURDATE()"
             )
         except Exception as e:
-            print(f"[PingMonitor] Auto-purge failed: {e}")
+            print(f"[PingMonitor] Auto-purge (ping) failed: {e}")
+        try:
+            self._db.execute_query(
+                "DELETE FROM activity_log WHERE event_time < NOW() - INTERVAL 1 HOUR"
+            )
+        except Exception as e:
+            print(f"[PingMonitor] Auto-purge (activity) failed: {e}")
 
     def _ensure_table(self):
         if not self._db:
@@ -245,33 +282,39 @@ ping_monitor = PingMonitor()
 # ── Monitor Window ────────────────────────────────────────────────────────────
 
 class PingMonitorWindow(QDialog):
-    """
-    Floating window that shows live user_ping_logs.
-    Opens from the super admin dashboard header button.
-    Auto-refreshes every 15 seconds while open.
 
-    Color coding:
-      Green  = session still active (no logout yet)
-      Red    = logged out OR failed ping (-1)
-      Yellow = slow ping (>500 ms)
-    """
-
-    _COLUMNS = ["Username", "Role", "IP Address", "Hostname", "Login Time", "Last Seen", "Last Ping (ms)", "Logout Time"]
+    _COLUMNS     = ["Username", "Role", "IP Address", "Hostname", "Login Time", "Last Seen", "Last Ping (ms)", "Logout Time"]
+    _ACT_COLUMNS = ["Time", "Event", "Username", "IP Address", "Hostname", "Details"]
     _AUTO_REFRESH_MS = 15_000
+
+    # ── Event display config ───────────────────────────────────────────
+    _EVENT_COLORS = {
+        "login_success": "#d5f5e3",   # green
+        "login_failed":  "#fde8e8",   # red
+        "post_success":  "#d6eaf8",   # blue
+        "post_failed":   "#fde8e8",   # red
+    }
+    _EVENT_LABELS = {
+        "login_success": "Login Success",
+        "login_failed":  "Login Failed",
+        "post_success":  "Post Success",
+        "post_failed":   "Post Failed",
+    }
 
     def __init__(self, db_manager, parent=None):
         super().__init__(parent)
         self._db = db_manager
-        self.setWindowTitle("Ping / Connection Monitor")
-        self.resize(1000, 550)
+        self.setWindowTitle("Activity Monitor")
+        self.resize(1100, 600)
         self.setWindowFlags(self.windowFlags() | Qt.Window)
         self._build_ui()
 
         self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self.load_logs)
+        self._refresh_timer.timeout.connect(self._auto_refresh)
         self._refresh_timer.start(self._AUTO_REFRESH_MS)
 
         self.load_logs()
+        self.load_activity_log()
 
     # ── UI ──────────────────────────────────────────────────────────────
 
@@ -280,20 +323,12 @@ class PingMonitorWindow(QDialog):
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(8)
 
-        # ── toolbar ──
+        # ── toolbar (shared) ──
         toolbar = QHBoxLayout()
-
-        lbl = QLabel("User Connection Log")
-        lbl.setFont(QFont("Arial", 12, QFont.Bold))
-        toolbar.addWidget(lbl)
-
-        toolbar.addStretch()
-
-        # limit rows
         toolbar.addWidget(QLabel("Show last:"))
         self._limit_cb = QComboBox()
         self._limit_cb.addItems(["50", "100", "200", "500"])
-        self._limit_cb.currentTextChanged.connect(self.load_logs)
+        self._limit_cb.currentTextChanged.connect(self._auto_refresh)
         toolbar.addWidget(self._limit_cb)
 
         refresh_btn = QPushButton("Refresh Now")
@@ -302,16 +337,28 @@ class PingMonitorWindow(QDialog):
             "padding:6px 14px;border-radius:4px;font-weight:bold;}"
             "QPushButton:hover{background:#3498db;}"
         )
-        refresh_btn.clicked.connect(self.load_logs)
+        refresh_btn.clicked.connect(self._auto_refresh)
         toolbar.addWidget(refresh_btn)
-
+        toolbar.addStretch()
         root.addLayout(toolbar)
 
-        # ── legend ──
+        # ── tab widget ──
+        self._tabs = QTabWidget()
+        self._tabs.setStyleSheet(
+            "QTabBar::tab{padding:6px 18px;font-weight:bold;}"
+            "QTabBar::tab:selected{background:#2c3e50;color:white;border-radius:4px 4px 0 0;}"
+        )
+        root.addWidget(self._tabs)
+
+        # Tab 1: Connection Log
+        tab1 = QWidget()
+        t1_lay = QVBoxLayout(tab1)
+        t1_lay.setContentsMargins(0, 8, 0, 0)
+
         legend = QHBoxLayout()
         for color, text in [
             ("#d5f5e3", "Active session"),
-            ("#fde8e8", "Logged out / ping failed"),
+            ("#fde8e8", "Ping failed"),
             ("#fef9e7", "Slow ping (>500ms)"),
         ]:
             dot = QLabel("  ")
@@ -321,39 +368,79 @@ class PingMonitorWindow(QDialog):
             legend.addWidget(QLabel(text))
             legend.addSpacing(12)
         legend.addStretch()
-        root.addLayout(legend)
+        t1_lay.addLayout(legend)
 
-        # ── status bar ──
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setFrameShadow(QFrame.Sunken)
-        root.addWidget(sep)
+        self._conn_status = QLabel("Loading…")
+        self._conn_status.setStyleSheet("color:#555;font-size:11px;")
+        t1_lay.addWidget(self._conn_status)
 
-        self._status_lbl = QLabel("Loading…")
-        self._status_lbl.setStyleSheet("color: #555; font-size: 11px;")
-        root.addWidget(self._status_lbl)
-
-        # ── table ──
-        self._table = QTableWidget()
-        self._table.setColumnCount(len(self._COLUMNS))
-        self._table.setHorizontalHeaderLabels(self._COLUMNS)
+        self._table = self._make_table(self._COLUMNS)
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self._table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeToContents)
-        self._table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeToContents)
-        self._table.verticalHeader().setVisible(False)
-        self._table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self._table.setSelectionBehavior(QTableWidget.SelectRows)
-        self._table.setAlternatingRowColors(True)
-        self._table.setStyleSheet(
+        for col in (3, 4, 5, 6):
+            self._table.horizontalHeader().setSectionResizeMode(col, QHeaderView.ResizeToContents)
+        t1_lay.addWidget(self._table)
+        self._tabs.addTab(tab1, "Connection Log")
+
+        # Tab 2: Activity Log
+        tab2 = QWidget()
+        t2_lay = QVBoxLayout(tab2)
+        t2_lay.setContentsMargins(0, 8, 0, 0)
+
+        legend2 = QHBoxLayout()
+        for color, text in [
+            ("#d5f5e3", "Login Success"),
+            ("#fde8e8", "Login Failed / Post Failed"),
+            ("#d6eaf8", "Post Success"),
+        ]:
+            dot = QLabel("  ")
+            dot.setStyleSheet(f"background:{color};border:1px solid #ccc;border-radius:3px;")
+            dot.setFixedSize(18, 18)
+            legend2.addWidget(dot)
+            legend2.addWidget(QLabel(text))
+            legend2.addSpacing(12)
+
+        # event filter
+        legend2.addStretch()
+        legend2.addWidget(QLabel("Filter:"))
+        self._event_filter = QComboBox()
+        self._event_filter.addItems(["All", "login_success", "login_failed",
+                                     "post_success", "post_failed"])
+        self._event_filter.currentTextChanged.connect(self.load_activity_log)
+        legend2.addWidget(self._event_filter)
+        t2_lay.addLayout(legend2)
+
+        self._act_status = QLabel("Loading…")
+        self._act_status.setStyleSheet("color:#555;font-size:11px;")
+        t2_lay.addWidget(self._act_status)
+
+        self._act_table = self._make_table(self._ACT_COLUMNS)
+        self._act_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self._act_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        self._act_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        t2_lay.addWidget(self._act_table)
+        self._tabs.addTab(tab2, "Activity Log")
+
+    @staticmethod
+    def _make_table(columns):
+        tbl = QTableWidget()
+        tbl.setColumnCount(len(columns))
+        tbl.setHorizontalHeaderLabels(columns)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setEditTriggers(QTableWidget.NoEditTriggers)
+        tbl.setSelectionBehavior(QTableWidget.SelectRows)
+        tbl.setAlternatingRowColors(True)
+        tbl.setStyleSheet(
             "QTableWidget{font-size:12px;}"
             "QHeaderView::section{background:#2c3e50;color:white;"
             "padding:6px;font-weight:bold;}"
         )
-        root.addWidget(self._table)
+        return tbl
 
     # ── Data ────────────────────────────────────────────────────────────
+
+    def _auto_refresh(self):
+        self.load_logs()
+        self.load_activity_log()
 
     def load_logs(self):
         limit = int(self._limit_cb.currentText())
@@ -365,7 +452,7 @@ class PingMonitorWindow(QDialog):
         try:
             rows = self._db.execute_query(sql, (limit,)) or []
         except Exception as e:
-            self._status_lbl.setText(f"Error loading logs: {e}")
+            self._conn_status.setText(f"Error loading logs: {e}")
             return
 
         self._table.setRowCount(len(rows))
@@ -385,23 +472,69 @@ class PingMonitorWindow(QDialog):
             for c, val in enumerate(values):
                 item = QTableWidgetItem(val)
                 item.setTextAlignment(Qt.AlignCenter)
-
                 if logout is None:
-                    item.setBackground(QColor("#d5f5e3"))   # green = still active
+                    item.setBackground(QColor("#d5f5e3"))
                 elif ping_ms is not None and ping_ms < 0:
-                    item.setBackground(QColor("#fde8e8"))   # red = failed ping
+                    item.setBackground(QColor("#fde8e8"))
                 elif ping_ms is not None and ping_ms > 500:
-                    item.setBackground(QColor("#fef9e7"))   # yellow = slow
-
+                    item.setBackground(QColor("#fef9e7"))
                 self._table.setItem(r, c, item)
 
         now = datetime.now().strftime('%H:%M:%S')
         active = sum(1 for row in rows if row.get('logout_time') is None)
-        self._status_lbl.setText(
+        self._conn_status.setText(
             f"{len(rows)} session(s) — {active} currently active — "
             f"last refreshed {now} (auto-refresh every {self._AUTO_REFRESH_MS // 1000}s)"
+        )
+
+    def load_activity_log(self):
+        limit = int(self._limit_cb.currentText())
+        event_filter = self._event_filter.currentText()
+
+        if event_filter == "All":
+            sql = ("SELECT event_time, event_type, username, ip_address, hostname, details "
+                   "FROM activity_log ORDER BY event_time DESC LIMIT %s")
+            params = (limit,)
+        else:
+            sql = ("SELECT event_time, event_type, username, ip_address, hostname, details "
+                   "FROM activity_log WHERE event_type = %s "
+                   "ORDER BY event_time DESC LIMIT %s")
+            params = (event_filter, limit)
+
+        try:
+            rows = self._db.execute_query(sql, params) or []
+        except Exception as e:
+            self._act_status.setText(f"Error: {e}")
+            return
+
+        self._act_table.setRowCount(len(rows))
+        for r, row in enumerate(rows):
+            etype = row.get('event_type', '')
+            label = self._EVENT_LABELS.get(etype, etype)
+            color = self._EVENT_COLORS.get(etype, "#ffffff")
+            values = [
+                str(row.get('event_time', '')),
+                label,
+                row.get('username', ''),
+                row.get('ip_address', '') or '—',
+                row.get('hostname', '') or '—',
+                row.get('details', '') or '',
+            ]
+            for c, val in enumerate(values):
+                item = QTableWidgetItem(val)
+                item.setTextAlignment(Qt.AlignCenter if c != 5 else Qt.AlignLeft | Qt.AlignVCenter)
+                item.setBackground(QColor(color))
+                self._act_table.setItem(r, c, item)
+
+        now = datetime.now().strftime('%H:%M:%S')
+        success = sum(1 for row in rows if 'success' in row.get('event_type', ''))
+        failed  = sum(1 for row in rows if 'failed'  in row.get('event_type', ''))
+        self._act_status.setText(
+            f"{len(rows)} event(s) — {success} success, {failed} failed — "
+            f"last refreshed {now}"
         )
 
     def closeEvent(self, event):
         self._refresh_timer.stop()
         super().closeEvent(event)
+

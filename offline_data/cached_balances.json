@@ -94,17 +94,17 @@
     "branch": "HEAD OFFICE",
     "corporation": "HEAD OFFICE",
     "brand": "Brand A",
-    "date": "2026-04-26",
-    "ending_balance": 92224.63,
-    "cached_at": "2026-04-18T10:36:02.504640"
+    "date": "2026-04-29",
+    "ending_balance": 91939.22,
+    "cached_at": "2026-04-22T09:17:40.161748"
   },
   "cl_0074_head_office_head_office_brand_b": {
     "username": "CL-0074",
     "branch": "HEAD OFFICE",
     "corporation": "HEAD OFFICE",
     "brand": "Brand B",
-    "date": "2026-04-26",
-    "ending_balance": 10166.21,
-    "cached_at": "2026-04-18T10:36:02.688607"
+    "date": "2026-04-29",
+    "ending_balance": 10171.269999999999,
+    "cached_at": "2026-04-22T09:17:40.324159"
   }
 }

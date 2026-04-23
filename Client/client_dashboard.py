@@ -27,6 +27,11 @@ except ImportError:
     OFFLINE_SUPPORT = False
     offline_manager = None
 
+try:
+    from ping_monitor import ping_monitor as _ping_monitor
+except ImportError:
+    _ping_monitor = None
+
 class LoadingOverlay(QWidget):
     
     def __init__(self, parent=None):
@@ -2221,7 +2226,7 @@ class ClientDashboard(QWidget):
         for cc in (self.cash_count_input_a, self.cash_count_input_b):
             cc.clear()
 
-        for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b):
+        for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b, self.palawan_tab):
             if hasattr(tab, 'clear_fields'):
                 tab.clear_fields()
 
@@ -2312,7 +2317,45 @@ class ClientDashboard(QWidget):
         if any_unlocked or not status_a or not status_b:
             self.post_button.setEnabled(True)
 
+        # Always restore palawan tab from Brand A table regardless of lock state
+        self._restore_palawan_tab(sd)
+
         self.recalculate_all()
+
+    def _restore_palawan_tab(self, date_str):
+        """Load palawan data from both Brand A and Brand B tables.
+        Brand A is the canonical source; Brand B lotes values take precedence
+        when non-zero (they get updated there during re-submit with Brand A locked)."""
+        _LOTES_COLS = (
+            'palawan_sendout_lotes_total',
+            'palawan_payout_lotes_total',
+            'palawan_international_lotes_total',
+        )
+        try:
+            params = (date_str, self.branch, self.corporation)
+            result_a = self.db_manager.execute_query(
+                "SELECT * FROM daily_reports_brand_a "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
+            )
+            result_b = self.db_manager.execute_query(
+                "SELECT * FROM daily_reports "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
+            )
+
+            if not result_a and not result_b:
+                return
+
+            data = dict(result_a[0]) if result_a else {}
+            if result_b:
+                data_b = result_b[0]
+                for col in _LOTES_COLS:
+                    b_val = data_b.get(col) or 0
+                    if float(b_val) != 0:
+                        data[col] = b_val
+
+            self.palawan_tab.load_data(data)
+        except Exception as e:
+            print(f"[_restore_palawan_tab] {e}")
 
     def _set_status(self, text, color, bold=False):
         self._set_status_brand("A", text, color, bold)
@@ -2621,99 +2664,62 @@ class ClientDashboard(QWidget):
         
         return True
 
-    def verify_database_save(self, date_str, brand_table):
+    def verify_database_save(self, date_str, brand_table,
+                              expected_debit=None, expected_credit=None, expected_ending=None):
         """
-        POST-SAVE VERIFICATION: Read data back from database and verify calculations.
-        
-        CORRECT FORMULA:
-        - Debit Total = Beginning Balance + Sum of all debit field values
-        - Credit Total = Sum of all credit field values  
-        - Ending Balance = Debit Total - Credit Total
-        
-        This catches any database corruption or calculation errors during save.
+        POST-SAVE VERIFICATION: Read data back from database and verify stored totals
+        match the values that were calculated before saving.
+
+        Expected values are passed in from handle_post so we compare against the
+        authoritative pre-save calculation rather than re-summing individual columns
+        (which may not be stored when a credit/debit field has no DB column in the table).
         """
         try:
-            # Query the data we just saved
-            query = f"SELECT * FROM {brand_table} WHERE date = %s AND branch = %s AND corporation = %s"
+            query = f"SELECT beginning_balance, debit_total, credit_total, ending_balance FROM {brand_table} WHERE date = %s AND branch = %s AND corporation = %s"
             result = self.db_manager.execute_query(query, (date_str, self.branch, self.corporation))
-            
+
             if not result:
                 print(f"[WARNING] Could not verify {brand_table} save - record not found!")
-                return True  # Don't fail if we can't verify
-            
-            saved_row = result[0]
-            stored_debit = float(saved_row.get('debit_total', 0))
-            stored_credit = float(saved_row.get('credit_total', 0))
-            stored_ending = float(saved_row.get('ending_balance', 0))
-            beginning_balance = float(saved_row.get('beginning_balance', 0))
-            
-            # Load field config to get debit/credit column names
-            cfg_result = self.db_manager.execute_query(
-                'SELECT config_value FROM field_config WHERE config_key = "field_definitions" LIMIT 1'
-            )
-            if not cfg_result:
-                print("[WARNING] Could not load field config for verification")
                 return True
-            
-            import json
-            cfg = json.loads(cfg_result[0]['config_value'])
-            brand_key = "Brand A" if "brand_a" in brand_table else "Brand B"
-            
-            debit_fields = cfg.get(brand_key, {}).get("debit", [])
-            credit_fields = cfg.get(brand_key, {}).get("credit", [])
-            
-            # Recalculate debit field sum from database values (NOT including beginning balance yet)
-            debit_field_sum = 0
-            for field in debit_fields:
-                db_col = field[2] if len(field) >= 3 else None
-                if db_col and db_col in saved_row and saved_row[db_col]:
-                    debit_field_sum += float(saved_row[db_col])
-            
-            # Recalculate credit field sum from database values
-            credit_field_sum = 0
-            for field in credit_fields:
-                db_col = field[2] if len(field) >= 3 else None
-                if db_col and db_col in saved_row and saved_row[db_col]:
-                    credit_field_sum += float(saved_row[db_col])
-            
-            # Apply correct formula:
-            # Debit Total = Beginning Balance + Sum of debit fields
-            # Credit Total = Sum of credit fields
-            # Ending Balance = Debit Total - Credit Total
-            calc_debit = beginning_balance + debit_field_sum
-            calc_credit = credit_field_sum
-            calc_ending = calc_debit - calc_credit
-            
-            # Verify they match
-            debit_match = abs(calc_debit - stored_debit) < 0.01
-            credit_match = abs(calc_credit - stored_credit) < 0.01
-            ending_match = abs(calc_ending - stored_ending) < 0.01
-            
+
+            saved_row = result[0]
+            stored_debit   = float(saved_row.get('debit_total', 0))
+            stored_credit  = float(saved_row.get('credit_total', 0))
+            stored_ending  = float(saved_row.get('ending_balance', 0))
+
+            if expected_debit is None or expected_credit is None or expected_ending is None:
+                # Fallback: nothing to compare against, just log what was stored
+                print(f"[OK] {brand_table} stored: Debit={stored_debit:.2f}, Credit={stored_credit:.2f}, Ending={stored_ending:.2f}")
+                return True
+
+            debit_match  = abs(stored_debit  - expected_debit)  < 0.01
+            credit_match = abs(stored_credit - expected_credit) < 0.01
+            ending_match = abs(stored_ending - expected_ending) < 0.01
+
             if not debit_match:
                 print(f"[ERROR] {brand_table} Debit Total mismatch!")
-                print(f"  Formula: Beginning ({beginning_balance:.2f}) + Debit Fields ({debit_field_sum:.2f}) = {calc_debit:.2f}")
-                print(f"  Stored: {stored_debit:.2f}")
-                print(f"  Difference: {stored_debit - calc_debit:+.2f}")
+                print(f"  Expected: {expected_debit:.2f}")
+                print(f"  Stored:   {stored_debit:.2f}")
+                print(f"  Difference: {stored_debit - expected_debit:+.2f}")
                 return False
-            
+
             if not credit_match:
                 print(f"[ERROR] {brand_table} Credit Total mismatch!")
-                print(f"  Formula: Credit Fields Sum = {calc_credit:.2f}")
-                print(f"  Stored: {stored_credit:.2f}")
-                print(f"  Difference: {stored_credit - calc_credit:+.2f}")
+                print(f"  Expected: {expected_credit:.2f}")
+                print(f"  Stored:   {stored_credit:.2f}")
+                print(f"  Difference: {stored_credit - expected_credit:+.2f}")
                 return False
-            
+
             if not ending_match:
                 print(f"[ERROR] {brand_table} Ending Balance mismatch!")
-                print(f"  Formula: {calc_debit:.2f} - {calc_credit:.2f} = {calc_ending:.2f}")
-                print(f"  Stored: {stored_ending:.2f}")
-                print(f"  Difference: {stored_ending - calc_ending:+.2f}")
+                print(f"  Expected: {expected_ending:.2f}")
+                print(f"  Stored:   {stored_ending:.2f}")
+                print(f"  Difference: {stored_ending - expected_ending:+.2f}")
                 return False
-            
-            
-            print(f"[OK] {brand_table} verified: Debit={calc_debit:.2f}, Credit={calc_credit:.2f}, Ending={calc_ending:.2f}")
+
+            print(f"[OK] {brand_table} verified: Debit={stored_debit:.2f}, Credit={stored_credit:.2f}, Ending={stored_ending:.2f}")
             return True
-            
+
         except Exception as e:
             print(f"[ERROR] Could not verify database save: {e}")
             return True  # Don't fail hard, just log it
@@ -2775,7 +2781,12 @@ class ClientDashboard(QWidget):
                     else "short"
                 )
 
-                all_vals = {**cf['debit'], **cf['credit'], **pal}
+                # Merge: palawan tab provides supplementary fields; credit tab takes
+                # precedence for any key that appears in both (non-zero credit wins).
+                all_vals = {**cf['debit'], **pal}
+                for k, v in cf['credit'].items():
+                    if v != 0 or k not in all_vals:
+                        all_vals[k] = v
         
                 if hasattr(cf_tab, 'selected_bank_account') and cf_tab.selected_bank_account:
                     all_vals['fund_transfer_bank_account'] = cf_tab.selected_bank_account
@@ -2895,7 +2906,12 @@ class ClientDashboard(QWidget):
 
                 if isinstance(rows, int) and rows > 0:
                     # POST-SAVE VERIFICATION: Check database for calculation errors
-                    is_valid = self.verify_database_save(sd, table_name)
+                    is_valid = self.verify_database_save(
+                        sd, table_name,
+                        expected_debit=beginning + deb,
+                        expected_credit=cre,
+                        expected_ending=ending,
+                    )
                     if not is_valid:
                         print(f"[CRITICAL] Database validation failed for {table_name}! Removing record from database.")
                         try:
@@ -2952,6 +2968,12 @@ class ClientDashboard(QWidget):
                 self._msg("Save Error - Validation Failed" if val_errors else "Database Error",
                           error_msg,
                           QMessageBox.Critical)
+                if _ping_monitor:
+                    fail_detail = f"date={sd} | " + " | ".join(
+                        f"{b}: {e}" for b, e in (errors + val_errors)
+                    )
+                    _ping_monitor.log_event('post_failed', self.user_email,
+                                           fail_detail[:500])
                 return
 
             if successes:
@@ -2980,6 +3002,9 @@ class ClientDashboard(QWidget):
                 parts = f"Posted: {', '.join(successes)}"
                 if skipped:
                     parts += f"\nSkipped (already exists): {', '.join(skipped)}"
+                if _ping_monitor:
+                    _ping_monitor.log_event('post_success', self.user_email,
+                                           f"date={sd} brands={', '.join(successes)}")
                 self._msg_success(f"Report for {sd}\n\n{parts}")
                 self._delete_draft(sd)
                 self.on_date_changed()
@@ -3031,7 +3056,12 @@ class ClientDashboard(QWidget):
                     else "short"
                 )
                 
-                all_vals = {**cf['debit'], **cf['credit'], **pal}
+                # Merge: palawan tab provides supplementary fields; credit tab takes
+                # precedence for any key that appears in both (non-zero credit wins).
+                all_vals = {**cf['debit'], **pal}
+                for k, v in cf['credit'].items():
+                    if v != 0 or k not in all_vals:
+                        all_vals[k] = v
                 
                 
                 if hasattr(cf_tab, 'selected_bank_account') and cf_tab.selected_bank_account:
@@ -4853,24 +4883,6 @@ class ClientDashboard(QWidget):
                     lotes_widget.blockSignals(False)
             
   
-            palawan_fields = [
-                'palawan_sendout_principal', 'palawan_sendout_sc', 'palawan_sendout_commission',
-                'palawan_payout_principal', 'palawan_payout_sc', 'palawan_payout_commission',
-                'palawan_international_principal', 'palawan_international_sc', 'palawan_international_commission',
-                'palawan_suki_discounts', 'palawan_suki_rebates', 'palawan_cancel', 'palawan_pay_out_incentives'
-            ]
-            
-            for field in palawan_fields:
-                value = data.get(field, 0)
-                if value and hasattr(self.palawan_tab, 'amount_inputs'):
-         
-                    for label, widget in self.palawan_tab.amount_inputs.items():
-                        if field in label.lower().replace(' ', '_').replace('-', '_'):
-                            widget.blockSignals(True)
-                            widget.setText(f"{float(value):.2f}")
-                            widget.blockSignals(False)
-                            break
-            
             cf_tab.update_totals(
                 float(data.get('beginning_balance', 0)),
                 float(data.get('debit_total', 0)) - float(data.get('beginning_balance', 0)),

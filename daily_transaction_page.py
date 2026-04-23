@@ -1,10 +1,3 @@
-"""
-Daily Transaction Page
-──────────────────────
-Pulls data from daily_reports_brand_a.  Each branch is a row.
-Column groups are dynamically filtered based on actual database schema.
-"""
-
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QComboBox, QTableWidget,
     QTableWidgetItem, QDateEdit, QMessageBox, QHeaderView, QSizePolicy,
@@ -20,29 +13,25 @@ import datetime
 import json
 import os
 
-# ── Database Schema Cache ─────────────────────────────────────────────────
-_db_columns_cache = {}  # {table_name: set of column names}
+
+_db_columns_cache = {}  
 _db_cache_time = 0
-_DB_CACHE_TTL = 300  # Refresh every 5 minutes
+_DB_CACHE_TTL = 300  
 
 
 def _get_table_columns(table_name: str) -> set:
-    """
-    Get the actual columns that exist in a database table.
-    Results are cached for performance.
-    """
+
     global _db_columns_cache, _db_cache_time
     import time
     
     current_time = time.time()
     
-    # Check if cache is still valid
+
     if table_name in _db_columns_cache and (current_time - _db_cache_time) < _DB_CACHE_TTL:
         return _db_columns_cache[table_name]
     
     try:
-        # Use SELECT query (INFORMATION_SCHEMA) so execute_query returns fetchall results
-        # SHOW COLUMNS doesn't work because execute_query only calls fetchall for SELECT queries
+
         result = db_manager.execute_query(
             f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = %s AND TABLE_SCHEMA = DATABASE()",
             (table_name,)
@@ -50,7 +39,7 @@ def _get_table_columns(table_name: str) -> set:
         if result and isinstance(result, (list, tuple)):
             columns = set()
             for row in result:
-                # Handle dict or tuple result
+        
                 if isinstance(row, dict):
                     col_name = row.get('COLUMN_NAME') or row.get('column_name') or ''
                 elif isinstance(row, (list, tuple)) and len(row) > 0:
@@ -67,7 +56,7 @@ def _get_table_columns(table_name: str) -> set:
     except Exception as e:
         print(f"Error getting columns for {table_name}: {e}")
     
-    # Return cached result if available, even if expired
+
     if table_name in _db_columns_cache:
         return _db_columns_cache[table_name]
     
@@ -75,14 +64,11 @@ def _get_table_columns(table_name: str) -> set:
 
 
 def _filter_column_groups(groups: list, table_name: str = "daily_reports_brand_a") -> list:
-    """
-    Filter column groups to only include columns that exist in the database.
-    This allows dynamic add/remove of fields by super admin.
-    """
+
     available_columns = _get_table_columns(table_name)
     
     if not available_columns:
-        # If we can't get schema, return all groups (backwards compatible)
+  
         return groups
     
     filtered_groups = []
@@ -90,12 +76,12 @@ def _filter_column_groups(groups: list, table_name: str = "daily_reports_brand_a
     for group_name, subs in groups:
         filtered_subs = []
         for sub_header, db_cols, is_lotes in subs:
-            # Filter to only columns that exist
+   
             existing_cols = [col for col in db_cols if col in available_columns]
             if existing_cols:
                 filtered_subs.append((sub_header, existing_cols, is_lotes))
         
-        # Only include the group if it has at least one valid sub-column
+   
         if filtered_subs:
             filtered_groups.append((group_name, filtered_subs))
     
@@ -103,34 +89,25 @@ def _filter_column_groups(groups: list, table_name: str = "daily_reports_brand_a
 
 
 def refresh_schema_cache():
-    """Force refresh of database schema cache. Call when admin changes fields."""
+
     global _db_columns_cache, _db_cache_time
     _db_columns_cache = {}
     _db_cache_time = 0
 
 
 def _load_dynamic_fields_for_report(report_type: str) -> list:
-    """
-    Load dynamic fields from field_config that should appear in the given report type.
-    
-    Args:
-        report_type: 'daily_transaction', 'pnl', or 'other_services'
-    
-    Returns:
-        List of column group tuples like:
-        [("FIELD NAME", [("Lotes", ["db_col_lotes"], True), ("Amount", ["db_col"], False)]), ...]
-    """
+
     dynamic_groups = []
     
     try:
-        # Try loading from database first (correct column name: config_value)
+
         result = db_manager.execute_query(
             "SELECT config_value FROM field_config WHERE config_key = 'field_definitions' ORDER BY id DESC LIMIT 1"
         )
         if result and result[0].get('config_value'):
             config = json.loads(result[0]['config_value'])
         else:
-            # Fall back to local file
+          
             import os
             config_path = os.path.join(os.path.dirname(__file__), "field_config.json")
             if os.path.exists(config_path):
@@ -139,7 +116,6 @@ def _load_dynamic_fields_for_report(report_type: str) -> list:
             else:
                 return []
         
-        # Process Brand A fields (since this page shows Brand A data)
         for section in ['debit', 'credit']:
             fields = config.get('Brand A', {}).get(section, [])
             for field in fields:
@@ -148,7 +124,7 @@ def _load_dynamic_fields_for_report(report_type: str) -> list:
                     if report_type in reports:
                         label = field[0]
                         db_col = field[2]
-                        # Create column group with LOTES and CAPITAL
+                    
                         group = (
                             label.upper(),
                             [
@@ -156,7 +132,7 @@ def _load_dynamic_fields_for_report(report_type: str) -> list:
                                 ("CAPITAL", [db_col], False),
                             ]
                         )
-                        # Avoid duplicates
+             
                         if group not in dynamic_groups:
                             dynamic_groups.append(group)
     except Exception as e:
@@ -227,8 +203,8 @@ COLUMN_GROUPS = [
         ("Capital", ["transfast"], False),
     ]),
     ("RIA", [
-        ("Lotes", ["ria_in_sc_lotes"], True),
-        ("Capital", ["ria_in_sc"], False),
+        ("Lotes", ["ria_out_lotes"], True),
+        ("Capital", ["ria_out"], False),
     ]),
     ("I2I REM. IN", [
         ("Lotes", ["i2i_remittance_in_lotes"], True),
@@ -280,7 +256,7 @@ COLUMN_GROUPS = [
     ]),
 ]
 
-# ── View-2: Other / E-wallet / Remittance Services ─────────────────────────
+
 OTHER_SERVICES_COLUMN_GROUPS = [
     ("PAL SEND OUT",  [("Lotes", ["palawan_send_out_lotes"], True),
                        ("Amount", ["palawan_send_out"], False)]),
@@ -340,9 +316,18 @@ OTHER_SERVICES_COLUMN_GROUPS = [
                        ("Amount", ["i2i_instapay"], False)]),
     ("FIXCO OUT",     [("Amount", ["fixco"], False)]),
     ("I2I REM OUT",   [("Amount", ["i2i_remittance_out"], False)]),
+    ("ECBILLS",       [("Amount", ["ecbills"], False)]),
+    ("ECLOAD",        [("Amount", ["ecload"], False)]),
+    ("ECPINS",        [("Amount", ["ecpins"], False)]),
+    ("ECCASH",        [("Amount", ["eccash"], False)]),
+    ("ECTICKETS",     [("Amount", ["ectickets"], False)]),
+    ("ECCATALOGUE",   [("Amount", ["eccatalogue"], False)]),
+    ("ECLINK",        [("Amount", ["eclink"], False)]),
+    ("ECGIFT",        [("Amount", ["ecgift"], False)]),
+    ("ECCASH-OUT",    [("Amount", ["eccash_out"], False)]),
 ]
 
-# ── View-3: P&L (income / expenses) ────────────────────────────────────────
+
 PL_COLUMN_GROUPS = [
     ("INTEREST",          [("Amount", ["interest"], False)]),
     ("PENALTY",           [("Amount", ["penalty"], False)]),
@@ -383,58 +368,50 @@ PL_COLUMN_GROUPS = [
     ("PC LBC",            [("Amount", ["pc_lbc_jrs_jnt"], False)]),
 ]
 
-# ── View map (base) ──────────────────────────────────────────────────────────
+
 _BASE_VIEW_MAP = {
     "Daily Transaction": COLUMN_GROUPS,
     "Other Services":      OTHER_SERVICES_COLUMN_GROUPS,
     "P&L":                 PL_COLUMN_GROUPS,
 }
 
-# Report type mapping for dynamic fields
 _REPORT_TYPE_MAP = {
     "Daily Transaction": "daily_transaction",
     "Other Services": "other_services",
     "P&L": "pnl",
 }
 
-# Table name mapping for each view (used for schema filtering)
 _VIEW_TABLE_MAP = {
     "Daily Transaction": "daily_reports_brand_a",
-    "Other Services": "other_services_tbl_brand_a",
+    "Other Services": "daily_reports_brand_a",
     "P&L": "daily_reports_brand_a",
 }
 
 def get_view_columns(view_name: str) -> list:
     """Get column groups for a view, filtered by actual database schema."""
     base_groups = list(_BASE_VIEW_MAP.get(view_name, COLUMN_GROUPS))
-    
-    # Get dynamic fields for this report type
+
     report_type = _REPORT_TYPE_MAP.get(view_name)
     if report_type:
         dynamic_groups = _load_dynamic_fields_for_report(report_type)
         if dynamic_groups:
             base_groups.extend(dynamic_groups)
     
-    # Filter groups to only include columns that exist in the database
     table_name = _VIEW_TABLE_MAP.get(view_name, "daily_reports_brand_a")
     filtered_groups = _filter_column_groups(base_groups, table_name)
     
     return filtered_groups
-
-# Keep VIEW_MAP for backwards compatibility but it won't include dynamic fields
 VIEW_MAP = _BASE_VIEW_MAP
 
-# Build flat column list from group definitions  ───────────────────────────
 def _build_columns(groups=None):
-    """Return (headers, col_meta) where col_meta is list of dicts with
-    group, sub, db_cols, is_lotes for each flat column."""
+
     if groups is None:
         groups = COLUMN_GROUPS
-    headers = [""]  # Empty for Branch (Branch shown in row 0)
+    headers = [""]  
     col_meta = []
     for group_name, subs in groups:
         for sub_header, db_cols, is_lotes in subs:
-            headers.append(sub_header.upper())  # LOTES, CAPITAL in header row
+            headers.append(sub_header.upper())  
             col_meta.append({
                 "group": group_name,
                 "sub": sub_header,
@@ -445,9 +422,8 @@ def _build_columns(groups=None):
 
 HEADERS, COL_META = _build_columns()
 
-# Color palette for column groups  ─────────────────────────────────────────
 GROUP_COLORS = {
-    # ── Pawnshop ─────────────────────────────────────────
+
     "JEWELRY":      QColor("#dc3545"),
     "STORAGE":      QColor("#e67e22"),
     "MOTOR/CAR":    QColor("#8e44ad"),
@@ -475,7 +451,7 @@ GROUP_COLORS = {
     "PAL PAY IN":   QColor("#1e8449"),
     "PAL PAY OUT":  QColor("#196f3d"),
     "REMITLY":      QColor("#7d3c98"),
-    # ── Other Services ───────────────────────────────────
+
     "PAL SEND OUT": QColor("#1e8449"),
     "PAL SC":       QColor("#196f3d"),
     "PAL INC.":     QColor("#145a32"),
@@ -510,7 +486,7 @@ GROUP_COLORS = {
     "I2I INSTAPAY": QColor("#1a5276"),
     "FIXCO OUT":    QColor("#6c3483"),
     "I2I REM OUT":  QColor("#4a235a"),
-    # ── P&L ──────────────────────────────────────────────
+
     "INTEREST":     QColor("#c0392b"),
     "PENALTY":      QColor("#922b21"),
     "STAMP":        QColor("#7b241c"),
@@ -551,7 +527,7 @@ GROUP_COLORS = {
 
 
 class ColoredHeaderView(QHeaderView):
-    """Custom header that paints each section with a per-group colour."""
+
 
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
@@ -574,37 +550,32 @@ class ColoredHeaderView(QHeaderView):
 
 
 class MergedGroupHeaderView(QHeaderView):
-    """Custom header that paints merged cells for group names (like Excel)."""
-
     def __init__(self, orientation, parent=None, groups=None):
         super().__init__(orientation, parent)
         self.colors = {}
         self.groups = groups or []
         self.setFont(QFont("", 9, QFont.Bold))
-        # Build merge info: {start_col: (group_name, span_width, color)}
+
         self._merge_info = {}
-        self._col_to_group = {}  # Maps each column to its group start
+        self._col_to_group = {}  
         if groups:
-            col = 1  # Skip Branch column (0)
+            col = 1  
             for group_name, subs in groups:
                 span_width = len(subs)
                 self._merge_info[col] = (group_name, span_width)
                 for i in range(span_width):
-                    self._col_to_group[col + i] = col  # All cols in group point to start
+                    self._col_to_group[col + i] = col 
                 col += span_width
 
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
         bg = self.colors.get(logicalIndex, QColor("#495057"))
-        
-        # Check if this column is part of a merged group
+
         if logicalIndex in self._col_to_group:
             start_col = self._col_to_group[logicalIndex]
             group_name, span_width = self._merge_info.get(start_col, ("", 1))
             
-            # Only draw text on the first column of the group
             if logicalIndex == start_col:
-                # Calculate merged rect spanning all columns in the group
                 merged_rect = rect
                 for i in range(1, span_width):
                     next_col = start_col + i
@@ -619,9 +590,9 @@ class MergedGroupHeaderView(QHeaderView):
                 painter.setPen(QColor("white"))
                 painter.setFont(QFont("", 9, QFont.Bold))
                 painter.drawText(merged_rect, Qt.AlignCenter, group_name)
-            # Skip painting for other columns in the group (already covered by merge)
+
         else:
-            # Branch column or non-grouped column
+     
             painter.fillRect(rect, bg)
             pen = painter.pen()
             pen.setColor(QColor("#333"))
@@ -634,10 +605,7 @@ class MergedGroupHeaderView(QHeaderView):
         
         painter.restore()
 
-
-# ══════════════════════════════════════════════════════════════════════════
 class DailyTransactionPage(QWidget):
-    """Daily Transaction tab — Brand A data across 28 column categories."""
 
     def __init__(self):
         super().__init__()
@@ -654,9 +622,8 @@ class DailyTransactionPage(QWidget):
 
         self.load_corporations()
 
-    # ── Report Header (matches Excel export) ─────────────────────────────
     def _build_report_header(self, parent):
-        """Build report header section matching Excel format: Title, Date, OS"""
+
         self.report_header_frame = QFrame()
         self.report_header_frame.setStyleSheet("""
             QFrame { background: white; border: 1px solid #dee2e6;
@@ -666,19 +633,16 @@ class DailyTransactionPage(QWidget):
         header_layout.setContentsMargins(15, 10, 15, 10)
         header_layout.setSpacing(2)
 
-        # Title: "Daily Transaction"
         self.report_title_label = QLabel("Daily Transaction")
         self.report_title_label.setFont(QFont("Arial", 14, QFont.Bold))
         self.report_title_label.setStyleSheet("color: #333; border: none;")
         header_layout.addWidget(self.report_title_label)
 
-        # Date line
         self.report_date_label = QLabel("Date: ")
         self.report_date_label.setFont(QFont("Arial", 11, QFont.Bold))
         self.report_date_label.setStyleSheet("color: #555; border: none;")
         header_layout.addWidget(self.report_date_label)
 
-        # OS line
         self.report_os_label = QLabel("Operation Supervisor: ")
         self.report_os_label.setFont(QFont("Arial", 11, QFont.Bold))
         self.report_os_label.setStyleSheet("color: #555; border: none;")
@@ -696,7 +660,6 @@ class DailyTransactionPage(QWidget):
         os_name = self.os_filter_selector.currentText() if not group_name else group_name
         self.report_os_label.setText(f"Group: {os_name or 'All'}")
 
-    # ── Controls ──────────────────────────────────────────────────────────
     def _build_controls(self, parent):
         frame = QFrame()
         frame.setStyleSheet("""
@@ -706,7 +669,7 @@ class DailyTransactionPage(QWidget):
         row = QHBoxLayout(frame)
         row.setSpacing(15)
 
-        # Corporation (hidden for Brand A - this page is Brand A only)
+   
         self.corp_label = self._bold_label("Corporation:")
         self.corp_selector = self._combo(220)
         self.corp_selector.currentTextChanged.connect(self.populate_table)
@@ -715,21 +678,21 @@ class DailyTransactionPage(QWidget):
         row.addWidget(self.corp_label)
         row.addWidget(self.corp_selector)
 
-        # Group selector (primary filter)
+
         row.addWidget(self._bold_label("Group:"))
         self.group_selector = self._combo(220)
         self.group_selector.currentTextChanged.connect(self.populate_table)
         row.addWidget(self.group_selector)
 
-        # Date Range Widget
+
         row.addSpacing(20)
         self.date_range_widget = DateRangeWidget()
         self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         row.addWidget(self.date_range_widget)
-        # Backward-compat alias
+
         self.date_selector = self.date_range_widget
 
-        # Branch Status
+
         row.addSpacing(20)
         row.addWidget(self._bold_label("Status:"))
         self.reg_filter_selector = self._combo(150)
@@ -739,12 +702,10 @@ class DailyTransactionPage(QWidget):
         self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
         row.addWidget(self.reg_filter_selector)
 
-        # OS Filter (hidden - Group is now the primary filter)
         self.os_filter_selector = self._combo(180)
         self.os_filter_selector.addItem("All (by Corporation)", None)
         self.os_filter_selector.setVisible(False)
 
-        # View selector
         row.addSpacing(20)
         row.addWidget(self._bold_label("View:"))
         self.view_selector = self._combo(190)
@@ -756,7 +717,6 @@ class DailyTransactionPage(QWidget):
         row.addStretch()
         parent.addWidget(frame, 0)
 
-    # ── Table ─────────────────────────────────────────────────────────────
     def _build_table(self, parent):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -769,9 +729,8 @@ class DailyTransactionPage(QWidget):
         self.table.setColumnCount(len(HEADERS))
         self.table.setMinimumHeight(300)
         self.table.verticalHeader().setDefaultSectionSize(32)
-        self.table.setAlternatingRowColors(False)  # Disabled so row 0 colors show
+        self.table.setAlternatingRowColors(False) 
 
-        # Column widths
         initial_groups = get_view_columns("Daily Transaction")
         initial_headers, _ = _build_columns(initial_groups)
         self.table.setColumnCount(len(initial_headers))
@@ -784,29 +743,26 @@ class DailyTransactionPage(QWidget):
             header.setSectionResizeMode(i, QHeaderView.Interactive)
         header.setMinimumSectionSize(55)
 
-        self._apply_header_colors(initial_groups)  # also sets labels
+        self._apply_header_colors(initial_groups) 
         self._style_table()
 
         scroll.setWidget(self.table)
         parent.addWidget(scroll, 1)
 
     def _apply_header_colors(self, groups):
-        """Apply two-row header: Header row = merged group names, Row 0 = sub-columns (LOTES, CAPITAL)"""
+
         headers, _ = _build_columns(groups)
-        
-        # Build group header labels for the horizontal header (merged group names)
-        group_headers = ["Branch"]  # First column is Branch
+        group_headers = ["Branch"]
         col = 1
         for group_name, subs in groups:
             span_width = len(subs)
-            # First cell gets the group name, rest are empty (will be merged visually)
+         
             group_headers.append(group_name)
             for _ in range(span_width - 1):
-                group_headers.append("")  # Empty for merged appearance
+                group_headers.append("")  
         
-        # Set up colored header for group names (Row 1 - top)
         ch = MergedGroupHeaderView(Qt.Horizontal, self.table, groups)
-        ch.colors[0] = QColor("#495057")  # Branch column
+        ch.colors[0] = QColor("#495057")
         col = 1
         for group_name, subs in groups:
             base = GROUP_COLORS.get(group_name, QColor("#495057"))
@@ -820,30 +776,26 @@ class DailyTransactionPage(QWidget):
         self.table.setHorizontalHeader(ch)
         self.table.setHorizontalHeaderLabels(group_headers)
         ch.setVisible(True)
-        ch.setFixedHeight(32)  # Height for group header row
+        ch.setFixedHeight(32)
         for i in range(len(group_headers)):
             ch.setSectionResizeMode(i, QHeaderView.Interactive)
         
-        # Store group info and sub-headers for creating sub-header row
         self._current_groups = groups
-        self._sub_headers = headers  # LOTES, CAPITAL labels
+        self._sub_headers = headers  
         self._group_header_row_exists = False
 
     def _create_group_header_row(self, groups):
-        """Create row 0 with sub-columns (LOTES, CAPITAL) - group names are in header"""
+
         if self.table.rowCount() == 0:
             return
         
-        # Clear any existing spans
         self.table.clearSpans()
         
-        # Set row 0 height for sub-headers
         self.table.setRowHeight(0, 28)
         
-        # Get sub-headers (LOTES, CAPITAL, etc.)
         headers, _ = _build_columns(groups)
         
-        # Empty cell for Branch column (branch names go in data rows)
+
         branch_item = QTableWidgetItem("")
         branch_item.setTextAlignment(Qt.AlignCenter)
         branch_item.setBackground(QColor("#495057"))
@@ -855,7 +807,6 @@ class DailyTransactionPage(QWidget):
         branch_item.setFlags(branch_item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(0, 0, branch_item)
         
-        # Create sub-header cells (LOTES, CAPITAL, etc.)
         col = 1
         for group_name, subs in groups:
             group_color = GROUP_COLORS.get(group_name, QColor("#495057"))
@@ -876,7 +827,7 @@ class DailyTransactionPage(QWidget):
         self._group_header_row_exists = True
 
     def _style_table(self):
-        # Note: Don't set background-color on QTableWidget::item as it overrides setBackground()
+
         self.table.setStyleSheet("""
             QTableWidget {
                 gridline-color:#d0d0d0; border:1px solid #c0c0c0;
@@ -890,7 +841,6 @@ class DailyTransactionPage(QWidget):
             }
         """)
 
-    # ── Buttons ───────────────────────────────────────────────────────────
     def _build_buttons(self, parent):
         frame = QFrame()
         frame.setFixedHeight(70)
@@ -907,9 +857,9 @@ class DailyTransactionPage(QWidget):
             """)
             return b
 
-        self.export_btn = _btn("📊 Export to Excel", "#217346", "#1a5c38", "#155724")
+        self.export_btn = _btn("Export to Excel", "#217346", "#1a5c38", "#155724")
         self.export_btn.clicked.connect(self.export_to_excel)
-        self.print_btn = _btn("🖨️ Print Report", "#6f42c1", "#5a2d91", "#4c1f75")
+        self.print_btn = _btn("Print Report", "#6f42c1", "#5a2d91", "#4c1f75")
         self.print_btn.clicked.connect(self.print_table)
 
         lay.addStretch()
@@ -919,7 +869,6 @@ class DailyTransactionPage(QWidget):
         lay.addStretch()
         parent.addWidget(frame, 0)
 
-    # ── View switching ────────────────────────────────────────────────────
     def _on_view_changed(self):
         view_name = self.view_selector.currentData() or "Daily Transaction"
         groups = get_view_columns(view_name)
@@ -927,26 +876,25 @@ class DailyTransactionPage(QWidget):
         self.table.setRowCount(0)
         self.table.setColumnCount(len(headers))
         self.table.setColumnWidth(0, 130)
-        # Wider columns for P&L view
+
         col_width = 200 if view_name == "P&L" else 120
         for i in range(1, len(headers)):
             self.table.setColumnWidth(i, col_width)
-        self._apply_header_colors(groups)  # also sets labels
+        self._apply_header_colors(groups) 
         hdr = self.table.horizontalHeader()
         for i in range(len(headers)):
             hdr.setSectionResizeMode(i, QHeaderView.Interactive)
         self.populate_table()
 
     def _active_groups(self):
-        """Return the COLUMN_GROUPS list for the currently selected view, including dynamic fields."""
+    
         view_name = self.view_selector.currentData() if hasattr(self, 'view_selector') else None
         return get_view_columns(view_name) if view_name else COLUMN_GROUPS
 
-    # ── Data ──────────────────────────────────────────────────────────────
     def load_corporations(self):
         self.corp_selector.blockSignals(True)
         self.corp_selector.clear()
-        self.corp_selector.addItem("")  # All Corporations
+        self.corp_selector.addItem("")
         try:
             rows = db_manager.execute_query(
                 "SELECT DISTINCT corporation FROM daily_reports_brand_a ORDER BY corporation"
@@ -961,7 +909,7 @@ class DailyTransactionPage(QWidget):
         self._load_os_options()
 
     def _load_groups(self):
-        """Load groups into the primary group selector."""
+
         self.group_selector.blockSignals(True)
         self.group_selector.clear()
         try:
@@ -1001,7 +949,6 @@ class DailyTransactionPage(QWidget):
         finally:
             self.os_filter_selector.blockSignals(False)
 
-    # ── Populate ──────────────────────────────────────────────────────────
     def populate_table(self):
         self._is_loading = True
         self.table.setRowCount(0)
@@ -1013,10 +960,10 @@ class DailyTransactionPage(QWidget):
         os_filter = self.os_filter_selector.currentData()
         reg_value = self.reg_filter_selector.currentData()
 
-        # Update report header to match Excel format
+
         self._update_report_header()
 
-        # Group is the primary filter
+
         if not group and not corp and not os_filter:
             self._is_loading = False
             return
@@ -1024,29 +971,25 @@ class DailyTransactionPage(QWidget):
         active_groups = self._active_groups()
         headers, col_meta = _build_columns(active_groups)
 
-        # Resize table to match active view (skip if _on_view_changed already set it)
         view_name = self.view_selector.currentData() if hasattr(self, 'view_selector') else None
         if self.table.columnCount() != len(headers):
             self.table.setColumnCount(len(headers))
             self.table.setColumnWidth(0, 130)
-            # Wider columns for P&L view
+  
             col_width = 200 if view_name == "P&L" else 120
             for i in range(1, len(headers)):
                 self.table.setColumnWidth(i, col_width)
-            self._apply_header_colors(active_groups)  # also sets labels
+            self._apply_header_colors(active_groups)  
 
-        # Insert row 0 for group header (merged cells)
         self.table.insertRow(0)
         self._create_group_header_row(active_groups)
 
-        # Build SELECT: gather all db columns we need
+   
         needed_cols = set()
         for _, subs in active_groups:
             for _, db_cols, _ in subs:
                 needed_cols.update(db_cols)
 
-        # Filter to only columns that actually exist in the database
-        # This prevents SQL errors when field_config references columns that don't exist
         available_columns = _get_table_columns("daily_reports_brand_a")
         if available_columns:
             original_count = len(needed_cols)
@@ -1055,12 +998,10 @@ class DailyTransactionPage(QWidget):
                 print(f"Filtered out {original_count - len(needed_cols)} non-existent columns")
         
         if not needed_cols:
-            # No valid columns to query
             print("Warning: No valid columns to query after filtering")
             self._is_loading = False
             return
 
-        # Build COALESCE expressions — use SUM for date ranges
         select_parts = ["b.name AS branch"]
         for col in sorted(needed_cols):
             if is_range:
@@ -1068,16 +1009,18 @@ class DailyTransactionPage(QWidget):
             else:
                 select_parts.append(f"COALESCE(dr.`{col}`, 0) AS `{col}`")
 
+        # Date condition goes into the JOIN ON clause so branches without entries still appear
         if is_range:
-            where_parts = ["dr.date >= %s", "dr.date <= %s"]
+            join_date_condition = "AND dr.date >= %s AND dr.date <= %s"
             params = [date_start, date_end]
         else:
-            where_parts = ["dr.date = %s"]
+            join_date_condition = "AND dr.date = %s"
             params = [date_start]
 
+        where_parts = []
         if corp:
-            where_parts.append("dr.corporation = %s")
-            params.append(corp)
+            where_parts.append("(b.corporation_id = (SELECT id FROM corporations WHERE name = %s) OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))")
+            params.extend([corp, corp])
         if group:
             where_parts.append("b.os_name = %s")
             params.append(group)
@@ -1085,23 +1028,23 @@ class DailyTransactionPage(QWidget):
             where_parts.append("b.os_name = %s")
             params.append(os_filter)
 
-        # Registration filter
         if reg_value == "registered":
             where_parts.append("b.is_registered = 1")
         elif reg_value == "not_registered":
             where_parts.append("(b.is_registered = 0 OR b.is_registered IS NULL)")
 
+        where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
         group_by = " GROUP BY b.name" if is_range else ""
         sql = (
             f"SELECT {', '.join(select_parts)} "
-            f"FROM daily_reports_brand_a dr "
-            f"INNER JOIN branches b ON dr.branch = b.name "
-            f"WHERE {' AND '.join(where_parts)}"
+            f"FROM branches b "
+            f"LEFT JOIN daily_reports_brand_a dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+            f"{join_date_condition} "
+            f"{where_clause} "
             f"{group_by} "
             f"ORDER BY b.name"
         )
 
-        # Store context for the async callback
         self._pending_populate = {
             'headers': headers,
             'col_meta': col_meta,
@@ -1137,13 +1080,11 @@ class DailyTransactionPage(QWidget):
             r = self.table.rowCount()
             self.table.insertRow(r)
 
-            # Branch
             branch_item = QTableWidgetItem(row_data['branch'])
             branch_item.setFlags(branch_item.flags() & ~Qt.ItemIsEditable)
             branch_item.setFont(QFont("", 10, QFont.Bold))
             self.table.setItem(r, 0, branch_item)
 
-            # Data columns
             for ci, meta in enumerate(col_meta, start=1):
                 val = sum(float(row_data.get(c, 0) or 0) for c in meta['db_cols'])
                 if meta['is_lotes']:
@@ -1157,7 +1098,6 @@ class DailyTransactionPage(QWidget):
                 self.table.setItem(r, ci, item)
                 totals[ci] += val
 
-        # Totals row
         r = self.table.rowCount()
         self.table.insertRow(r)
         total_label = QTableWidgetItem("TOTAL")
@@ -1183,7 +1123,6 @@ class DailyTransactionPage(QWidget):
 
         self._is_loading = False
 
-    # ── Export ────────────────────────────────────────────────────────────
     def export_to_excel(self):
         try:
             from openpyxl import Workbook
@@ -1192,7 +1131,7 @@ class DailyTransactionPage(QWidget):
             QMessageBox.warning(self, "Missing Package", "Install openpyxl:\npip install openpyxl")
             return
 
-        if self.table.rowCount() <= 1:  # Only group header row, no data
+        if self.table.rowCount() <= 1:
             QMessageBox.warning(self, "No Data", "Please load data first.")
             return
 
@@ -1214,31 +1153,25 @@ class DailyTransactionPage(QWidget):
         thin = Side(style='thin')
         border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-        # ── Report Header (Title, Date, OS) ───────────────────────────────
         title_font = Font(bold=True, size=14)
         info_font = Font(bold=True, size=11)
-        
-        # Row 1: Title "Daily Transaction"
+
         ws.cell(row=1, column=1, value="Daily Transaction").font = title_font
         
-        # Row 2: Date
         date_start, date_end = self.date_range_widget.get_date_range()
         date_display = date_start if date_start == date_end else f"{date_start} to {date_end}"
         ws.cell(row=2, column=1, value=f"Date: {date_display}").font = info_font
         
-        # Row 3: OS Name
         os_name = self.os_filter_selector.currentText() or "All"
         ws.cell(row=3, column=1, value=f"OS: {os_name}").font = info_font
-        
-        # Row 4: Empty row for spacing
-        group_row = 5    # Group header row
-        sub_row = 6      # Sub-header row (LOTES, CAPITAL)
-        data_start = 7   # Data starts at row 7
 
-        # ── Row 5: Group Headers with merged cells ────────────────────────
+        group_row = 5  
+        sub_row = 6    
+        data_start = 7   
+
         active_groups = self._active_groups()
         col = 1
-        # Branch cell
+
         cell = ws.cell(row=group_row, column=col, value="Branch")
         cell.font = header_font
         cell.fill = header_fill
@@ -1250,22 +1183,21 @@ class DailyTransactionPage(QWidget):
         for group_name, subs in active_groups:
             span_width = len(subs)
             group_color = GROUP_COLORS.get(group_name, QColor("#495057"))
-            # Convert QColor to hex for Excel
+
             hex_color = f"{group_color.red():02X}{group_color.green():02X}{group_color.blue():02X}"
             group_fill = PatternFill("solid", fgColor=hex_color)
-            
-            # Set group header cell
+
             cell = ws.cell(row=group_row, column=col, value=group_name)
             cell.font = header_font
             cell.fill = group_fill
             cell.border = border
             cell.alignment = Alignment(horizontal='center', vertical='center')
             
-            # Merge cells for the group
+
             if span_width > 1:
                 ws.merge_cells(start_row=group_row, start_column=col, end_row=group_row, end_column=col + span_width - 1)
             
-            # Fill sub-headers in row 6
+
             for sub_idx, (sub_header, _, _) in enumerate(subs):
                 sub_cell = ws.cell(row=sub_row, column=col + sub_idx, value=sub_header.upper())
                 sub_cell.font = header_font
@@ -1275,13 +1207,13 @@ class DailyTransactionPage(QWidget):
             
             col += span_width
 
-        # ── Data rows (skip row 0 which is the in-table group header) ─────
-        for r in range(1, self.table.rowCount()):  # Start from row 1 (skip group header row)
+
+        for r in range(1, self.table.rowCount()):
             excel_row = data_start + (r - 1)
             for c in range(self.table.columnCount()):
                 item = self.table.item(r, c)
                 val = item.text() if item else ""
-                # Try to write as number
+    
                 try:
                     num = float(val.replace(",", ""))
                     cell = ws.cell(row=excel_row, column=c + 1, value=num)
@@ -1290,7 +1222,7 @@ class DailyTransactionPage(QWidget):
                     cell = ws.cell(row=excel_row, column=c + 1, value=val)
                 cell.border = border
 
-        # Auto-width (cap at 18)
+
         for col_cells in ws.columns:
             max_len = max((len(str(c.value or "")) for c in col_cells), default=8)
             ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 2, 18)
@@ -1298,9 +1230,9 @@ class DailyTransactionPage(QWidget):
         wb.save(path)
         QMessageBox.information(self, "Export Successful", f"Saved to:\n{path}")
 
-    # ── Print ─────────────────────────────────────────────────────────────
+
     def print_table(self):
-        if self.table.rowCount() <= 1:  # Only group header row, no data
+        if self.table.rowCount() <= 1:  
             QMessageBox.warning(self, "No Data", "Please load data first.")
             return
         printer = QPrinter(QPrinter.HighResolution)
@@ -1318,7 +1250,7 @@ class DailyTransactionPage(QWidget):
             row_h = 300
             y = 0
             
-            # Row 0: Group header (from table row 0)
+
             painter.setFont(QFont("Arial", 6, QFont.Bold))
             for c in range(cols):
                 item = self.table.item(0, c)
@@ -1327,14 +1259,13 @@ class DailyTransactionPage(QWidget):
                                  Qt.AlignCenter | Qt.TextWordWrap, text)
             y += row_h
             
-            # Row 1: Sub-headers (LOTES, CAPITAL)
+
             for c in range(cols):
                 text = self.table.horizontalHeaderItem(c).text().replace("\n", " ") if self.table.horizontalHeaderItem(c) else ""
                 painter.drawText(int(c * col_w), y, int(col_w), row_h,
                                  Qt.AlignCenter | Qt.TextWordWrap, text)
             y += row_h
             
-            # Data rows (skip row 0 which is group header)
             painter.setFont(QFont("Arial", 5))
             for r in range(1, rows):  # Start from row 1
                 if y + row_h > page.height():
@@ -1348,7 +1279,7 @@ class DailyTransactionPage(QWidget):
         finally:
             painter.end()
 
-    # ── Helpers ───────────────────────────────────────────────────────────
+
     @staticmethod
     def _bold_label(text):
         lbl = QLabel(text)

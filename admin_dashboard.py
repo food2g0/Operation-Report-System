@@ -158,6 +158,31 @@ class AdminDashboard(QWidget):
         except Exception as e:
             print(f"[AdminDashboard] review table create: {e}")
 
+        # Add any columns to daily_reports_brand_a that may be missing on older DB installs
+        _migrations = [
+            ("daily_reports_brand_a", "pc_inc_insurance",              "DECIMAL(15,2) DEFAULT 0.00"),
+            ("daily_reports_brand_a", "pc_inc_insurance_lotes",        "INT DEFAULT 0"),
+            ("daily_reports_brand_a", "habol_renew_tubos",             "DECIMAL(15,2) DEFAULT 0.00"),
+            ("daily_reports_brand_a", "habol_renew_tubos_lotes",       "INT DEFAULT 0"),
+            ("daily_reports_brand_a", "habol_rt_interest_stamp",       "DECIMAL(15,2) DEFAULT 0.00"),
+            ("daily_reports_brand_a", "habol_rt_interest_stamp_lotes", "INT DEFAULT 0"),
+            ("daily_reports_brand_a", "transfast",                     "DECIMAL(15,2) DEFAULT 0.00"),
+            ("daily_reports_brand_a", "transfast_lotes",               "INT DEFAULT 0"),
+        ]
+        for table, col, typedef in _migrations:
+            try:
+                exists = self.db.execute_query(
+                    "SELECT COUNT(*) as cnt FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = %s",
+                    (table, col)
+                )
+                if not exists or exists[0].get('cnt', 0) == 0:
+                    self.db.execute_query(
+                        f"ALTER TABLE {table} ADD COLUMN {col} {typedef}"
+                    )
+            except Exception:
+                pass  # Safe to ignore
+
     def _load_field_config(self):
 
         try:
@@ -1293,11 +1318,25 @@ class AdminDashboard(QWidget):
             }
         """)
         date_range_button.clicked.connect(self.show_date_range_report_dialog)
-        
+
+        full_brand_btn = QPushButton("Full Brand Report")
+        full_brand_btn.setObjectName("fullBrandReportButton")
+        full_brand_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #27AE60;
+                color: white;
+            }
+            QPushButton:hover {
+                background-color: #1E8449;
+            }
+        """)
+        full_brand_btn.clicked.connect(self.show_full_brand_report_dialog)
+
         action_layout.addWidget(save_button)
         action_layout.addWidget(reset_button)
         action_layout.addWidget(export_button)
         action_layout.addWidget(date_range_button)
+        action_layout.addWidget(full_brand_btn)
         layout.addLayout(action_layout)
 
 
@@ -3071,14 +3110,6 @@ class AdminDashboard(QWidget):
             
             col_idx = 2
             for branch_name in branches_sorted:
-                # Amount header
-                cell = ws.cell(row=sub_header_row, column=col_idx, value="Amount")
-                cell.font = Font(bold=True, size=8, color="FFFFFF")
-                cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center', wrap_text=True)
-                col_idx += 1
-                
                 # Lotes header
                 cell = ws.cell(row=sub_header_row, column=col_idx, value="Lotes")
                 cell.font = Font(bold=True, size=8, color="FFFFFF")
@@ -3086,17 +3117,25 @@ class AdminDashboard(QWidget):
                 cell.border = border
                 cell.alignment = Alignment(horizontal='center', wrap_text=True)
                 col_idx += 1
+                
+                # Amount header
+                cell = ws.cell(row=sub_header_row, column=col_idx, value="Amount")
+                cell.font = Font(bold=True, size=8, color="FFFFFF")
+                cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                col_idx += 1
             
-            # Total Amount header
-            cell = ws.cell(row=sub_header_row, column=col_idx, value="Amount")
+            # Total Lotes header
+            cell = ws.cell(row=sub_header_row, column=col_idx, value="Lotes")
             cell.font = Font(bold=True, size=8, color="FFFFFF")
             cell.fill = grand_total_fill
             cell.border = border
             cell.alignment = Alignment(horizontal='center', wrap_text=True)
             col_idx += 1
             
-            # Total Lotes header
-            cell = ws.cell(row=sub_header_row, column=col_idx, value="Lotes")
+            # Total Amount header
+            cell = ws.cell(row=sub_header_row, column=col_idx, value="Amount")
             cell.font = Font(bold=True, size=8, color="FFFFFF")
             cell.fill = grand_total_fill
             cell.border = border
@@ -3116,29 +3155,29 @@ class AdminDashboard(QWidget):
             col_idx = 2
             for branch_name in branches_sorted:
                 val = float(branch_totals[branch_name].get('beginning_balance', 0))
+                # Lotes column (leave blank for beginning balance)
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
                 cell = ws.cell(row=current_row, column=col_idx, value=val)
                 cell.number_format = '#,##0.00'
                 cell.border = border
                 cell.alignment = Alignment(horizontal='right')
                 total_amount += val
                 col_idx += 1
-                
-                # Lotes column (leave blank for beginning balance)
-                cell = ws.cell(row=current_row, column=col_idx, value="")
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center')
-                col_idx += 1
             
-            cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
             cell.number_format = '#,##0.00'
             cell.border = border
             cell.font = Font(bold=True)
             cell.alignment = Alignment(horizontal='right')
             cell.fill = total_fill
-            
-            cell = ws.cell(row=current_row, column=total_col_start + 1, value="")
-            cell.border = border
-            cell.alignment = Alignment(horizontal='center')
             current_row += 1
             
             # Debit fields
@@ -3158,6 +3197,14 @@ class AdminDashboard(QWidget):
                     total_lotes = 0
                     col_idx = 2
                     for branch_name in branches_sorted:
+                        # Lotes
+                        lotes_val = int(branch_totals[branch_name].get(f"{db_col}_lotes", 0))
+                        cell = ws.cell(row=current_row, column=col_idx, value=lotes_val)
+                        cell.border = border
+                        cell.alignment = Alignment(horizontal='center')
+                        total_lotes += lotes_val
+                        col_idx += 1
+                        
                         # Amount
                         val = float(branch_totals[branch_name].get(db_col, 0))
                         cell = ws.cell(row=current_row, column=col_idx, value=val)
@@ -3166,26 +3213,18 @@ class AdminDashboard(QWidget):
                         cell.alignment = Alignment(horizontal='right')
                         total_amount += val
                         col_idx += 1
-                        
-                        # Lotes
-                        lotes_val = int(branch_totals[branch_name].get(f"{db_col}_lotes", 0))
-                        cell = ws.cell(row=current_row, column=col_idx, value=lotes_val)
-                        cell.border = border
-                        cell.alignment = Alignment(horizontal='center')
-                        total_lotes += lotes_val
-                        col_idx += 1
+                    
+                    # Total lotes
+                    cell = ws.cell(row=current_row, column=total_col_start, value=total_lotes)
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
+                    cell.fill = total_fill
                     
                     # Total amount
-                    cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+                    cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
                     cell.number_format = '#,##0.00'
                     cell.border = border
                     cell.alignment = Alignment(horizontal='right')
-                    cell.fill = total_fill
-                    
-                    # Total lotes
-                    cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_lotes)
-                    cell.border = border
-                    cell.alignment = Alignment(horizontal='center')
                     cell.fill = total_fill
                     current_row += 1
             
@@ -3199,6 +3238,12 @@ class AdminDashboard(QWidget):
             col_idx = 2
             for branch_name in branches_sorted:
                 val = float(branch_totals[branch_name].get('debit_total', 0))
+                # Lotes column (leave blank for totals)
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
                 cell = ws.cell(row=current_row, column=col_idx, value=val)
                 cell.number_format = '#,##0.00'
                 cell.border = border
@@ -3206,23 +3251,17 @@ class AdminDashboard(QWidget):
                 cell.alignment = Alignment(horizontal='right')
                 total_amount += val
                 col_idx += 1
-                
-                # Lotes column (leave blank for totals)
-                cell = ws.cell(row=current_row, column=col_idx, value="")
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center')
-                col_idx += 1
             
-            cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
             cell.number_format = '#,##0.00'
             cell.border = border
             cell.font = Font(bold=True)
             cell.alignment = Alignment(horizontal='right')
             cell.fill = total_fill
-            
-            cell = ws.cell(row=current_row, column=total_col_start + 1, value="")
-            cell.border = border
-            cell.alignment = Alignment(horizontal='center')
             current_row += 2
             
             # Credit fields
@@ -3234,44 +3273,45 @@ class AdminDashboard(QWidget):
             
             for label in self.credit_fields.keys():
                 db_col = self.credit_fields[label]
-                if db_col in credit_columns:
-                    ws.cell(row=current_row, column=1, value=label)
-                    ws.cell(row=current_row, column=1).border = border
-                    
-                    total_amount = 0.0
-                    total_lotes = 0
-                    col_idx = 2
-                    for branch_name in branches_sorted:
-                        # Amount
-                        val = float(branch_totals[branch_name].get(db_col, 0))
-                        cell = ws.cell(row=current_row, column=col_idx, value=val)
-                        cell.number_format = '#,##0.00'
-                        cell.border = border
-                        cell.alignment = Alignment(horizontal='right')
-                        total_amount += val
-                        col_idx += 1
-                        
-                        # Lotes
-                        lotes_val = int(branch_totals[branch_name].get(f"{db_col}_lotes", 0))
-                        cell = ws.cell(row=current_row, column=col_idx, value=lotes_val)
-                        cell.border = border
-                        cell.alignment = Alignment(horizontal='center')
-                        total_lotes += lotes_val
-                        col_idx += 1
-                    
-                    # Total amount
-                    cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+                # Show all configured credit fields; fields whose DB column doesn't
+                # exist in this table will simply display 0 (data not available).
+                ws.cell(row=current_row, column=1, value=label)
+                ws.cell(row=current_row, column=1).border = border
+
+                total_amount = 0.0
+                total_lotes = 0
+                col_idx = 2
+                for branch_name in branches_sorted:
+                    # Lotes
+                    lotes_val = int(branch_totals[branch_name].get(f"{db_col}_lotes", 0))
+                    cell = ws.cell(row=current_row, column=col_idx, value=lotes_val)
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
+                    total_lotes += lotes_val
+                    col_idx += 1
+
+                    # Amount
+                    val = float(branch_totals[branch_name].get(db_col, 0))
+                    cell = ws.cell(row=current_row, column=col_idx, value=val)
                     cell.number_format = '#,##0.00'
                     cell.border = border
                     cell.alignment = Alignment(horizontal='right')
-                    cell.fill = total_fill
-                    
-                    # Total lotes
-                    cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_lotes)
-                    cell.border = border
-                    cell.alignment = Alignment(horizontal='center')
-                    cell.fill = total_fill
-                    current_row += 1
+                    total_amount += val
+                    col_idx += 1
+
+                # Total lotes
+                cell = ws.cell(row=current_row, column=total_col_start, value=total_lotes)
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                cell.fill = total_fill
+
+                # Total amount
+                cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.alignment = Alignment(horizontal='right')
+                cell.fill = total_fill
+                current_row += 1
             
             # Total Cash Out
             ws.cell(row=current_row, column=1, value="Total Cash Out")
@@ -3283,6 +3323,12 @@ class AdminDashboard(QWidget):
             col_idx = 2
             for branch_name in branches_sorted:
                 val = float(branch_totals[branch_name].get('credit_total', 0))
+                # Lotes column (leave blank for totals)
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
                 cell = ws.cell(row=current_row, column=col_idx, value=val)
                 cell.number_format = '#,##0.00'
                 cell.border = border
@@ -3290,23 +3336,17 @@ class AdminDashboard(QWidget):
                 cell.alignment = Alignment(horizontal='right')
                 total_amount += val
                 col_idx += 1
-                
-                # Lotes column (leave blank for totals)
-                cell = ws.cell(row=current_row, column=col_idx, value="")
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center')
-                col_idx += 1
             
-            cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
             cell.number_format = '#,##0.00'
             cell.border = border
             cell.font = Font(bold=True)
             cell.alignment = Alignment(horizontal='right')
             cell.fill = total_fill
-            
-            cell = ws.cell(row=current_row, column=total_col_start + 1, value="")
-            cell.border = border
-            cell.alignment = Alignment(horizontal='center')
             current_row += 2
             
             # Summary fields
@@ -3330,28 +3370,28 @@ class AdminDashboard(QWidget):
                 col_idx = 2
                 for branch_name in branches_sorted:
                     val = float(branch_totals[branch_name].get(db_col, 0))
+                    # Lotes column (leave blank)
+                    cell = ws.cell(row=current_row, column=col_idx, value="")
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
+                    col_idx += 1
+                    
                     cell = ws.cell(row=current_row, column=col_idx, value=val)
                     cell.number_format = '#,##0.00'
                     cell.border = border
                     cell.alignment = Alignment(horizontal='right')
                     total_amount += val
                     col_idx += 1
-                    
-                    # Lotes column (leave blank)
-                    cell = ws.cell(row=current_row, column=col_idx, value="")
-                    cell.border = border
-                    cell.alignment = Alignment(horizontal='center')
-                    col_idx += 1
                 
-                cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+                cell = ws.cell(row=current_row, column=total_col_start, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                
+                cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
                 cell.number_format = '#,##0.00'
                 cell.border = border
                 cell.alignment = Alignment(horizontal='right')
                 cell.fill = total_fill
-                
-                cell = ws.cell(row=current_row, column=total_col_start + 1, value="")
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center')
                 current_row += 1
             
             # PC fields
@@ -3364,6 +3404,12 @@ class AdminDashboard(QWidget):
             col_idx = 2
             for branch_name in branches_sorted:
                 val = float(branch_totals[branch_name].get('salary', 0))
+                # Lotes column
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
                 cell = ws.cell(row=current_row, column=col_idx, value=val)
                 cell.number_format = '#,##0.00'
                 cell.border = border
@@ -3371,23 +3417,17 @@ class AdminDashboard(QWidget):
                 cell.alignment = Alignment(horizontal='right')
                 total_amount += val
                 col_idx += 1
-                
-                # Lotes column
-                cell = ws.cell(row=current_row, column=col_idx, value="")
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center')
-                col_idx += 1
             
-            cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
             cell.number_format = '#,##0.00'
             cell.border = border
             cell.font = Font(bold=True, color="9B59B6")
             cell.alignment = Alignment(horizontal='right')
             cell.fill = total_fill
-            
-            cell = ws.cell(row=current_row, column=total_col_start + 1, value="")
-            cell.border = border
-            cell.alignment = Alignment(horizontal='center')
             current_row += 1
             
             ws.cell(row=current_row, column=1, value="Total PC")
@@ -3399,6 +3439,12 @@ class AdminDashboard(QWidget):
             col_idx = 2
             for branch_name in branches_sorted:
                 val = float(branch_totals[branch_name].get('total_pc', 0))
+                # Lotes column
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
                 cell = ws.cell(row=current_row, column=col_idx, value=val)
                 cell.number_format = '#,##0.00'
                 cell.border = border
@@ -3406,40 +3452,34 @@ class AdminDashboard(QWidget):
                 cell.alignment = Alignment(horizontal='right')
                 total_amount += val
                 col_idx += 1
-                
-                # Lotes column
-                cell = ws.cell(row=current_row, column=col_idx, value="")
-                cell.border = border
-                cell.alignment = Alignment(horizontal='center')
-                col_idx += 1
             
-            cell = ws.cell(row=current_row, column=total_col_start, value=total_amount)
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
             cell.number_format = '#,##0.00'
             cell.border = border
             cell.font = Font(bold=True, color="9B59B6")
             cell.alignment = Alignment(horizontal='right')
             cell.fill = total_fill
             
-            cell = ws.cell(row=current_row, column=total_col_start + 1, value="")
-            cell.border = border
-            cell.alignment = Alignment(horizontal='center')
-            
             # Auto-adjust column widths
             ws.column_dimensions['A'].width = 25
             col_idx = 2
             for branch_name in branches_sorted:
                 col_letter = get_column_letter(col_idx)
-                ws.column_dimensions[col_letter].width = 12  # Amount column
+                ws.column_dimensions[col_letter].width = 10  # Lotes column
                 col_idx += 1
                 col_letter = get_column_letter(col_idx)
-                ws.column_dimensions[col_letter].width = 10  # Lotes column
+                ws.column_dimensions[col_letter].width = 12  # Amount column
                 col_idx += 1
             
             # Total columns
             col_letter = get_column_letter(total_col_start)
-            ws.column_dimensions[col_letter].width = 12
-            col_letter = get_column_letter(total_col_start + 1)
             ws.column_dimensions[col_letter].width = 10
+            col_letter = get_column_letter(total_col_start + 1)
+            ws.column_dimensions[col_letter].width = 12
             
             ws.freeze_panes = 'B8'
             
@@ -3449,6 +3489,1195 @@ class AdminDashboard(QWidget):
             
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Error exporting: {str(e)}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Full Brand Report  (all branches, all modules, one workbook)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def show_full_brand_report_dialog(self):
+        """Dialog to generate a multi-sheet Full Brand Report for all modules."""
+        brand_label = "Brand A" if self.account_type == 1 else "Brand B"
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Full Brand Report – {brand_label}")
+        dialog.setMinimumWidth(460)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+
+        info_lbl = QLabel(
+            f"Generates a comprehensive Excel workbook for <b>{brand_label}</b>.<br><br>"
+            "<b>Sheets:</b> Daily Cash Count &nbsp;·&nbsp; Palawan &nbsp;·&nbsp; "
+            "MC &nbsp;·&nbsp; Fund Transfer &nbsp;·&nbsp; Payable &nbsp;·&nbsp; "
+            "Daily Transaction &nbsp;·&nbsp; Other Services &nbsp;·&nbsp; "
+            "P&amp;L &nbsp;·&nbsp; New Sanla &nbsp;·&nbsp; New Renew &nbsp;·&nbsp; "
+            "Global Other Services &nbsp;·&nbsp; FT HO"
+        )
+        info_lbl.setWordWrap(True)
+        info_lbl.setTextFormat(Qt.RichText)
+        info_lbl.setStyleSheet("color:#2c3e50;font-size:11px;padding:6px;")
+        layout.addWidget(info_lbl)
+
+        # ── Filter type (Corporation / Group) ──────────────────────────────
+        filter_grp = QGroupBox("Filter")
+        filter_lay = QVBoxLayout(filter_grp)
+
+        type_row = QHBoxLayout()
+        from PyQt5.QtWidgets import QRadioButton
+        self._fbr_corp_radio = QRadioButton("By Corporation")
+        self._fbr_os_radio   = QRadioButton("By Group")
+        self._fbr_corp_radio.setChecked(True)
+        type_row.addWidget(self._fbr_corp_radio)
+        type_row.addWidget(self._fbr_os_radio)
+        type_row.addStretch()
+        filter_lay.addLayout(type_row)
+
+        sel_row = QHBoxLayout()
+        self._fbr_corp_lbl  = QLabel("Corporation:")
+        self._fbr_corp_lbl.setMinimumWidth(90)
+        self._fbr_corp_combo = QComboBox()
+        self._fbr_corp_combo.setMinimumWidth(260)
+        try:
+            rows = db_manager.execute_query(
+                "SELECT name FROM corporations ORDER BY name"
+            ) or []
+            for r in rows:
+                self._fbr_corp_combo.addItem(r['name'] if isinstance(r, dict) else r[0])
+        except Exception:
+            pass
+
+        self._fbr_os_lbl  = QLabel("Group:")
+        self._fbr_os_lbl.setMinimumWidth(90)
+        self._fbr_os_combo = QComboBox()
+        self._fbr_os_combo.setMinimumWidth(260)
+        try:
+            rows = db_manager.execute_query(
+                "SELECT DISTINCT os_name FROM branches "
+                "WHERE os_name IS NOT NULL AND os_name != '' ORDER BY os_name"
+            ) or []
+            for r in rows:
+                self._fbr_os_combo.addItem(r['os_name'] if isinstance(r, dict) else r[0])
+        except Exception:
+            pass
+
+        self._fbr_os_lbl.setVisible(False)
+        self._fbr_os_combo.setVisible(False)
+
+        sel_row.addWidget(self._fbr_corp_lbl)
+        sel_row.addWidget(self._fbr_corp_combo)
+        sel_row.addWidget(self._fbr_os_lbl)
+        sel_row.addWidget(self._fbr_os_combo)
+        sel_row.addStretch()
+        filter_lay.addLayout(sel_row)
+        layout.addWidget(filter_grp)
+
+        def _toggle_fbr_filter():
+            by_corp = self._fbr_corp_radio.isChecked()
+            self._fbr_corp_lbl.setVisible(by_corp)
+            self._fbr_corp_combo.setVisible(by_corp)
+            self._fbr_os_lbl.setVisible(not by_corp)
+            self._fbr_os_combo.setVisible(not by_corp)
+
+        self._fbr_corp_radio.toggled.connect(_toggle_fbr_filter)
+
+        # ── Single date picker ─────────────────────────────────────────────
+        date_grp = QGroupBox("Date")
+        date_lay = QHBoxLayout(date_grp)
+        date_lay.setSpacing(8)
+        date_lay.addWidget(QLabel("Date:"))
+        self._fbr_date = QDateEdit()
+        self._fbr_date.setDisplayFormat("yyyy-MM-dd")
+        self._fbr_date.setCalendarPopup(True)
+        self._fbr_date.setDate(QDate.currentDate())
+        self._fbr_date.setMinimumWidth(150)
+        date_lay.addWidget(self._fbr_date)
+        date_lay.addStretch()
+        layout.addWidget(date_grp)
+
+        btn_lay = QHBoxLayout()
+        gen_btn = QPushButton("Generate Report")
+        gen_btn.setStyleSheet(
+            "QPushButton{background-color:#27AE60;color:white;padding:8px 20px;"
+            "font-weight:bold;border-radius:4px;}"
+            "QPushButton:hover{background-color:#1E8449;}"
+        )
+        cancel_btn = QPushButton("Cancel")
+        gen_btn.clicked.connect(lambda: self._generate_full_brand_report(dialog))
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_lay.addStretch()
+        btn_lay.addWidget(cancel_btn)
+        btn_lay.addWidget(gen_btn)
+        layout.addLayout(btn_lay)
+
+        dialog.exec_()
+
+    def _generate_full_brand_report(self, dialog):
+        """Generate a multi-sheet Excel workbook with all module reports for the brand."""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            QMessageBox.critical(self, "Missing Dependency",
+                "The openpyxl package is required.\nInstall with: pip install openpyxl")
+            return
+
+        selected_date = self._fbr_date.date().toString("yyyy-MM-dd")
+
+        # ── Filter type & value ───────────────────────────────────────────
+        by_corp = self._fbr_corp_radio.isChecked()
+        if by_corp:
+            filter_type  = "corporation"
+            filter_value = self._fbr_corp_combo.currentText().strip()
+            filter_label = "Corporation"
+        else:
+            filter_type  = "os"
+            filter_value = self._fbr_os_combo.currentText().strip()
+            filter_label = "Group"
+
+        if not filter_value:
+            QMessageBox.warning(self, "Selection Required",
+                f"Please select a {filter_label}.")
+            return
+
+        brand_label = "Brand A" if self.account_type == 1 else "Brand B"
+        safe_brand  = brand_label.replace(" ", "_")
+        safe_filter = filter_value.replace(" ", "_").replace("/", "_")[:40]
+        default_fn  = f"FullBrandReport_{safe_brand}_{safe_filter}_{selected_date}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", default_fn, "Excel Files (*.xlsx);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        # ── Import column group definitions from daily_transaction_page ──────
+        try:
+            from daily_transaction_page import (
+                COLUMN_GROUPS          as DT_COLUMN_GROUPS,
+                OTHER_SERVICES_COLUMN_GROUPS,
+                PL_COLUMN_GROUPS,
+            )
+        except Exception:
+            DT_COLUMN_GROUPS = []
+            OTHER_SERVICES_COLUMN_GROUPS = []
+            PL_COLUMN_GROUPS = []
+
+        try:
+            import datetime as _dt
+
+            # ── Style helpers ────────────────────────────────────────────────
+            thin   = Side(style='thin')
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+            def _fill(hex_color):
+                return PatternFill("solid", fgColor=hex_color.upper())
+
+            TITLE_FILL   = _fill("1F3864")
+            INFO_FILL    = _fill("E8F4F8")
+            HDR_FILL     = _fill("4472C4")
+            TOTAL_FILL   = _fill("E2EFDA")
+            GRAND_FILL   = _fill("D5A6BD")
+            LOTES_FILL   = _fill("EBF5FB")
+            DEBIT_FILL   = _fill("27AE60")
+            CREDIT_FILL  = _fill("E74C3C")
+            SUMMARY_FILL = _fill("F39C12")
+
+            HDR_FONT   = Font(bold=True, size=9,  color="FFFFFF")
+            TOTAL_FONT = Font(bold=True, size=10)
+            BOLD_FONT  = Font(bold=True, size=10)
+
+            # Group → header fill colour (hex, no #)
+            GROUP_FILL_MAP = {
+                "JEWELRY":           "DC3545", "STORAGE":            "E67E22",
+                "MOTOR/CAR":         "8E44AD", "MC":                 "2980B9",
+                "SILVER":            "7F8C8D", "PALAWAN":            "16A085",
+                "PALAWAN SEND OUT":  "16A085", "PALAWAN PAY OUT":    "1ABC9C",
+                "INSURANCE":         "C0392B", "O.S.F":              "27AE60",
+                "RESCATE JEW.":      "E74C3C", "RESCATE STO.":       "F39C12",
+                "GCASH IN":          "1ABC9C", "GCASH OUT":          "1ABC9C",
+                "MONEYGRAM":         "2C3E50", "TRANSFAST":          "34495E",
+                "RIA":               "E74C3C", "I2I REM. IN":        "2980B9",
+                "I2I BILLS":         "2980B9", "I2I INSTAPAY":       "2980B9",
+                "SENDAH LOAD":       "8E44AD", "SENDAH BILLS":       "8E44AD",
+                "PAYMAYA":           "27AE60", "SMART $ IN":         "117864",
+                "SMART $ OUT":       "117864", "GCASH PADALA":       "148F77",
+                "PAL PAY IN":        "16A085", "PAL PAY OUT":        "16A085",
+                "REMITLY":           "7D3C98", "SEND OUT":           "27AE60",
+                "PAY OUT":           "E74C3C", "INTERNATIONAL":      "8E44AD",
+                "OTHER":             "F39C12", "FUND TRANSFER":      "2980B9",
+                "FUND TRANSFER HO":  "2980B9", "SMART MONEY OUT":    "117864",
+                "ABRA OUT":          "1A5276", "PAL PAY CASH OUT":   "196F3D",
+                "MC OUT":            "2980B9", "MC IN (SELLING)":    "27AE60",
+                "MC OUT (BUYING)":   "E74C3C", "DEBIT":              "27AE60",
+                "CREDIT":            "E74C3C", "SUMMARY":            "F39C12",
+                "JEWELRY EMPENO":    "DC3545", "STORAGE EMPENO":     "E67E22",
+                "JEWELRY":           "DC3545",
+            }
+
+            def _group_fill(group_name):
+                hex_c = GROUP_FILL_MAP.get(group_name, "4472C4")
+                return _fill(hex_c)
+
+            # ── Write info header rows (rows 1-5) ────────────────────────────
+            def _write_info(ws):
+                ws['A1'] = f"{brand_label} – {ws.title}"
+                ws['A1'].font  = Font(bold=True, size=14, color="FFFFFF")
+                ws['A1'].fill  = TITLE_FILL
+                ws['A1'].alignment = Alignment(horizontal='left', vertical='center')
+                ws.row_dimensions[1].height = 22
+
+                ws['A3'] = "Brand:";            ws['B3'] = brand_label
+                ws['A4'] = f"{filter_label}:"; ws['B4'] = filter_value
+                ws['A5'] = "Date:";             ws['B5'] = selected_date
+                ws['A6'] = "Generated:";        ws['B6'] = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+                for r in range(3, 7):
+                    ws.cell(row=r, column=1).font = BOLD_FONT
+                    ws.cell(row=r, column=2).font = Font(size=10)
+                    ws.cell(row=r, column=1).fill = INFO_FILL
+                    ws.cell(row=r, column=2).fill = INFO_FILL
+
+            # ── Per-table column cache (avoids repeated INFORMATION_SCHEMA hits) ──
+            _table_cols_cache = {}
+
+            def _get_table_cols(tbl):
+                if tbl not in _table_cols_cache:
+                    try:
+                        rows = db_manager.execute_query(
+                            "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                            (tbl,)
+                        )
+                        _table_cols_cache[tbl] = {r['COLUMN_NAME'] for r in rows} if rows else set()
+                    except Exception:
+                        _table_cols_cache[tbl] = set()
+                return _table_cols_cache[tbl]
+
+            # ── Core sheet writer ─────────────────────────────────────────────
+            # col_groups: list of (group_name, [(sub_label, [db_cols], is_lotes)])
+            # db_cols with multiple items → their values are summed into one column
+            def _write_grouped_sheet(ws, col_groups, table, use_branch_join=False):
+                _write_info(ws)
+
+                table_cols = _get_table_cols(table)
+
+                # Flatten columns, filtering out any that don't exist in the table
+                flat = []      # (display_label, primary_db_key, is_lotes, group_name, all_db_cols)
+                needed = set()
+                for grp, subs in col_groups:
+                    for sub_label, db_cols, is_lotes in subs:
+                        valid = [c for c in db_cols if c and (not table_cols or c in table_cols)]
+                        if not valid:
+                            continue
+                        needed.update(valid)
+                        flat.append((sub_label, valid[0], is_lotes, grp, valid))
+
+                if not flat:
+                    ws['A7'] = "No columns defined."
+                    return
+
+                # Build SELECT: for multi-col entries, wrap in SUM(COALESCE(...)+COALESCE(...))
+                seen_keys    = set()
+                select_parts = []
+                for _, primary_key, _, _, all_cols in flat:
+                    if primary_key in seen_keys:
+                        continue
+                    seen_keys.add(primary_key)
+                    if len(all_cols) == 1:
+                        select_parts.append(
+                            f"SUM(COALESCE(dr.`{all_cols[0]}`, 0)) AS `{all_cols[0]}`"
+                        )
+                    else:
+                        # Sum multiple columns into the first key
+                        inner = " + ".join(f"COALESCE(dr.`{c}`, 0)" for c in all_cols)
+                        select_parts.append(f"SUM({inner}) AS `{all_cols[0]}`")
+
+                # ── Build WHERE clause with corp/os filter ────────────────
+                if filter_type == "corporation" and not use_branch_join:
+                    where_clause = "AND dr.corporation = %s"
+                    sql_params   = (selected_date, filter_value)
+                elif filter_type == "corporation" and use_branch_join:
+                    where_clause = "AND b.global_tag = 'GLOBAL'"
+                    sql_params   = (selected_date,)
+                else:  # os/group – always need branches join
+                    where_clause = ""
+                    sql_params   = (selected_date,)
+
+                try:
+                    if filter_type == "os" or use_branch_join:
+                        os_join = (
+                            "INNER JOIN branches b "
+                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                            f"AND b.os_name = %s"
+                        )
+                        sql = (
+                            f"SELECT dr.branch, {', '.join(select_parts)} "
+                            f"FROM `{table}` dr {os_join} "
+                            f"WHERE dr.date = %s {where_clause} "
+                            f"GROUP BY dr.branch ORDER BY dr.branch"
+                        )
+                        sql_params = (filter_value, selected_date)
+                    else:
+                        sql = (
+                            f"SELECT dr.branch, {', '.join(select_parts)} "
+                            f"FROM `{table}` dr "
+                            f"WHERE dr.date = %s {where_clause} "
+                            f"GROUP BY dr.branch ORDER BY dr.branch"
+                        )
+                    results = db_manager.execute_query(sql, sql_params) or []
+                except Exception as ex:
+                    ws['A7'] = f"Error loading data: {ex}"
+                    return
+
+                GRP_HDR_ROW = 7   # rows 1-6 are title/info
+                SUB_HDR_ROW = 8   # sub-label row
+                HDR_ROW     = SUB_HDR_ROW  # data starts after this
+
+                # ── Row 7: Group name headers (merged per group) ──────────────
+                # "Branch" spanning both header rows in col 1
+                ws.merge_cells(start_row=GRP_HDR_ROW, start_column=1,
+                               end_row=SUB_HDR_ROW,   end_column=1)
+                c = ws.cell(row=GRP_HDR_ROW, column=1, value="Branch")
+                c.font = HDR_FONT; c.fill = HDR_FILL
+                c.border = border
+                c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+                # Build group → list of column indices
+                col_idx = 2
+                grp_spans = []   # (group_name, start_col, end_col)
+                for label, _, _, grp, _ in flat:
+                    grp_spans.append((grp, col_idx))
+                    col_idx += 1
+
+                # Merge consecutive columns that share the same group name
+                merged_groups = []
+                i = 0
+                while i < len(grp_spans):
+                    grp_name, start = grp_spans[i]
+                    end = start
+                    while i + 1 < len(grp_spans) and grp_spans[i + 1][0] == grp_name:
+                        i += 1
+                        end = grp_spans[i][1]
+                    merged_groups.append((grp_name, start, end))
+                    i += 1
+
+                for grp_name, start, end in merged_groups:
+                    if start != end:
+                        ws.merge_cells(start_row=GRP_HDR_ROW, start_column=start,
+                                       end_row=GRP_HDR_ROW,   end_column=end)
+                    c = ws.cell(row=GRP_HDR_ROW, column=start, value=grp_name.upper())
+                    c.font  = HDR_FONT
+                    c.fill  = _group_fill(grp_name)
+                    c.border = border
+                    c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                    # Apply border to every cell in the merged range
+                    for ci in range(start, end + 1):
+                        ws.cell(row=GRP_HDR_ROW, column=ci).border = border
+
+                # "AMT TOTAL" spanning both header rows
+                total_col = col_idx
+                ws.merge_cells(start_row=GRP_HDR_ROW, start_column=total_col,
+                               end_row=SUB_HDR_ROW,   end_column=total_col)
+                c = ws.cell(row=GRP_HDR_ROW, column=total_col, value="AMT TOTAL")
+                c.font = HDR_FONT; c.fill = GRAND_FILL
+                c.border = border
+                c.alignment = Alignment(horizontal='center', vertical='center')
+
+                # ── Row 8: Sub-label headers ──────────────────────────────────
+                ws.cell(row=SUB_HDR_ROW, column=1).border = border  # already merged
+
+                col_idx = 2
+                for label, _, _, grp, _ in flat:
+                    c = ws.cell(row=SUB_HDR_ROW, column=col_idx, value=label.upper())
+                    c.font  = HDR_FONT
+                    c.fill  = _group_fill(grp)
+                    c.border = border
+                    c.alignment = Alignment(horizontal='center', wrap_text=True)
+                    col_idx += 1
+
+                ws.cell(row=SUB_HDR_ROW, column=total_col).border = border  # already merged
+
+                # Data rows
+                grand_totals = {primary_key: 0.0 for _, primary_key, _, _, _ in flat}
+                for ri, row_data in enumerate(results, HDR_ROW + 1):
+                    ws.cell(row=ri, column=1, value=row_data.get('branch', '')).border = border
+                    row_amt = 0.0
+                    for ci, (_, primary_key, is_lotes, _, all_cols) in enumerate(flat, 2):
+                        raw = row_data.get(primary_key, 0) or 0
+                        val = int(raw) if is_lotes else float(raw)
+                        cell = ws.cell(row=ri, column=ci, value=val)
+                        cell.border = border
+                        if is_lotes:
+                            cell.alignment = Alignment(horizontal='center')
+                            cell.fill = LOTES_FILL
+                        else:
+                            cell.number_format = '#,##0.00'
+                            cell.alignment = Alignment(horizontal='right')
+                            row_amt += float(val)
+                            grand_totals[primary_key] = grand_totals.get(primary_key, 0.0) + float(val)
+
+                    c = ws.cell(row=ri, column=total_col, value=row_amt)
+                    c.number_format = '#,##0.00'; c.font = TOTAL_FONT
+                    c.border = border; c.fill = TOTAL_FILL
+                    c.alignment = Alignment(horizontal='right')
+
+                # Total row
+                tr = HDR_ROW + len(results) + 1
+                c = ws.cell(row=tr, column=1, value="TOTAL")
+                c.font = TOTAL_FONT; c.fill = TOTAL_FILL; c.border = border
+
+                grand_sum = 0.0
+                for ci, (_, primary_key, is_lotes, _, _) in enumerate(flat, 2):
+                    val = grand_totals.get(primary_key, 0.0)
+                    cell = ws.cell(row=tr, column=ci, value=int(val) if is_lotes else val)
+                    cell.font = TOTAL_FONT; cell.fill = TOTAL_FILL; cell.border = border
+                    if is_lotes:
+                        cell.alignment = Alignment(horizontal='center')
+                    else:
+                        cell.number_format = '#,##0.00'
+                        cell.alignment = Alignment(horizontal='right')
+                        grand_sum += val
+
+                c = ws.cell(row=tr, column=total_col, value=grand_sum)
+                c.number_format = '#,##0.00'; c.font = TOTAL_FONT
+                c.fill = GRAND_FILL; c.border = border
+                c.alignment = Alignment(horizontal='right')
+
+                # Column widths
+                ws.column_dimensions['A'].width = 25
+                for ci, (_, _, is_lotes, _, _) in enumerate(flat, 2):
+                    ws.column_dimensions[get_column_letter(ci)].width = 8 if is_lotes else 13
+                ws.column_dimensions[get_column_letter(total_col)].width = 14
+                ws.freeze_panes = f'B{HDR_ROW + 1}'
+
+            # ── Check existing columns in daily_table ────────────────────────
+            try:
+                col_rows = db_manager.execute_query(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                    (self.daily_table,)
+                )
+                existing_cols = {r['COLUMN_NAME'] for r in col_rows} if col_rows else set()
+            except Exception:
+                existing_cols = set()
+
+            # ── Workbook ─────────────────────────────────────────────────────
+            wb = Workbook()
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 1 – Daily Cash Count  (matches date-range DCC format)
+            # ════════════════════════════════════════════════════════════════
+            def _write_dcc_sheet(ws):
+                """Write the Daily Cash Count sheet in the same vertical layout as the
+                date-range Daily Cash Count report (fields in rows, branches in columns)."""
+
+                # ── Styles matching date range report ────────────────────────
+                title_font_dcc   = Font(bold=True, size=14)
+                header_font_dcc  = Font(bold=True, size=9, color="FFFFFF")
+                date_fill_dcc    = PatternFill("solid", fgColor="9B59B6")
+                debit_fill_c     = PatternFill("solid", fgColor="27AE60")
+                credit_fill_c    = PatternFill("solid", fgColor="E74C3C")
+                summary_fill_c   = PatternFill("solid", fgColor="F39C12")
+                total_fill_c     = PatternFill("solid", fgColor="E2EFDA")
+                grand_total_fill = PatternFill("solid", fgColor="D5A6BD")
+                info_fill_dcc    = PatternFill("solid", fgColor="E8F4F8")
+                thin_s           = Side(style='thin')
+                bdr              = Border(left=thin_s, right=thin_s, top=thin_s, bottom=thin_s)
+
+                # PC field lists (same as date range report)
+                salary_fields     = ['pc_salary']
+                pc_fields_no_sal  = [
+                    'pc_inc_emp', 'pc_inc_motor', 'pc_inc_suki_card', 'pc_inc_insurance',
+                    'pc_inc_mc', 'pc_rental', 'pc_electric', 'pc_water', 'pc_internet',
+                    'pc_lbc_jrs_jnt', 'pc_permits_bir_payments',
+                    'pc_supplies_xerox_maintenance', 'pc_transpo'
+                ]
+
+                # ── Title & info ─────────────────────────────────────────────
+                ws['A1'] = f"{brand_label} - Daily Cash Count Report"
+                ws['A1'].font = title_font_dcc
+
+                ws['A3'] = f"{filter_label}:";  ws['B3'] = filter_value
+                ws['A4'] = "Date:";             ws['B4'] = selected_date
+                ws['A3'].font = Font(bold=True)
+                ws['A4'].font = Font(bold=True)
+
+                # ── Determine available columns ──────────────────────────────
+                tbl_cols = _get_table_cols(self.daily_table)
+                d_cols = [c for c in self.debit_fields.values()
+                          if not tbl_cols or c in tbl_cols]
+                c_cols = [c for c in self.credit_fields.values()
+                          if not tbl_cols or c in tbl_cols]
+
+                # ── Build SELECT with lotes columns ──────────────────────────
+                sel_parts = ["dr.branch",
+                             "COALESCE(dr.`beginning_balance`, 0) AS `beginning_balance`"]
+                for col in d_cols:
+                    sel_parts.append(f"COALESCE(dr.`{col}`, 0) AS `{col}`")
+                    lc = f"{col}_lotes"
+                    sel_parts.append(
+                        f"COALESCE(dr.`{lc}`, 0) AS `{lc}`"
+                        if (not tbl_cols or lc in tbl_cols) else f"0 AS `{lc}`"
+                    )
+                sel_parts.append("COALESCE(dr.`debit_total`, 0) AS `debit_total`")
+                for col in c_cols:
+                    sel_parts.append(f"COALESCE(dr.`{col}`, 0) AS `{col}`")
+                    lc = f"{col}_lotes"
+                    sel_parts.append(
+                        f"COALESCE(dr.`{lc}`, 0) AS `{lc}`"
+                        if (not tbl_cols or lc in tbl_cols) else f"0 AS `{lc}`"
+                    )
+                sel_parts.append("COALESCE(dr.`credit_total`, 0) AS `credit_total`")
+                sel_parts += [
+                    "COALESCE(dr.`ending_balance`, 0) AS `ending_balance`",
+                    "COALESCE(dr.`cash_count`, 0) AS `cash_count`",
+                    "COALESCE(dr.`cash_result`, 0) AS `cash_result`",
+                ]
+                for sf in salary_fields + pc_fields_no_sal:
+                    sel_parts.append(
+                        f"COALESCE(dr.`{sf}`, 0) AS `{sf}`"
+                        if (not tbl_cols or sf in tbl_cols) else f"0 AS `{sf}`"
+                    )
+                sel_clause = ", ".join(sel_parts)
+
+                try:
+                    if filter_type == "os":
+                        sql = (
+                            f"SELECT {sel_clause} FROM `{self.daily_table}` dr "
+                            "INNER JOIN branches b "
+                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                            "AND b.os_name = %s "
+                            "WHERE dr.date = %s ORDER BY dr.branch"
+                        )
+                        rows = db_manager.execute_query(sql, (filter_value, selected_date)) or []
+                    else:
+                        sql = (
+                            f"SELECT {sel_clause} FROM `{self.daily_table}` dr "
+                            "WHERE dr.corporation = %s AND dr.date = %s "
+                            "ORDER BY dr.branch"
+                        )
+                        rows = db_manager.execute_query(sql, (filter_value, selected_date)) or []
+                except Exception as ex:
+                    ws.cell(row=8, column=1, value=f"Error loading data: {ex}")
+                    return
+
+                # ── Aggregate by branch ──────────────────────────────────────
+                branch_totals = {}
+                branches_list = []
+                for row_data in rows:
+                    bn = row_data.get('branch', 'Unknown')
+                    if bn not in branch_totals:
+                        branch_totals[bn] = {}
+                        branches_list.append(bn)
+                    for col in (['beginning_balance'] + d_cols +
+                                ['debit_total'] + c_cols +
+                                ['credit_total', 'ending_balance', 'cash_count', 'cash_result']):
+                        branch_totals[bn][col] = (
+                            branch_totals[bn].get(col, 0.0) + float(row_data.get(col, 0) or 0)
+                        )
+                    for col in d_cols + c_cols:
+                        lc = f"{col}_lotes"
+                        branch_totals[bn][lc] = (
+                            branch_totals[bn].get(lc, 0) + int(row_data.get(lc, 0) or 0)
+                        )
+                    for sf in salary_fields:
+                        branch_totals[bn]['salary'] = (
+                            branch_totals[bn].get('salary', 0.0) + float(row_data.get(sf, 0) or 0)
+                        )
+                    for sf in pc_fields_no_sal:
+                        branch_totals[bn]['total_pc'] = (
+                            branch_totals[bn].get('total_pc', 0.0) + float(row_data.get(sf, 0) or 0)
+                        )
+                branches_sorted = sorted(branches_list)
+
+                # ── Header row 6: "Field" | Branch names (merged 2 cols) | TOTAL ──
+                HDR = 6
+                cell = ws.cell(row=HDR, column=1, value="Field")
+                cell.font = header_font_dcc; cell.fill = date_fill_dcc
+                cell.border = bdr; cell.alignment = Alignment(horizontal='center', wrap_text=True)
+
+                col_idx = 2
+                for bn in branches_sorted:
+                    ws.merge_cells(start_row=HDR, start_column=col_idx,
+                                   end_row=HDR, end_column=col_idx + 1)
+                    cell = ws.cell(row=HDR, column=col_idx, value=bn)
+                    cell.font = header_font_dcc
+                    cell.fill = PatternFill("solid", fgColor="4472C4")
+                    cell.border = bdr
+                    cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                    col_idx += 2
+
+                ws.merge_cells(start_row=HDR, start_column=col_idx,
+                               end_row=HDR, end_column=col_idx + 1)
+                cell = ws.cell(row=HDR, column=col_idx, value="TOTAL")
+                cell.font = header_font_dcc; cell.fill = grand_total_fill
+                cell.border = bdr; cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                total_col_start = col_idx
+
+                # ── Sub-header row 7: Lotes / Amount per branch ──────────────
+                SHDR = HDR + 1
+                cell = ws.cell(row=SHDR, column=1, value="")
+                cell.font = header_font_dcc; cell.fill = date_fill_dcc; cell.border = bdr
+
+                col_idx = 2
+                for bn in branches_sorted:
+                    for sub_lbl in ("Lotes", "Amount"):
+                        cell = ws.cell(row=SHDR, column=col_idx, value=sub_lbl)
+                        cell.font = Font(bold=True, size=8, color="FFFFFF")
+                        cell.fill = PatternFill("solid", fgColor="4472C4")
+                        cell.border = bdr
+                        cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                        col_idx += 1
+
+                for sub_lbl in ("Lotes", "Amount"):
+                    cell = ws.cell(row=SHDR, column=col_idx, value=sub_lbl)
+                    cell.font = Font(bold=True, size=8, color="FFFFFF")
+                    cell.fill = grand_total_fill
+                    cell.border = bdr
+                    cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                    col_idx += 1
+
+                # ── Helper: write one data row ───────────────────────────────
+                current_row = SHDR + 1
+
+                def _dcc_row(label, db_col, show_lotes=False,
+                             row_font=None, row_fill=None, row_val_font=None):
+                    """Write a single data row; returns (total_lotes, total_amount)."""
+                    nonlocal current_row
+                    c = ws.cell(row=current_row, column=1, value=label)
+                    c.border = bdr
+                    if row_font:
+                        c.font = row_font
+                    if row_fill:
+                        c.fill = row_fill
+
+                    tot_lotes, tot_amt = 0, 0.0
+                    ci = 2
+                    for bn in branches_sorted:
+                        bt = branch_totals.get(bn, {})
+                        lotes_val = int(bt.get(f"{db_col}_lotes", 0)) if show_lotes else ""
+                        amt_val   = float(bt.get(db_col, 0))
+
+                        lc = ws.cell(row=current_row, column=ci, value=lotes_val)
+                        lc.border = bdr; lc.alignment = Alignment(horizontal='center')
+                        ci += 1
+
+                        ac = ws.cell(row=current_row, column=ci, value=amt_val)
+                        ac.number_format = '#,##0.00'
+                        ac.border = bdr; ac.alignment = Alignment(horizontal='right')
+                        if row_val_font:
+                            ac.font = row_val_font
+                        ci += 1
+
+                        if show_lotes:
+                            tot_lotes += lotes_val
+                        tot_amt += amt_val
+
+                    # Total Lotes
+                    tlc = ws.cell(row=current_row, column=total_col_start,
+                                  value=tot_lotes if show_lotes else "")
+                    tlc.border = bdr; tlc.alignment = Alignment(horizontal='center')
+                    tlc.fill = total_fill_c
+
+                    # Total Amount
+                    tac = ws.cell(row=current_row, column=total_col_start + 1, value=tot_amt)
+                    tac.number_format = '#,##0.00'
+                    tac.border = bdr; tac.alignment = Alignment(horizontal='right')
+                    tac.fill = total_fill_c
+                    if row_val_font:
+                        tac.font = row_val_font
+                    elif row_font:
+                        tac.font = row_font
+
+                    current_row += 1
+                    return tot_lotes, tot_amt
+
+                def _dcc_section_header(label, fill):
+                    nonlocal current_row
+                    c = ws.cell(row=current_row, column=1, value=label)
+                    c.font = Font(bold=True, color="FFFFFF")
+                    c.fill = fill; c.border = bdr
+                    current_row += 1
+
+                # ── Beginning Balance ────────────────────────────────────────
+                _dcc_row("Beginning Balance", "beginning_balance",
+                         row_font=Font(bold=True), row_fill=info_fill_dcc)
+
+                # ── CASH RECEIPT (DEBIT) ─────────────────────────────────────
+                _dcc_section_header("CASH RECEIPT (DEBIT)", debit_fill_c)
+                for lbl, db_col in self.debit_fields.items():
+                    if db_col in d_cols:
+                        _dcc_row(lbl, db_col, show_lotes=True)
+                _dcc_row("Total Cash Receipt", "debit_total",
+                         row_font=Font(bold=True), row_fill=info_fill_dcc)
+                current_row += 1   # blank separator row
+
+                # ── CASH OUT (CREDIT) ────────────────────────────────────────
+                _dcc_section_header("CASH OUT (CREDIT)", credit_fill_c)
+                for lbl, db_col in self.credit_fields.items():
+                    _dcc_row(lbl, db_col, show_lotes=True)
+                _dcc_row("Total Cash Out", "credit_total",
+                         row_font=Font(bold=True), row_fill=info_fill_dcc)
+                current_row += 1   # blank separator row
+
+                # ── SUMMARY ──────────────────────────────────────────────────
+                _dcc_section_header("SUMMARY", summary_fill_c)
+                for lbl, db_col in [("Ending Balance", "ending_balance"),
+                                     ("Cash Count",     "cash_count"),
+                                     ("Variance",       "cash_result")]:
+                    _dcc_row(lbl, db_col)
+
+                # ── SALARY & Total PC ────────────────────────────────────────
+                _dcc_row("SALARY",   "salary",   row_font=Font(bold=True), row_fill=info_fill_dcc,
+                         row_val_font=Font(bold=True, color="9B59B6"))
+                _dcc_row("Total PC", "total_pc", row_font=Font(bold=True), row_fill=info_fill_dcc,
+                         row_val_font=Font(bold=True, color="9B59B6"))
+
+                # ── Column widths ────────────────────────────────────────────
+                ws.column_dimensions['A'].width = 25
+                ci = 2
+                for _ in branches_sorted:
+                    ws.column_dimensions[get_column_letter(ci)].width = 10      # Lotes
+                    ws.column_dimensions[get_column_letter(ci + 1)].width = 12  # Amount
+                    ci += 2
+                ws.column_dimensions[get_column_letter(total_col_start)].width = 10
+                ws.column_dimensions[get_column_letter(total_col_start + 1)].width = 12
+                ws.freeze_panes = 'B8'
+
+            ws1 = wb.active
+            ws1.title = "Daily Cash Count"
+            _write_dcc_sheet(ws1)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 2 – Palawan
+            # ════════════════════════════════════════════════════════════════
+            ws2 = wb.create_sheet(title="Palawan")
+            palawan_groups = [
+                ("PALAWAN SEND OUT", [
+                    ("S.O. Lotes",  ["palawan_send_out_lotes"], True),
+                    ("S.O. Amount", ["palawan_send_out"],       False),
+                    ("S.C.",        ["palawan_sc"],             False),
+                ]),
+                ("PALAWAN PAY OUT", [
+                    ("P.O. Lotes",     ["palawan_pay_out_lotes"],            True),
+                    ("P.O. Amount",    ["palawan_pay_out"],                  False),
+                    ("Inc. Lotes",     ["palawan_pay_out_incentives_lotes"], True),
+                    ("Inc. Amount",    ["palawan_pay_out_incentives"],       False),
+                ]),
+            ]
+            _write_grouped_sheet(ws2, palawan_groups, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 3 – MC
+            # ════════════════════════════════════════════════════════════════
+            ws3 = wb.create_sheet(title="MC")
+            mc_groups = [
+                ("MC IN (SELLING)", [
+                    ("Lotes",  ["mc_in_lotes"], True),
+                    ("Amount", ["mc_in"],       False),
+                ]),
+                ("MC OUT (BUYING)", [
+                    ("Lotes",  ["mc_out_lotes"], True),
+                    ("Amount", ["mc_out"],       False),
+                ]),
+            ]
+            _write_grouped_sheet(ws3, mc_groups, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 4 – Fund Transfer  (matches standalone Fund Transfer export)
+            # ════════════════════════════════════════════════════════════════
+            def _write_ft_sheet(ws):
+                """Write Fund Transfer sheet with the same layout as the standalone
+                Fund Transfer export: area header rows, branch rows, area totals,
+                extra-space row, spacer, grand total."""
+
+                # ── Styles ───────────────────────────────────────────────────
+                title_font_ft    = Font(bold=True, size=16)
+                subtitle_font_ft = Font(bold=True, size=12)
+                date_font_ft     = Font(size=11)
+                header_font_ft   = Font(bold=True, size=11, color="FFFFFF")
+                header_fill_ft   = PatternFill("solid", fgColor="4472C4")
+                area_hdr_fill    = PatternFill("solid", fgColor="D4EDDA")
+                area_hdr_font    = Font(bold=True, size=11)
+                total_fill_ft    = PatternFill("solid", fgColor="E9ECEF")
+                total_font_ft    = Font(bold=True)
+                es_fill_ft       = PatternFill("solid", fgColor="FFF8E1")
+                es_font_ft       = Font(bold=True)
+                gt_fill_ft       = PatternFill("solid", fgColor="4472C4")
+                gt_font_ft       = Font(bold=True, size=12, color="FFFFFF")
+                thin_ft          = Side(style='thin')
+                bdr_ft           = Border(left=thin_ft, right=thin_ft,
+                                          top=thin_ft,  bottom=thin_ft)
+
+                COL_LETTERS = ['A','B','C','D','E','F','G','H','I','J','K','L']
+
+                # ── Title / info rows ────────────────────────────────────────
+                ws.merge_cells('A1:L1')
+                ws['A1'] = "FUND TRANSFER"
+                ws['A1'].font = title_font_ft
+                ws['A1'].alignment = Alignment(horizontal='left', vertical='center')
+                ws.row_dimensions[1].height = 20
+
+                ws.merge_cells('A2:L2')
+                ws['A2'] = f"{filter_label.upper()} {filter_value.upper()}"
+                ws['A2'].font = subtitle_font_ft
+                ws['A2'].alignment = Alignment(horizontal='left', vertical='center')
+
+                ws.merge_cells('A3:L3')
+                try:
+                    import datetime as _dtft2
+                    _dobj = _dtft2.datetime.strptime(str(selected_date), '%Y-%m-%d')
+                    _fdate = _dobj.strftime('%A, %B %d, %Y')
+                except Exception:
+                    _fdate = str(selected_date)
+                ws['A3'] = _fdate
+                ws['A3'].font = date_font_ft
+                ws['A3'].alignment = Alignment(horizontal='left', vertical='center')
+
+                # Row 5: Column headers
+                hdr_vals = ['AREA', '#', 'CORPORATION', 'LOB', 'GLOBAL', 'SUNDAY',
+                            'Branch Name', 'Invty', 'CASH FLOAT', 'CASH COUNT',
+                            'BR to HO', 'BR to BR']
+                for cl, hval in zip(COL_LETTERS, hdr_vals):
+                    c = ws[f'{cl}5']
+                    c.value = hval
+                    c.font = header_font_ft; c.fill = header_fill_ft
+                    c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                    c.border = bdr_ft
+
+                # Row 6: Sub-headers (blue; only K/L have text)
+                for cl in COL_LETTERS:
+                    c = ws[f'{cl}6']
+                    c.value = ('BR to HO' if cl == 'K' else
+                               'BR to BR' if cl == 'L' else '')
+                    c.font = header_font_ft; c.fill = header_fill_ft
+                    c.alignment = Alignment(horizontal='center', vertical='center')
+                    c.border = bdr_ft
+
+                # ── Column availability ──────────────────────────────────────
+                tbl_cols = _get_table_cols(self.daily_table)
+                def _col(name):
+                    return name if (not tbl_cols or name in tbl_cols) else None
+
+                cc_col  = _col('cash_count')
+
+                def _expr(col):
+                    return (f"COALESCE(SUM(dr.`{col}`), 0)" if col else "0")
+
+                sel_ft = (
+                    "dr.branch AS branch, "
+                    "COALESCE(b.area, 'UNASSIGNED') AS area, "
+                    "COALESCE(MAX(c.name), '') AS corporation_name, "
+                    "COALESCE(b.line_of_business, '') AS line_of_business, "
+                    "COALESCE(b.global_tag, '') AS global_tag, "
+                    "COALESCE(b.sunday, '') AS sunday, "
+                    f"{_expr(cc_col)}  AS cash_count, "
+                    "COALESCE(SUM(cf.cash_float), 0) AS cash_float"
+                )
+                join_c  = ("LEFT JOIN corporations c "
+                           "ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)")
+                join_cf = ("LEFT JOIN cash_float_tbl cf "
+                           "ON cf.branch COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                           "AND cf.date = dr.date")
+                grp     = ("GROUP BY dr.branch, b.area, b.line_of_business, b.global_tag, b.sunday "
+                           "ORDER BY COALESCE(b.area, 'ZZZZZ'), dr.branch")
+
+                try:
+                    if filter_type == "os":
+                        sql_ft = (
+                            f"SELECT {sel_ft} FROM `{self.daily_table}` dr "
+                            "INNER JOIN branches b "
+                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                            "AND b.os_name = %s "
+                            f"{join_c} {join_cf} "
+                            f"WHERE dr.date = %s {grp}"
+                        )
+                        ft_rows = db_manager.execute_query(
+                            sql_ft, (filter_value, selected_date)) or []
+                    else:
+                        sql_ft = (
+                            f"SELECT {sel_ft} FROM `{self.daily_table}` dr "
+                            "LEFT JOIN branches b "
+                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                            f"{join_c} {join_cf} "
+                            f"WHERE dr.corporation = %s AND dr.date = %s {grp}"
+                        )
+                        ft_rows = db_manager.execute_query(
+                            sql_ft, (filter_value, selected_date)) or []
+                except Exception as ex:
+                    ws['A7'] = f"Error loading fund transfer data: {ex}"
+                    return
+
+                # Extra space value
+                try:
+                    _es = db_manager.execute_query(
+                        "SELECT amount FROM extra_space_fund_transfer WHERE report_date = %s",
+                        (selected_date,))
+                    extra_space_val = float(_es[0].get('amount', 0) or 0) if _es else 0.0
+                except Exception:
+                    extra_space_val = 0.0
+
+                # ── Group by area ────────────────────────────────────────────
+                from collections import OrderedDict as _OD2
+                area_groups = _OD2()
+                for rd in ft_rows:
+                    area_groups.setdefault(rd.get('area') or 'UNASSIGNED', []).append(rd)
+
+                # ── Write data rows ──────────────────────────────────────────
+                excel_row   = 7
+                grand_total = 0.0
+                branch_num  = 1
+
+                for area_name, area_branches in area_groups.items():
+                    # Area header (merged, green)
+                    ws.merge_cells(f'A{excel_row}:L{excel_row}')
+                    c = ws[f'A{excel_row}']
+                    c.value = f"{area_name} AREA"
+                    c.fill = area_hdr_fill; c.font = area_hdr_font
+                    c.alignment = Alignment(horizontal='center', vertical='center')
+                    c.border = bdr_ft
+                    for cl in ['B','C','D','E','F','G','H','I','J','K','L']:
+                        ws[f'{cl}{excel_row}'].fill  = area_hdr_fill
+                        ws[f'{cl}{excel_row}'].border = bdr_ft
+                    excel_row += 1
+
+                    area_cc = 0.0
+                    for rd in area_branches:
+                        sunday = rd.get('sunday', '') or ''
+                        if sunday == 'NO':
+                            sunday = 'NO SUNDAY'
+                        cash_count = float(rd.get('cash_count', 0) or 0)
+                        cash_float = float(rd.get('cash_float', 0) or 0)
+
+                        row_vals = [
+                            (rd.get('area', '') or '',        'center', None),
+                            (branch_num,                       'center', None),
+                            (rd.get('corporation_name','')or '','center', None),
+                            (rd.get('line_of_business','')or '','center', None),
+                            (rd.get('global_tag', '') or '',   'center', None),
+                            (sunday,                           'center', None),
+                            (rd.get('branch', ''),             'left',   None),
+                            ('',                               'center', None),
+                            (cash_float if cash_float else '', 'center', '#,##0.00'),
+                            (cash_count,                       'right',  '#,##0.00'),
+                            ('',                               'right',  None),
+                            ('',                               'right',  None),
+                        ]
+                        for ci, (val, align, nfmt) in enumerate(row_vals, 1):
+                            c = ws.cell(row=excel_row, column=ci, value=val)
+                            c.alignment = Alignment(horizontal=align)
+                            c.border = bdr_ft
+                            if nfmt and isinstance(val, float):
+                                c.number_format = nfmt
+
+                        area_cc     += cash_count
+                        grand_total += cash_count
+                        branch_num  += 1
+                        excel_row   += 1
+
+                    # Area total row (grey)
+                    for ci in range(1, 13):
+                        c = ws.cell(row=excel_row, column=ci)
+                        c.fill = total_fill_ft; c.font = total_font_ft; c.border = bdr_ft
+                        if ci == 7:
+                            c.value = f"TOTAL {area_name}"
+                            c.alignment = Alignment(horizontal='right')
+                        elif ci == 10:
+                            c.value = area_cc
+                            c.number_format = '#,##0.00'
+                            c.alignment = Alignment(horizontal='right')
+                        else:
+                            c.value = ''; c.alignment = Alignment(horizontal='center')
+                    excel_row += 1
+
+                # Extra space row (yellow)
+                for ci in range(1, 13):
+                    c = ws.cell(row=excel_row, column=ci)
+                    c.fill = es_fill_ft; c.font = es_font_ft; c.border = bdr_ft
+                    if ci == 7:
+                        c.value = "EXTRA SPACE"
+                        c.alignment = Alignment(horizontal='center')
+                    elif ci == 10:
+                        if extra_space_val:
+                            c.value = extra_space_val
+                            c.number_format = '#,##0.00'
+                        c.alignment = Alignment(horizontal='right')
+                    else:
+                        c.value = ''; c.alignment = Alignment(horizontal='center')
+                excel_row += 1
+
+                # Spacer row
+                for ci in range(1, 13):
+                    ws.cell(row=excel_row, column=ci).border = bdr_ft
+                excel_row += 1
+
+                # Grand total row (blue, white font)
+                for ci in range(1, 13):
+                    c = ws.cell(row=excel_row, column=ci)
+                    c.fill = gt_fill_ft; c.font = gt_font_ft; c.border = bdr_ft
+                    if ci == 7:
+                        c.value = "GRAND TOTAL"
+                        c.alignment = Alignment(horizontal='right')
+                    elif ci == 10:
+                        c.value = grand_total
+                        c.number_format = '#,##0.00'
+                        c.alignment = Alignment(horizontal='right')
+                    else:
+                        c.value = ''; c.alignment = Alignment(horizontal='center')
+
+                # ── Column widths ────────────────────────────────────────────
+                ws.column_dimensions['A'].width = 18
+                ws.column_dimensions['B'].width = 5
+                ws.column_dimensions['C'].width = 18
+                ws.column_dimensions['D'].width = 12
+                ws.column_dimensions['E'].width = 12
+                ws.column_dimensions['F'].width = 12
+                ws.column_dimensions['G'].width = 20
+                ws.column_dimensions['H'].width = 12
+                ws.column_dimensions['I'].width = 15
+                ws.column_dimensions['J'].width = 15
+                ws.column_dimensions['K'].width = 12
+                ws.column_dimensions['L'].width = 12
+                ws.freeze_panes = 'A7'
+
+            ws4 = wb.create_sheet(title="Fund Transfer")
+            _write_ft_sheet(ws4)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 5 – Payable (Palawan Reconciliation)
+            # ════════════════════════════════════════════════════════════════
+            ws5 = wb.create_sheet(title="Payable")
+            payable_groups = [
+                ("SEND OUT", [
+                    ("S.O. Lotes",   ["palawan_sendout_lotes_total"],  True),
+                    ("S.O. Capital", ["palawan_sendout_principal"],    False),
+                    ("S.O. SC",      ["palawan_sendout_sc"],           False),
+                    ("S.O. Comm.",   ["palawan_sendout_commission"],   False),
+                    ("S.O. Total",   ["palawan_sendout_regular_total"],False),
+                ]),
+                ("PAY OUT", [
+                    ("P.O. Lotes",   ["palawan_payout_lotes_total"],  True),
+                    ("P.O. Capital", ["palawan_payout_principal"],    False),
+                    ("P.O. SC",      ["palawan_payout_sc"],           False),
+                    ("P.O. Comm.",   ["palawan_payout_commission"],   False),
+                    ("P.O. Total",   ["palawan_payout_regular_total"],False),
+                ]),
+                ("INTERNATIONAL", [
+                    ("Int. Lotes",   ["palawan_international_lotes_total"],  True),
+                    ("Int. Capital", ["palawan_international_principal"],    False),
+                    ("Int. SC",      ["palawan_international_sc"],           False),
+                    ("Int. Comm.",   ["palawan_international_commission"],   False),
+                    ("Int. Total",   ["palawan_international_regular_total"],False),
+                ]),
+                ("OTHER", [
+                    ("SKID",       ["palawan_suki_discounts"],     False),
+                    ("SKIR",       ["palawan_suki_rebates"],       False),
+                    ("Cancel",     ["palawan_cancel"],             False),
+                    ("P.O. Inc.",  ["palawan_pay_out_incentives"], False),
+                ]),
+            ]
+            _write_grouped_sheet(ws5, payable_groups, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 6 – Daily Transaction
+            # ════════════════════════════════════════════════════════════════
+            ws6 = wb.create_sheet(title="Daily Transaction")
+            _write_grouped_sheet(ws6, DT_COLUMN_GROUPS, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 7 – Other Services
+            # ════════════════════════════════════════════════════════════════
+            ws7 = wb.create_sheet(title="Other Services")
+            _write_grouped_sheet(ws7, OTHER_SERVICES_COLUMN_GROUPS, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 8 – P&L
+            # ════════════════════════════════════════════════════════════════
+            ws8 = wb.create_sheet(title="P&L")
+            _write_grouped_sheet(ws8, PL_COLUMN_GROUPS, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 9 – New Sanla
+            # ════════════════════════════════════════════════════════════════
+            ws9 = wb.create_sheet(title="New Sanla")
+            sanla_groups = [
+                ("JEWELRY EMPENO", [
+                    ("Lotes",   ["empeno_jew_new_lotes"], True),
+                    ("Capital", ["empeno_jew_new"],       False),
+                ]),
+                ("STORAGE EMPENO", [
+                    ("Lotes",   ["empeno_sto_new_lotes"], True),
+                    ("Capital", ["empeno_sto_new"],       False),
+                ]),
+            ]
+            _write_grouped_sheet(ws9, sanla_groups, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 10 – New Renew
+            # ════════════════════════════════════════════════════════════════
+            ws10 = wb.create_sheet(title="New Renew")
+            renew_groups = [
+                ("JEWELRY", [
+                    ("JEW NEW Lotes",   ["empeno_jew_new_lotes"],           True),
+                    ("JEW NEW Capital", ["empeno_jew_new"],                 False),
+                    ("JEW RENEW Lotes", ["empeno_jew_renew_lotes"],         True),
+                    ("JEW RENEW Cap.",  ["empeno_jew_renew"],               False),
+                ]),
+                ("STORAGE", [
+                    ("STO NEW Lotes",   ["empeno_sto_new_lotes"],           True),
+                    ("STO NEW Capital", ["empeno_sto_new"],                 False),
+                    ("STO RENEW Lotes", ["fund_empeno_sto_renew_lotes"],    True),
+                    ("STO RENEW Cap.",  ["fund_empeno_sto_renew"],          False),
+                ]),
+            ]
+            _write_grouped_sheet(ws10, renew_groups, self.daily_table)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 11 – Global Other Services
+            # ════════════════════════════════════════════════════════════════
+            ws11 = wb.create_sheet(title="Global Other Services")
+            gos_groups = [
+                ("GCASH OUT",        [("Lotes", ["gcash_out_lotes"],        True),  ("Capital", ["gcash_out"],        False)]),
+                ("MONEYGRAM",        [("Lotes", ["moneygram_lotes"],        True),  ("Capital", ["moneygram"],        False)]),
+                ("TRANSFAST",        [("Lotes", ["transfast_lotes"],        True),  ("Capital", ["transfast"],        False)]),
+                ("RIA",              [("Lotes", ["ria_lotes"],              True),  ("Capital", ["ria"],              False)]),
+                ("SMART MONEY OUT",  [("Lotes", ["smart_money_out_lotes"],  True),  ("Capital", ["smart_money_out"],  False)]),
+                ("GCASH PADALA",     [("Lotes", ["gcash_padala_lotes"],     True),  ("Capital", ["gcash_padala"],     False)]),
+                ("ABRA OUT",         [("Lotes", ["abra_out_lotes"],         True),  ("Capital", ["abra_out"],         False)]),
+                ("REMITLY",          [("Lotes", ["remitly_lotes"],          True),  ("Capital", ["remitly"],          False)]),
+                ("PAL PAY CASH OUT", [("Lotes", ["pal_pay_cash_out_lotes"], True),  ("Capital", ["pal_pay_cash_out"], False)]),
+                ("MC OUT",           [("Lotes", ["mc_out_lotes"],           True),  ("Capital", ["mc_out"],           False)]),
+            ]
+            _write_grouped_sheet(ws11, gos_groups, "global_other_services_tbl", use_branch_join=True)
+
+            # ════════════════════════════════════════════════════════════════
+            # Sheet 12 – FT HO
+            # ════════════════════════════════════════════════════════════════
+            ws12 = wb.create_sheet(title="FT HO")
+            ft_ho_groups = [
+                ("FUND TRANSFER HO", [
+                    ("FT From Branch", ["fund_transfer_from_branch"],    False),
+                    ("FT To HO",       ["fund_transfer_to_head_office"], False),
+                    ("FT To Branch",   ["fund_transfer_to_branch"],      False),
+                ]),
+            ]
+            _write_grouped_sheet(ws12, ft_ho_groups, self.daily_table)
+
+            # ── Save ─────────────────────────────────────────────────────────
+            wb.save(file_path)
+            dialog.accept()
+            QMessageBox.information(
+                self, "Export Successful",
+                f"Full Brand Report exported to:\n{file_path}\n\n"
+                f"{filter_label}: {filter_value}\n"
+                f"Date: {selected_date}\n"
+                f"Sheets generated: {len(wb.sheetnames)}"
+            )
+
+        except Exception as e:
+            import traceback
+            QMessageBox.critical(
+                self, "Export Error",
+                f"Error exporting: {str(e)}\n\n{traceback.format_exc()[:600]}"
+            )
 
     def load_entry_by_date(self):
         filter_type = self.filter_type_selector.currentData()
