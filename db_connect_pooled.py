@@ -28,14 +28,6 @@ class DatabaseManagerPooled:
             self.start_idle_monitor()
 
     def setup_logging(self):
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            handlers=[
-                logging.FileHandler("database.log"),
-                logging.StreamHandler()
-            ]
-        )
         self.logger = logging.getLogger("DatabaseManagerPooled")
 
     def connect(self):
@@ -50,11 +42,12 @@ class DatabaseManagerPooled:
             self.engine = create_engine(
                 connection_string,
                 poolclass=pool.QueuePool,
-                pool_size=2,           
-                max_overflow=3,        
-                pool_recycle=1800,     
-                pool_pre_ping=True,     
-                echo=False,           
+                pool_size=int(os.environ.get("ORS_POOL_SIZE",    "50")),   # 50 persistent connections
+                max_overflow=int(os.environ.get("ORS_POOL_OVERFLOW", "150")),  # +150 burst connections (200 total)
+                pool_timeout=int(os.environ.get("ORS_POOL_TIMEOUT",  "30")),  # wait up to 30s for a slot
+                pool_recycle=1800,
+                pool_pre_ping=True,
+                echo=False,
                 connect_args={
                     'connect_timeout': 5,
                     'read_timeout': 30,
@@ -126,6 +119,8 @@ class DatabaseManagerPooled:
         def monitor():
             while True:
                 time.sleep(30) 
+                if self.idle_timeout <= 0:
+                    continue  # idle disconnect disabled
                 with self.lock:
                     if (
                         self.engine
@@ -321,13 +316,207 @@ class DatabaseManagerPooled:
 db_manager = DatabaseManagerPooled()
 
 
-if __name__ == "__main__":
-    print("Testing database connection pool...")
-    if db_manager.test_connection():
-        print("Database connection pool OK")
-        
-        result = db_manager.execute_query("SELECT DATABASE() as db_name")
-        if result:
-            print(f"Connected to database: {result[0]['db_name']}")
-    else:
-        print("Database connection pool FAILED")
+# ── Remote (API-mode) database manager ───────────────────────────────────────
+# When API_MODE is enabled in config, db_manager is replaced with this class.
+# It has the EXACT same interface as DatabaseManagerPooled so no other code
+# in the project needs to change at all.
+
+class RemoteDatabaseManager:
+    """
+    Drop-in replacement for DatabaseManagerPooled that routes all queries
+    through the ORS API server (api_server.py) instead of connecting to
+    MySQL directly.
+
+    Usage: set API_MODE=True in your api_config.py (see below).
+    The app automatically uses this class instead of DatabaseManagerPooled.
+    """
+
+    def __init__(self, api_url: str, api_key: str):
+        import logging
+        import requests as _req
+
+        self._api_url = api_url.rstrip("/")
+        self._api_key = api_key
+        self._token   = None
+        self._session = _req.Session()
+        self._session.headers.update({"Content-Type": "application/json"})
+        self.logger   = logging.getLogger("RemoteDatabaseManager")
+
+    # ── Token management ──────────────────────────────────────────────────
+
+    def _refresh_token(self):
+        import requests as _req
+        try:
+            resp = self._session.post(
+                f"{self._api_url}/api/token",
+                json={"api_key": self._api_key},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                self._token = resp.json()["token"]
+                self._session.headers["Authorization"] = f"Bearer {self._token}"
+                return True
+            self.logger.error(f"Token refresh failed: {resp.status_code} {resp.text}")
+            return False
+        except Exception as e:
+            self.logger.error(f"Token refresh error: {e}")
+            return False
+
+    def _ensure_token(self) -> bool:
+        if self._token:
+            return True
+        return self._refresh_token()
+
+    def _call(self, endpoint: str, sql: str, params=None):
+        """POST to endpoint, auto-refresh token on 401."""
+        if not self._ensure_token():
+            return None, Exception("Could not obtain API token")
+
+        payload = {"sql": sql}
+        if params is not None:
+            payload["params"] = list(params)
+
+        for attempt in range(2):
+            try:
+                resp = self._session.post(
+                    f"{self._api_url}{endpoint}",
+                    json=payload,
+                    timeout=30,
+                )
+                if resp.status_code == 401 and attempt == 0:
+                    # Token expired — refresh and retry once
+                    self._token = None
+                    self._refresh_token()
+                    continue
+                return resp, None
+            except Exception as e:
+                return None, e
+
+        return None, Exception("API call failed after retry")
+
+    # ── Public interface (mirrors DatabaseManagerPooled) ──────────────────
+
+    def _json_or_error(self, resp):
+        """Safely decode JSON; raises ValueError with status info on failure."""
+        import time as _time
+        if resp.status_code == 429:
+            # Rate-limited — wait and signal caller to retry
+            raise _RateLimitError(resp)
+        try:
+            return resp.json(), None
+        except Exception as e:
+            return None, Exception(
+                f"Non-JSON response (HTTP {resp.status_code}): {resp.text[:200]}"
+            )
+
+    def execute_query(self, query: str, params=None):
+        import time as _time
+        for attempt in range(3):
+            resp, err = self._call("/api/exec", query, params)
+            if err:
+                self.logger.error(f"execute_query error: {err}")
+                return None
+            try:
+                data, decode_err = self._json_or_error(resp)
+            except _RateLimitError:
+                wait = 2 * (attempt + 1)
+                self.logger.warning(f"Rate limited (429) — retrying in {wait}s")
+                _time.sleep(wait)
+                continue
+            if decode_err:
+                self.logger.error(str(decode_err))
+                return None
+            if data.get("error"):
+                self.logger.error(f"Server error: {data['error']}")
+                return None
+            return data.get("result")
+        self.logger.error("execute_query: still rate-limited after 3 attempts")
+        return None
+
+    def execute_query_with_exception(self, query: str, params=None):
+        import time as _time
+        for attempt in range(3):
+            resp, err = self._call("/api/exec_safe", query, params)
+            if err:
+                return None, err
+            try:
+                data, decode_err = self._json_or_error(resp)
+            except _RateLimitError:
+                wait = 2 * (attempt + 1)
+                self.logger.warning(f"Rate limited (429) — retrying in {wait}s")
+                _time.sleep(wait)
+                continue
+            if decode_err:
+                return None, decode_err
+            if data.get("exec_error"):
+                # Reconstruct a minimal exception with error code for deadlock detection
+                exc = Exception(data["exec_error"])
+                code = data.get("error_code")
+                if code is not None:
+                    exc.args = (code, data["exec_error"])
+                return None, exc
+        return data.get("result"), None
+
+    def test_connection(self) -> bool:
+        try:
+            import requests as _req
+            resp = _req.get(f"{self._api_url}/api/health", timeout=5)
+            return resp.status_code == 200 and resp.json().get("db") is True
+        except Exception:
+            return False
+
+    def execute_cached_query(self, query: str, params_tuple=None):
+        return self.execute_query(query, params_tuple)
+
+    def clear_cache(self):
+        pass  # no local cache in remote mode
+
+    def execute_many(self, query: str, params_list, chunk_size: int = 100):
+        # Send in chunks to avoid oversized payloads
+        total = 0
+        for i in range(0, len(params_list), chunk_size):
+            chunk = params_list[i:i + chunk_size]
+            for p in chunk:
+                result = self.execute_query(query, p)
+                if isinstance(result, int):
+                    total += result
+        return total
+
+    def get_connection_status(self) -> dict:
+        connected = self.test_connection()
+        return {"connected": connected, "mode": "remote_api", "api_url": self._api_url}
+
+    def shutdown(self):
+        self._session.close()
+
+
+class _RateLimitError(Exception):
+    """Raised internally when the server returns HTTP 429."""
+    def __init__(self, resp):
+        self.resp = resp
+        super().__init__("HTTP 429 rate limited")
+
+
+# ── Auto-select local vs remote db_manager ───────────────────────────────────
+# Create api_config.py in the project root to enable API mode:
+#
+#   API_MODE    = True
+#   API_URL     = "http://192.168.1.100:5000"   # your server's IP
+#   API_KEY     = "ORS-API-KEY-CHANGE-ME-12345" # must match api_server.py
+#
+# When API_MODE = False (or api_config.py is missing), the app connects to
+# MySQL directly as before — no behaviour change.
+
+try:
+    import api_config as _api_cfg
+    if getattr(_api_cfg, "API_MODE", False):
+        db_manager = RemoteDatabaseManager(
+            api_url=_api_cfg.API_URL,
+            api_key=_api_cfg.API_KEY,
+        )
+        import logging as _log
+        _log.getLogger("RemoteDatabaseManager").info(
+            f"API mode enabled — connecting via {_api_cfg.API_URL}"
+        )
+except ImportError:
+    pass  # no api_config.py — stay in direct-DB mode (default)

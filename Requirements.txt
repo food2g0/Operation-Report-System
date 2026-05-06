@@ -30,6 +30,7 @@ requests==2.31.0
 packaging==23.2
 
 # REST API Server dependencies
-Flask==3.0.0
-Flask-CORS==4.0.0
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
 PyJWT==2.12.1
+redis==5.2.1

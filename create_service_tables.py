@@ -72,8 +72,77 @@ TABLES = {
 
             -- INSURANCE
             insurance_20                DECIMAL(15,2) DEFAULT 0,
+            insurance_philam_30         DECIMAL(15,2) DEFAULT 0,
             insurance_philam_60         DECIMAL(15,2) DEFAULT 0,
             insurance_philam_90         DECIMAL(15,2) DEFAULT 0,
+
+            -- PALAWAN
+            palawan_send_out            DECIMAL(15,2) DEFAULT 0,
+            palawan_send_out_lotes      SMALLINT      DEFAULT 0,
+            palawan_sc                  DECIMAL(15,2) DEFAULT 0,
+            palawan_sc_lotes            SMALLINT      DEFAULT 0,
+            palawan_pay_out             DECIMAL(15,2) DEFAULT 0,
+            palawan_pay_out_lotes       SMALLINT      DEFAULT 0,
+            palawan_pay_out_incentives       DECIMAL(15,2) DEFAULT 0,
+            palawan_pay_out_incentives_lotes SMALLINT      DEFAULT 0,
+
+            -- EC PAY
+            ecbills                     DECIMAL(15,2) DEFAULT 0,
+            ecload                      DECIMAL(15,2) DEFAULT 0,
+            eccash                      DECIMAL(15,2) DEFAULT 0,
+            eccash_out                  DECIMAL(15,2) DEFAULT 0,
+
+            -- GCASH
+            gcash_in                    DECIMAL(15,2) DEFAULT 0,
+            gcash_in_lotes              SMALLINT      DEFAULT 0,
+            gcash_out                   DECIMAL(15,2) DEFAULT 0,
+            gcash_out_lotes             SMALLINT      DEFAULT 0,
+
+            -- TRANSFAST
+            transfast                   DECIMAL(15,2) DEFAULT 0,
+            transfast_lotes             SMALLINT      DEFAULT 0,
+
+            -- RIA
+            ria_out                     DECIMAL(15,2) DEFAULT 0,
+            ria_out_lotes               SMALLINT      DEFAULT 0,
+
+            -- I2I
+            i2i_remittance_in           DECIMAL(15,2) DEFAULT 0,
+            i2i_remittance_in_lotes     SMALLINT      DEFAULT 0,
+            i2i_bills_payment           DECIMAL(15,2) DEFAULT 0,
+            i2i_bills_payment_lotes     SMALLINT      DEFAULT 0,
+            i2i_instapay                DECIMAL(15,2) DEFAULT 0,
+            i2i_instapay_lotes          SMALLINT      DEFAULT 0,
+
+            -- SENDAH
+            sendah_load_sc              DECIMAL(15,2) DEFAULT 0,
+            sendah_load_sc_lotes        SMALLINT      DEFAULT 0,
+            sendah_bills_sc             DECIMAL(15,2) DEFAULT 0,
+            sendah_bills_sc_lotes       SMALLINT      DEFAULT 0,
+
+            -- PAYMAYA
+            paymaya_in                  DECIMAL(15,2) DEFAULT 0,
+            paymaya_in_lotes            SMALLINT      DEFAULT 0,
+
+            -- SMART MONEY
+            smart_money_sc              DECIMAL(15,2) DEFAULT 0,
+            smart_money_sc_lotes        SMALLINT      DEFAULT 0,
+            smart_money_po              DECIMAL(15,2) DEFAULT 0,
+            smart_money_po_lotes        SMALLINT      DEFAULT 0,
+
+            -- GCASH PADALA
+            gcash_padala_sendah         DECIMAL(15,2) DEFAULT 0,
+            gcash_padala_sendah_lotes   SMALLINT      DEFAULT 0,
+
+            -- PAL PAY IN / OUT
+            palawan_pay_cash_in_sc      DECIMAL(15,2) DEFAULT 0,
+            palawan_pay_cash_in_sc_lotes SMALLINT     DEFAULT 0,
+            palawan_pay_cash_out        DECIMAL(15,2) DEFAULT 0,
+            palawan_pay_cash_out_lotes  SMALLINT      DEFAULT 0,
+
+            -- REMITLY
+            remitly                     DECIMAL(15,2) DEFAULT 0,
+            remitly_lotes               SMALLINT      DEFAULT 0,
 
             created_at                  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_dt_brand_a (date, branch, corporation)
@@ -95,6 +164,12 @@ TABLES = {
             palawan_sc_lotes                SMALLINT      DEFAULT 0,
             palawan_pay_out                 DECIMAL(15,2) DEFAULT 0,
             palawan_pay_out_lotes           SMALLINT      DEFAULT 0,
+            sendah_load_sc                  DECIMAL(15,2) DEFAULT 0,
+            sendah_load_sc_lotes            SMALLINT      DEFAULT 0,
+            smart_money_sc                  DECIMAL(15,2) DEFAULT 0,
+            smart_money_sc_lotes            SMALLINT      DEFAULT 0,
+            smart_money_po                  DECIMAL(15,2) DEFAULT 0,
+            smart_money_po_lotes            SMALLINT      DEFAULT 0,
             palawan_pay_out_incentives      DECIMAL(15,2) DEFAULT 0,
             palawan_pay_out_incentives_lotes SMALLINT     DEFAULT 0,
             palawan_pay_cash_in_sc          DECIMAL(15,2) DEFAULT 0,
@@ -104,17 +179,6 @@ TABLES = {
             palawan_pay_cash_out            DECIMAL(15,2) DEFAULT 0,
             palawan_pay_cash_out_lotes      SMALLINT      DEFAULT 0,
             palawan_suki_card               DECIMAL(15,2) DEFAULT 0,
-            palawan_pay_cash_out_sc         DECIMAL(15,2) DEFAULT 0,
-
-            sendah_load_sc                  DECIMAL(15,2) DEFAULT 0,
-            sendah_load_sc_lotes            SMALLINT      DEFAULT 0,
-            sendah_bills_sc                 DECIMAL(15,2) DEFAULT 0,
-            sendah_bills_sc_lotes           SMALLINT      DEFAULT 0,
-
-            smart_money_sc                  DECIMAL(15,2) DEFAULT 0,
-            smart_money_sc_lotes            SMALLINT      DEFAULT 0,
-            smart_money_po                  DECIMAL(15,2) DEFAULT 0,
-            smart_money_po_lotes            SMALLINT      DEFAULT 0,
 
             gcash_in                        DECIMAL(15,2) DEFAULT 0,
             gcash_in_lotes                  SMALLINT      DEFAULT 0,
@@ -125,10 +189,7 @@ TABLES = {
 
             abra_so_sc                      DECIMAL(15,2) DEFAULT 0,
             abra_po                         DECIMAL(15,2) DEFAULT 0,
-            bdo_sc                          DECIMAL(15,2) DEFAULT 0,
-            bdo_po                          DECIMAL(15,2) DEFAULT 0,
-            ayanah_sc                       DECIMAL(15,2) DEFAULT 0,
-            ayanah_out                      DECIMAL(15,2) DEFAULT 0,
+            gprs_in                         DECIMAL(15,2) DEFAULT 0,
 
             remitly                         DECIMAL(15,2) DEFAULT 0,
             remitly_lotes                   SMALLINT      DEFAULT 0,
@@ -138,22 +199,27 @@ TABLES = {
             ria_in_sc                       DECIMAL(15,2) DEFAULT 0,
             ria_in_sc_lotes                 SMALLINT      DEFAULT 0,
             ria_out                         DECIMAL(15,2) DEFAULT 0,
+            bdo_sc                          DECIMAL(15,2) DEFAULT 0,
+            bdo_po                          DECIMAL(15,2) DEFAULT 0,
             transfast                       DECIMAL(15,2) DEFAULT 0,
             transfast_lotes                 SMALLINT      DEFAULT 0,
-            moneygram                       DECIMAL(15,2) DEFAULT 0,
-            moneygram_lotes                 SMALLINT      DEFAULT 0,
+            banko_in                        DECIMAL(15,2) DEFAULT 0,
+            banko_out                       DECIMAL(15,2) DEFAULT 0,
+
+            sendah_bills_sc                 DECIMAL(15,2) DEFAULT 0,
+            sendah_bills_sc_lotes           SMALLINT      DEFAULT 0,
+            eccash_out                      DECIMAL(15,2) DEFAULT 0,
 
             i2i_remittance_in               DECIMAL(15,2) DEFAULT 0,
             i2i_remittance_in_lotes         SMALLINT      DEFAULT 0,
-            i2i_remittance_out              DECIMAL(15,2) DEFAULT 0,
             i2i_bills_payment               DECIMAL(15,2) DEFAULT 0,
             i2i_bills_payment_lotes         SMALLINT      DEFAULT 0,
             i2i_bank_transfer               DECIMAL(15,2) DEFAULT 0,
             i2i_pesonet                     DECIMAL(15,2) DEFAULT 0,
             i2i_instapay                    DECIMAL(15,2) DEFAULT 0,
             i2i_instapay_lotes              SMALLINT      DEFAULT 0,
-
-            fixco                           DECIMAL(15,2) DEFAULT 0,
+            truemoney_out                   DECIMAL(15,2) DEFAULT 0,
+            i2i_remittance_out              DECIMAL(15,2) DEFAULT 0,
 
             created_at                      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_os_brand_a (date, branch, corporation)
@@ -179,6 +245,7 @@ TABLES = {
             habol_renew_tubos               DECIMAL(15,2) DEFAULT 0,
             habol_rt_interest_stamp         DECIMAL(15,2) DEFAULT 0,
             storage_ai                      DECIMAL(15,2) DEFAULT 0,
+
             osf_storage                     DECIMAL(15,2) DEFAULT 0,
             cr_storage_int_penalty          DECIMAL(15,2) DEFAULT 0,
             silver_ai                       DECIMAL(15,2) DEFAULT 0,
@@ -188,13 +255,6 @@ TABLES = {
             osf_motor                       DECIMAL(15,2) DEFAULT 0,
             penalty_motor                   DECIMAL(15,2) DEFAULT 0,
             miscellaneous_fee               DECIMAL(15,2) DEFAULT 0,
-
-            -- Rebates / discounts
-            palawan_suki_discounts          DECIMAL(15,2) DEFAULT 0,
-            palawan_suki_rebates            DECIMAL(15,2) DEFAULT 0,
-            storage_rebates                 DECIMAL(15,2) DEFAULT 0,
-            silver_rebates                  DECIMAL(15,2) DEFAULT 0,
-            palawan_suki_card               DECIMAL(15,2) DEFAULT 0,
 
             -- PC / Expenses
             pc_transpo                      DECIMAL(15,2) DEFAULT 0,
@@ -211,6 +271,13 @@ TABLES = {
             pc_rental                       DECIMAL(15,2) DEFAULT 0,
             pc_permits_bir_payments         DECIMAL(15,2) DEFAULT 0,
             pc_lbc_jrs_jnt                  DECIMAL(15,2) DEFAULT 0,
+
+            -- Rebates / discounts
+            palawan_suki_discounts          DECIMAL(15,2) DEFAULT 0,
+            palawan_suki_rebates            DECIMAL(15,2) DEFAULT 0,
+            storage_rebates                 DECIMAL(15,2) DEFAULT 0,
+            silver_rebates                  DECIMAL(15,2) DEFAULT 0,
+            palawan_suki_card               DECIMAL(15,2) DEFAULT 0,
 
             created_at                      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE KEY uq_pl_brand_a (date, branch, corporation)
