@@ -1,7 +1,10 @@
 
+import logging
 import socket
 import time
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from PyQt5.QtCore import Qt, QTimer, QObject
 from PyQt5.QtGui import QColor, QFont
@@ -51,7 +54,7 @@ class PingMonitor(QObject):
         self._session_id = self._create_session()
 
         self._timer.start(_PING_INTERVAL_MS)
-        print(f"[PingMonitor] Started for {username} ({role})")
+        logger.info("PingMonitor started for %s (%s)", username, role)
 
     def stop(self):
         """Call on logout or window close."""
@@ -60,7 +63,7 @@ class PingMonitor(QObject):
 
         if self._session_id:
             self._close_session()
-            print(f"[PingMonitor] Stopped for {self._username}")
+            logger.info("PingMonitor stopped for %s", self._username)
 
         self._username = None
         self._role = None
@@ -88,7 +91,7 @@ class PingMonitor(QObject):
                  details or None)
             )
         except Exception as e:
-            print(f"[PingMonitor] log_event failed: {e}")
+            logger.error("PingMonitor log_event failed: %s", e)
 
     def _ensure_activity_table(self, db):
         if self._activity_table_ok or not db:
@@ -109,7 +112,7 @@ class PingMonitor(QObject):
             """)
             self._activity_table_ok = True
         except Exception as e:
-            print(f"[PingMonitor] activity_log table create failed: {e}")
+            logger.error("PingMonitor activity_log table create failed: %s", e)
 
     def _create_session(self):
         """Close any stale open sessions, then INSERT a new session row and return its id."""
@@ -134,7 +137,7 @@ class PingMonitor(QObject):
             if result:
                 return result[0]['id']
         except Exception as e:
-            print(f"[PingMonitor] Session create failed: {e}")
+            logger.error("PingMonitor session create failed: %s", e)
         return None
 
     def _do_ping(self):
@@ -145,7 +148,7 @@ class PingMonitor(QObject):
             self._db.execute_query("SELECT 1")
             ping_ms = int((time.perf_counter() - t0) * 1000)
         except Exception as e:
-            print(f"[PingMonitor] DB ping failed: {e}")
+            logger.error("PingMonitor DB ping failed: %s", e)
             ping_ms = -1
 
         try:
@@ -155,7 +158,7 @@ class PingMonitor(QObject):
                 (now, ping_ms, self._session_id)
             )
         except Exception as e:
-            print(f"[PingMonitor] Ping update failed: {e}")
+            logger.error("PingMonitor ping update failed: %s", e)
 
     def _close_session(self):
         if not self._db or not self._session_id:
@@ -167,7 +170,7 @@ class PingMonitor(QObject):
                 (now, self._session_id)
             )
         except Exception as e:
-            print(f"[PingMonitor] Session close failed: {e}")
+            logger.error("PingMonitor session close failed: %s", e)
 
     def _auto_purge(self):
         """Delete previous-day rows every hour, no login required."""
@@ -178,13 +181,13 @@ class PingMonitor(QObject):
                 "DELETE FROM user_ping_logs WHERE login_time < CURDATE()"
             )
         except Exception as e:
-            print(f"[PingMonitor] Auto-purge (ping) failed: {e}")
+            logger.error("PingMonitor auto-purge (ping) failed: %s", e)
         try:
             self._db.execute_query(
                 "DELETE FROM activity_log WHERE event_time < NOW() - INTERVAL 1 HOUR"
             )
         except Exception as e:
-            print(f"[PingMonitor] Auto-purge (activity) failed: {e}")
+            logger.error("PingMonitor auto-purge (activity) failed: %s", e)
 
     def _ensure_table(self):
         if not self._db:
@@ -208,7 +211,7 @@ class PingMonitor(QObject):
             self._migrate_table()
             self._auto_purge()
         except Exception as e:
-            print(f"[PingMonitor] Table create failed: {e}")
+            logger.error("PingMonitor table create failed: %s", e)
 
     def _migrate_table(self):
         """Drop and recreate the table if it still has the old schema."""
@@ -239,9 +242,9 @@ class PingMonitor(QObject):
                         INDEX idx_upl_user_login (username, login_time)
                     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
                 """)
-                print("[PingMonitor] Table migrated to new schema.")
+                logger.info("PingMonitor table migrated to new schema.")
         except Exception as e:
-            print(f"[PingMonitor] Migration failed: {e}")
+            logger.error("PingMonitor migration failed: %s", e)
 
     @staticmethod
     def _get_hostname() -> str:

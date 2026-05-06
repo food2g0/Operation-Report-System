@@ -13,11 +13,8 @@ from PyQt5.QtCore import Qt
 from Client.ui_scaling import _sz
 
 
-try:
-    from db_connect_pooled import db_manager
-    _DB_AVAILABLE = True
-except ImportError:
-    _DB_AVAILABLE = False
+# db_manager is NOT created here — it is passed in from the dashboard (self.parent.db_manager)
+# to avoid creating a second token and connection at module import time.
 
 
 import sys as _sys
@@ -39,9 +36,8 @@ _field_config_cache_time = 0
 _CACHE_TTL = 300 
 
 
-def _load_field_config_from_db() -> dict:
-    
-    if not _DB_AVAILABLE:
+def _load_field_config_from_db(db_manager=None) -> dict:
+    if db_manager is None:
         return None
     try:
         result = db_manager.execute_query(
@@ -54,7 +50,7 @@ def _load_field_config_from_db() -> dict:
     return None
 
 
-def _load_field_config() -> dict:
+def _load_field_config(db_manager=None) -> dict:
 
     global _field_config_cache, _field_config_cache_time
     import time
@@ -65,7 +61,7 @@ def _load_field_config() -> dict:
         return _field_config_cache
     
 
-    db_cfg = _load_field_config_from_db()
+    db_cfg = _load_field_config_from_db(db_manager)
     if db_cfg:
 
         for brand in ("Brand A", "Brand B"):
@@ -531,7 +527,7 @@ class CashFlowTab(QWidget):
 
     def get_debit_fields(self):
       
-        cfg = _load_field_config()
+        cfg = _load_field_config(getattr(self.parent, 'db_manager', None))
         entries = cfg.get(self.brand_name, {}).get("debit", [])
         if entries:
             return [(e[0], e[1] if len(e) >= 2 else f"Enter {e[0]}") for e in entries]
@@ -540,7 +536,7 @@ class CashFlowTab(QWidget):
 
     def get_credit_fields(self):
    
-        cfg = _load_field_config()
+        cfg = _load_field_config(getattr(self.parent, 'db_manager', None))
         entries = cfg.get(self.brand_name, {}).get("credit", [])
         if entries:
             return [(e[0], e[1] if len(e) >= 2 else f"Enter {e[0]}") for e in entries]
@@ -851,7 +847,7 @@ class CashFlowTab(QWidget):
 
     def _build_column_mapping(self) -> dict:
   
-        cfg = _load_field_config()
+        cfg = _load_field_config(getattr(self.parent, 'db_manager', None))
         brand_cfg = cfg.get(self.brand_name, {})
         mapping = {}
         for section in ("debit", "credit"):
@@ -884,7 +880,10 @@ class CashFlowTab(QWidget):
             db_column = self.field_name_to_db_column(k)
             debit_values[db_column] = value
             lotes_text = self.debit_lotes_inputs[k].text().strip()
-            debit_values[db_column + "_lotes"] = int(lotes_text) if lotes_text else 0
+            try:
+                debit_values[db_column + "_lotes"] = int(float(lotes_text)) if lotes_text else 0
+            except (ValueError, TypeError):
+                debit_values[db_column + "_lotes"] = 0
 
         credit_values = {}
         for k, v in self.credit_inputs.items():
@@ -893,7 +892,10 @@ class CashFlowTab(QWidget):
             db_column = self.field_name_to_db_column(k)
             credit_values[db_column] = value
             lotes_text = self.credit_lotes_inputs[k].text().strip()
-            credit_values[db_column + "_lotes"] = int(lotes_text) if lotes_text else 0
+            try:
+                credit_values[db_column + "_lotes"] = int(float(lotes_text)) if lotes_text else 0
+            except (ValueError, TypeError):
+                credit_values[db_column + "_lotes"] = 0
 
         return {'debit': debit_values, 'credit': credit_values}
 

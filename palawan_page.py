@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from db_worker import run_query_async
 from date_range_widget import DateRangeWidget
 import datetime
@@ -72,8 +72,8 @@ class PalawanPage(QWidget):
 
         # Table
         self.table = QTableWidget()
-        self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Branch", "Palawan In", "Lotes In", "Palawan Out", "Lotes Out", "Total"])
+        self.table.setColumnCount(5)
+        self.table.setHorizontalHeaderLabels(["Branch", "Palawan In", "Lotes In", "Palawan Out", "Lotes Out"])
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         header = self.table.horizontalHeader()
@@ -180,19 +180,16 @@ class PalawanPage(QWidget):
                 return
 
         try:
-            # Build date clause
+            # Build date clause - always use SUM + GROUP BY to handle duplicate branch rows in branches table
             if is_range:
                 date_clause = "dr.date >= %s AND dr.date <= %s"
                 date_params = [date_start, date_end]
-                agg_prefix = "SUM("
-                agg_suffix = ")"
-                group_by = " GROUP BY b.name"
             else:
                 date_clause = "dr.date = %s"
                 date_params = [date_start]
-                agg_prefix = ""
-                agg_suffix = ""
-                group_by = ""
+            agg_prefix = "SUM("
+            agg_suffix = ")"
+            group_by = " GROUP BY b.name"
 
             # Build query based on filter type and registration filter
             select_cols = f"""
@@ -230,7 +227,7 @@ class PalawanPage(QWidget):
                     {group_by}
                     ORDER BY b.name
                 """
-                params = date_params + [filter_value, filter_value, filter_value]
+                params = [filter_value] + date_params + [filter_value, filter_value]
             else:
                 # Filter by OS - show all branches in the OS group
                 if reg_filter == "registered":
@@ -294,9 +291,8 @@ class PalawanPage(QWidget):
             # Calculate Palawan In and Out
             palawan_in = palawan_send_out + palawan_sc
             palawan_out = palawan_pay_out + palawan_incentives
-            lotes_in = palawan_send_out_lotes + palawan_sc_lotes
+            lotes_in = palawan_send_out_lotes
             lotes_out = palawan_pay_out_lotes + palawan_incentives_lotes
-            total = palawan_in + palawan_out
 
             # Add row to table
             self.table.insertRow(row_count)
@@ -305,7 +301,6 @@ class PalawanPage(QWidget):
             self.table.setItem(row_count, 2, QTableWidgetItem(str(lotes_in)))
             self.table.setItem(row_count, 3, QTableWidgetItem(f"{palawan_out:.2f}"))
             self.table.setItem(row_count, 4, QTableWidgetItem(str(lotes_out)))
-            self.table.setItem(row_count, 5, QTableWidgetItem(f"{total:.2f}"))
 
             total_in += palawan_in
             total_out += palawan_out
@@ -326,7 +321,6 @@ class PalawanPage(QWidget):
             QTableWidgetItem(str(total_lotes_in)),
             QTableWidgetItem(f"{total_out:.2f}"),
             QTableWidgetItem(str(total_lotes_out)),
-            QTableWidgetItem(f"{(total_in + total_out):.2f}")
         ]
 
         for col, item in enumerate(items):

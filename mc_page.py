@@ -6,10 +6,13 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from db_worker import run_query_async
 from date_range_widget import DateRangeWidget
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class MCPage(QWidget):
@@ -141,7 +144,7 @@ class MCPage(QWidget):
                     name = r['os_name'] if isinstance(r, dict) else r[0]
                     self.group_selector.addItem(name)
         except Exception as e:
-            print(f"Error loading groups: {e}")
+            logger.error("Error loading groups: %s", e)
         finally:
             self.group_selector.blockSignals(False)
 
@@ -181,13 +184,14 @@ class MCPage(QWidget):
             else:
                 query = f"""
                     SELECT b.name as branch,
-                           COALESCE(dr.mc_out, 0) as mc_buying,
-                           COALESCE(dr.mc_in, 0) as mc_selling
+                           SUM(COALESCE(dr.mc_out, 0)) as mc_buying,
+                           SUM(COALESCE(dr.mc_in, 0)) as mc_selling
                     FROM branches b
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
                         AND dr.date = %s
                     WHERE b.os_name = %s
                       {reg_clause}
+                    GROUP BY b.name
                     ORDER BY b.name
                 """
                 params = (date_start, group)
@@ -215,14 +219,15 @@ class MCPage(QWidget):
             else:
                 query = f"""
                     SELECT b.name as branch,
-                           COALESCE(dr.mc_out, 0) as mc_buying,
-                           COALESCE(dr.mc_in, 0) as mc_selling
+                           SUM(COALESCE(dr.mc_out, 0)) as mc_buying,
+                           SUM(COALESCE(dr.mc_in, 0)) as mc_selling
                     FROM branches b
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
                         AND dr.corporation = %s
                         AND dr.date = %s
                     WHERE b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
                        OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s)
+                    GROUP BY b.name
                     ORDER BY b.name
                 """
                 params = (corp, date_start, corp, corp)

@@ -2,14 +2,17 @@ from PyQt5.QtWidgets import (
     QWidget, QLabel, QVBoxLayout, QHBoxLayout, QGroupBox, QFormLayout,
     QLineEdit, QComboBox, QPushButton, QMessageBox, QDateEdit, QStackedWidget,
     QScrollArea, QFrame, QFileDialog, QDialog, QTableWidget, QTableWidgetItem, QHeaderView,
-    QApplication, QSizePolicy, QCheckBox
+    QApplication, QSizePolicy, QCheckBox, QGridLayout
 )
 from PyQt5.QtGui import QDoubleValidator, QFont, QIntValidator
 from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from security import SessionManager
 import json
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 import sys
 
 from palawan_page import PalawanPage
@@ -26,6 +29,7 @@ from new_sanla_page import NewSanlaPage
 from new_renew_page import NewRenewPage
 from global_other_services_page import GlobalOtherServicesPage
 from ft_ho_page import FTHOPage
+from depo_br_page import DepoBRPage
 from review_summary_page import ReviewSummaryPage
 
 
@@ -156,7 +160,13 @@ class AdminDashboard(QWidget):
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
             """)
         except Exception as e:
-            print(f"[AdminDashboard] review table create: {e}")
+            logger.error("[AdminDashboard] review table create: %s", e)
+
+        # Drop legacy payable_brand_a table — replaced by payable_tbl_brand_a
+        try:
+            self.db.execute_query("DROP TABLE IF EXISTS payable_brand_a")
+        except Exception as e:
+            logger.error("[AdminDashboard] payable_brand_a table drop: %s", e)
 
         # Add any columns to daily_reports_brand_a that may be missing on older DB installs
         _migrations = [
@@ -168,6 +178,10 @@ class AdminDashboard(QWidget):
             ("daily_reports_brand_a", "habol_rt_interest_stamp_lotes", "INT DEFAULT 0"),
             ("daily_reports_brand_a", "transfast",                     "DECIMAL(15,2) DEFAULT 0.00"),
             ("daily_reports_brand_a", "transfast_lotes",               "INT DEFAULT 0"),
+            # lotes columns for payable_tbl_brand_a (added for PalawanPayableContainer)
+            ("payable_tbl_brand_a",   "sendout_lotes",                 "INT DEFAULT 0"),
+            ("payable_tbl_brand_a",   "payout_lotes",                  "INT DEFAULT 0"),
+            ("payable_tbl_brand_a",   "international_lotes",           "INT DEFAULT 0"),
         ]
         for table, col, typedef in _migrations:
             try:
@@ -197,7 +211,7 @@ class AdminDashboard(QWidget):
                     cfg[brand].setdefault("credit", [])
                 return cfg
         except Exception as e:
-            print(f"[AdminDashboard] Failed to load config from DB: {e}")
+            logger.error("[AdminDashboard] Failed to load config from DB: %s", e)
 
         try:
             if getattr(sys, 'frozen', False):
@@ -211,10 +225,10 @@ class AdminDashboard(QWidget):
                 with open(config_path, 'r', encoding='utf-8') as f:
                     return json.load(f)
             else:
-                print(f"field_config.json not found at {config_path}")
+                logger.warning("field_config.json not found at %s", config_path)
                 return None
         except Exception as e:
-            print(f"Error loading field_config.json: {e}")
+            logger.error("Error loading field_config.json: %s", e)
             return None
 
     def setup_styles(self):
@@ -593,14 +607,15 @@ class AdminDashboard(QWidget):
         self.new_renew_btn = QPushButton("New & Renew")
         self.global_os_btn = QPushButton("Global Other Services")
         self.ft_ho_btn = QPushButton("FT HO")
+        self.depo_br_btn = QPushButton("DEPO BR")
         self.admin_btn = QPushButton("User Management")
         self.review_summary_btn = QPushButton("Review Summary")
 
 
         for btn in [self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn,
                     self.fund_btn, self.payable_btn, self.global_payable_btn, self.report_btn, self.daily_txn_btn,
-                    self.new_sanla_btn, self.new_renew_btn, self.global_os_btn, self.ft_ho_btn, self.admin_btn,
-                    self.review_summary_btn]:
+                    self.new_sanla_btn, self.new_renew_btn, self.global_os_btn, self.ft_ho_btn, self.depo_br_btn,
+                    self.admin_btn, self.review_summary_btn]:
             btn.setCheckable(True)
         self.daily_btn.setChecked(True) 
 
@@ -609,7 +624,8 @@ class AdminDashboard(QWidget):
             self.nav_buttons = [
                 self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn,
                 self.fund_btn, self.payable_btn, self.daily_txn_btn, self.new_sanla_btn,
-                self.new_renew_btn, self.global_os_btn, self.ft_ho_btn, self.review_summary_btn, self.admin_btn
+                self.new_renew_btn, self.global_os_btn, self.ft_ho_btn, self.depo_br_btn,
+                self.review_summary_btn, self.admin_btn
             ]
         else:
      
@@ -643,8 +659,9 @@ class AdminDashboard(QWidget):
             self._add_lazy(8, lambda: NewRenewPage(), 'new_renew_widget')
             self._add_lazy(9, lambda: GlobalOtherServicesPage(), 'global_os_widget')
             self._add_lazy(10, lambda: FTHOPage(account_type=self.account_type), 'ft_ho_widget')
-            self._add_lazy(11, lambda: ReviewSummaryPage(account_type=self.account_type), 'review_summary_widget')
-            self._add_lazy(12, lambda: UserManagementPage(), 'admin_widget')
+            self._add_lazy(11, lambda: DepoBRPage(account_type=self.account_type), 'depo_br_widget')
+            self._add_lazy(12, lambda: ReviewSummaryPage(account_type=self.account_type), 'review_summary_widget')
+            self._add_lazy(13, lambda: UserManagementPage(), 'admin_widget')
         else:
       
             self.stack.addWidget(self.daily_cash_widget)         
@@ -674,8 +691,9 @@ class AdminDashboard(QWidget):
             self.new_renew_btn.clicked.connect(lambda: self.switch_view(8, self.new_renew_btn))
             self.global_os_btn.clicked.connect(lambda: self.switch_view(9, self.global_os_btn))
             self.ft_ho_btn.clicked.connect(lambda: self.switch_view(10, self.ft_ho_btn))
-            self.review_summary_btn.clicked.connect(lambda: self.switch_view(11, self.review_summary_btn))
-            self.admin_btn.clicked.connect(lambda: self.switch_view(12, self.admin_btn))
+            self.depo_br_btn.clicked.connect(lambda: self.switch_view(11, self.depo_br_btn))
+            self.review_summary_btn.clicked.connect(lambda: self.switch_view(12, self.review_summary_btn))
+            self.admin_btn.clicked.connect(lambda: self.switch_view(13, self.admin_btn))
         else:
 
             self.daily_btn.clicked.connect(lambda: self.switch_view(0, self.daily_btn))
@@ -1234,7 +1252,7 @@ class AdminDashboard(QWidget):
         cash_label = QLabel("Cash Count:")
         cash_label.setProperty("class", "important")
         self.cash_count_input = self.create_money_input()
-        self.cash_count_input.setReadOnly(True)
+        self.cash_count_input.setReadOnly(False)
 
 
         result_label = QLabel("⚖️ Short/Over:")
@@ -1306,20 +1324,7 @@ class AdminDashboard(QWidget):
         export_button.clicked.connect(self.export_daily_cash_to_excel)
         
 
-        date_range_button = QPushButton("Date Range Report")
-        date_range_button.setObjectName("dateRangeReportButton")
-        date_range_button.setStyleSheet("""
-            QPushButton {
-                background-color: #8E44AD;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #7D3C98;
-            }
-        """)
-        date_range_button.clicked.connect(self.show_date_range_report_dialog)
-
-        full_brand_btn = QPushButton("Full Brand Report")
+        full_brand_btn = QPushButton("Generate Report")
         full_brand_btn.setObjectName("fullBrandReportButton")
         full_brand_btn.setStyleSheet("""
             QPushButton {
@@ -1335,10 +1340,23 @@ class AdminDashboard(QWidget):
         action_layout.addWidget(save_button)
         action_layout.addWidget(reset_button)
         action_layout.addWidget(export_button)
-        action_layout.addWidget(date_range_button)
         action_layout.addWidget(full_brand_btn)
         layout.addLayout(action_layout)
 
+        # ── Palawan Details collapsible ─────────────────────────────────────
+        self.palawan_inputs = {}
+        self.palawan_total_displays = {}
+        palawan_collapsible = self._build_palawan_collapsible()
+        layout.addWidget(palawan_collapsible)
+
+
+        # ── Live recalculation: connect every editable input ──────────────────
+        for inp in self.debit_inputs.values():
+            inp.textChanged.connect(self._recalc_totals)
+        for inp in self.credit_inputs.values():
+            inp.textChanged.connect(self._recalc_totals)
+        self.beginning_balance_input.textChanged.connect(self._recalc_totals)
+        self.cash_count_input.textChanged.connect(self._recalc_totals)
 
         container = QWidget()
         container_layout = QVBoxLayout(container)
@@ -1366,6 +1384,266 @@ class AdminDashboard(QWidget):
         field.setReadOnly(bool(read_only))
         return field
 
+    # ── Palawan Details collapsible ───────────────────────────────────────────
+    def _build_palawan_collapsible(self):
+        """Build a collapsible Palawan Details section for the Daily Cash Count tab."""
+        brand_label = "" if self.account_type == 1 else ""
+        self.palawan_inputs = {}   # {db_col: QLineEdit}
+        self.palawan_total_displays = {}  # {section: QLineEdit (read-only)}
+
+        # Outer wrapper
+        wrapper = QFrame()
+        wrapper.setStyleSheet(
+            "QFrame { border: 1px solid #BAE6FD; border-radius: 8px; "
+            "background-color: #F0F9FF; margin-top: 4px; }"
+        )
+        wrapper_layout = QVBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(0)
+
+        # Toggle button
+        toggle_btn = QPushButton(f"▶  Palawan Details {brand_label}")
+        toggle_btn.setCheckable(True)
+        toggle_btn.setChecked(False)
+        toggle_btn.setStyleSheet("""
+            QPushButton {
+                text-align: left; padding: 10px 14px;
+                font-weight: 700; font-size: 13px;
+                color: #0369A1; background-color: #E0F2FE;
+                border: none; border-radius: 8px;
+            }
+            QPushButton:checked {
+                background-color: #BAE6FD; border-bottom-left-radius: 0; border-bottom-right-radius: 0;
+            }
+            QPushButton:hover { background-color: #BAE6FD; }
+        """)
+        wrapper_layout.addWidget(toggle_btn)
+
+        # Content area (hidden by default)
+        content = QFrame()
+        content.setVisible(False)
+        content.setStyleSheet(
+            "QFrame { background-color: #FFFFFF; border: none; "
+            "border-top: 1px solid #BAE6FD; border-radius: 0; }"
+        )
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(12, 12, 12, 12)
+        content_layout.setSpacing(10)
+
+        # ── Section builder ──
+        def _make_section(title, section_key, color):
+            box = QGroupBox(title)
+            box.setStyleSheet(f"""
+                QGroupBox {{
+                    border: 1px solid #E2E8F0; border-radius: 6px;
+                    margin-top: 20px; padding: 16px 14px 14px 14px;
+                    background-color: #FFFFFF;
+                }}
+                QGroupBox::title {{
+                    color: {color}; font-weight: 800; font-size: 12px;
+                    padding: 1px 8px; background-color: #FFFFFF;
+                }}
+            """)
+            form = QFormLayout()
+            form.setSpacing(8)
+            form.setContentsMargins(12, 20, 12, 12)
+
+            for sub_label, db_col in [
+                ("Principal", f"palawan_{section_key}_principal"),
+                ("SC",        f"palawan_{section_key}_sc"),
+                ("Commission",f"palawan_{section_key}_commission"),
+            ]:
+                inp = QLineEdit()
+                inp.setValidator(QDoubleValidator(0.0, 1e12, 2))
+                inp.setPlaceholderText("0.00")
+                self.palawan_inputs[db_col] = inp
+                lbl = QLabel(sub_label + ":")
+                lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #334155;")
+                form.addRow(lbl, inp)
+
+            # Lotes
+            lotes_col = f"palawan_{section_key}_lotes_total"
+            lotes_inp = QLineEdit()
+            lotes_inp.setValidator(QIntValidator(0, 999999))
+            lotes_inp.setPlaceholderText("0")
+            self.palawan_inputs[lotes_col] = lotes_inp
+            lotes_lbl = QLabel("Lotes:")
+            lotes_lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #334155;")
+            form.addRow(lotes_lbl, lotes_inp)
+
+            # Total (auto-calc)
+            total_col = f"palawan_{section_key}_regular_total"
+            total_disp = QLineEdit()
+            total_disp.setReadOnly(True)
+            total_disp.setPlaceholderText("0.00")
+            total_disp.setStyleSheet(
+                f"font-weight: 800; font-size: 13px; color: {color}; "
+                "background-color: #F0F9FF; border: 1px solid #BAE6FD; "
+                "border-radius: 5px; padding: 5px 10px;"
+            )
+            self.palawan_inputs[total_col] = total_disp
+            self.palawan_total_displays[section_key] = total_disp
+            total_lbl = QLabel("TOTAL:")
+            total_lbl.setStyleSheet(f"font-weight: 700; color: {color}; font-size: 13px;")
+            form.addRow(total_lbl, total_disp)
+
+            # Wire principal/sc/commission to auto-calc total
+            def _recalc(_, sk=section_key):
+                p  = float(self.palawan_inputs.get(f"palawan_{sk}_principal",  QLineEdit()).text() or 0)
+                sc = float(self.palawan_inputs.get(f"palawan_{sk}_sc",         QLineEdit()).text() or 0)
+                cm = float(self.palawan_inputs.get(f"palawan_{sk}_commission",  QLineEdit()).text() or 0)
+                self.palawan_total_displays[sk].setText(f"{p + sc + cm:.2f}")
+                self.palawan_inputs[f"palawan_{sk}_regular_total"].setText(f"{p + sc + cm:.2f}")
+
+            for sub in ("principal", "sc", "commission"):
+                self.palawan_inputs[f"palawan_{section_key}_{sub}"].textChanged.connect(_recalc)
+
+            box.setLayout(form)
+            return box
+
+        # Three section groups in a grid
+        grid_frame = QFrame()
+        grid_layout = QGridLayout(grid_frame)
+        grid_layout.setSpacing(10)
+        grid_layout.addWidget(_make_section("PALAWAN SEND-OUT",      "sendout",       "#1b75bc"), 0, 0)
+        grid_layout.addWidget(_make_section("PALAWAN PAY-OUT",       "payout",        "#1b75bc"), 0, 1)
+        grid_layout.addWidget(_make_section("PALAWAN INTERNATIONAL", "international", "#1b75bc"), 1, 0, 1, 2)
+        content_layout.addWidget(grid_frame)
+
+        # Auto-sync: sendout principal/sc → daily cash count debit fields
+        def _sync_sendout_principal(text):
+            if "Palawan Send Out" in self.debit_inputs:
+                self.debit_inputs["Palawan Send Out"].setText(text)
+
+        def _sync_sendout_sc(text):
+            if "Palawan S.C" in self.debit_inputs:
+                self.debit_inputs["Palawan S.C"].setText(text)
+
+        def _sync_payout_principal(text):
+            if "Palawan Pay Out" in self.credit_inputs:
+                self.credit_inputs["Palawan Pay Out"].setText(text)
+
+        self.palawan_inputs["palawan_sendout_principal"].textChanged.connect(_sync_sendout_principal)
+        self.palawan_inputs["palawan_sendout_sc"].textChanged.connect(_sync_sendout_sc)
+        self.palawan_inputs["palawan_payout_principal"].textChanged.connect(_sync_payout_principal)
+
+        # Adjustments section
+        adj_box = QGroupBox("PALAWAN ADJUSTMENTS")
+        adj_box.setStyleSheet("""
+            QGroupBox {
+                border: 2px solid #F59E0B; border-radius: 6px;
+                margin-top: 20px; padding: 16px 14px 14px 14px;
+                background-color: #FFFBEB;
+            }
+            QGroupBox::title {
+                color: #D97706; font-weight: 800; font-size: 12px;
+                padding: 1px 8px; background-color: #FFFBEB;
+            }
+        """)
+        adj_form = QFormLayout()
+        adj_form.setSpacing(8)
+        adj_form.setContentsMargins(12, 20, 12, 12)
+
+        # Mapping: adj_col (db key) → credit_fields UI label
+        _adj_credit_label = {
+            "palawan_pay_out_incentives": "Palawan Pay Out (incentives)",
+            "palawan_suki_discounts":     "Palawan Suki Discounts",
+            "palawan_suki_rebates":       "Palawan Suki Rebates",
+            "palawan_cancel":             "Palawan Cancel",
+        }
+
+        def _make_adj_sync(db_col):
+            cf_label = _adj_credit_label.get(db_col)
+            def _sync(text):
+                if cf_label and cf_label in self.credit_inputs:
+                    self.credit_inputs[cf_label].setText(text)
+            return _sync
+
+        for adj_label, adj_col in [
+            ("Pay Out Incentives", "palawan_pay_out_incentives"),
+            ("Suki Discounts",     "palawan_suki_discounts"),
+            ("Suki Rebates",       "palawan_suki_rebates"),
+            ("Cancel",             "palawan_cancel"),
+        ]:
+            inp = QLineEdit()
+            inp.setValidator(QDoubleValidator(0.0, 1e12, 2))
+            inp.setPlaceholderText("0.00")
+            self.palawan_inputs[adj_col] = inp
+            inp.textChanged.connect(_make_adj_sync(adj_col))
+            lbl = QLabel(adj_label + ":")
+            lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #92400E;")
+            adj_form.addRow(lbl, inp)
+        adj_box.setLayout(adj_form)
+        content_layout.addWidget(adj_box)
+
+        wrapper_layout.addWidget(content)
+
+        def _on_toggle(checked):
+            content.setVisible(checked)
+            toggle_btn.setText(
+                f"▼  Palawan Details {brand_label}" if checked
+                else f"▶  Palawan Details {brand_label}"
+            )
+
+        toggle_btn.toggled.connect(_on_toggle)
+        return wrapper
+
+    def _load_palawan_details(self, data: dict):
+        """Populate palawan detail inputs from a loaded DB row."""
+        if self.account_type == 1:
+            # Brand A: sendout/payout/international data lives in payable_tbl_brand_a
+            # (daily_reports_brand_a does NOT have palawan_sendout_principal etc.)
+            branch_name   = self.branch_selector.currentText()
+            selected_date = self.date_picker.date().toString("yyyy-MM-dd")
+            try:
+                result = self.db.execute_query(
+                    "SELECT * FROM payable_tbl_brand_a WHERE branch=%s AND date=%s LIMIT 1",
+                    (branch_name, selected_date)
+                )
+                if result:
+                    r = result[0]
+                    payable_map = {
+                        'palawan_sendout_principal':            r.get('sendout_capital', 0) or 0,
+                        'palawan_sendout_sc':                   r.get('sendout_sc', 0) or 0,
+                        'palawan_sendout_commission':           r.get('sendout_commission', 0) or 0,
+                        'palawan_sendout_lotes_total':          r.get('sendout_lotes', 0) or 0,
+                        'palawan_sendout_regular_total':        r.get('sendout_total', 0) or 0,
+                        'palawan_payout_principal':             r.get('payout_capital', 0) or 0,
+                        'palawan_payout_sc':                    r.get('payout_sc', 0) or 0,
+                        'palawan_payout_commission':            r.get('payout_commission', 0) or 0,
+                        'palawan_payout_lotes_total':           r.get('payout_lotes', 0) or 0,
+                        'palawan_payout_regular_total':         r.get('payout_total', 0) or 0,
+                        'palawan_international_principal':      r.get('international_capital', 0) or 0,
+                        'palawan_international_sc':             r.get('international_sc', 0) or 0,
+                        'palawan_international_commission':     r.get('international_commission', 0) or 0,
+                        'palawan_international_lotes_total':    r.get('international_lotes', 0) or 0,
+                        'palawan_international_regular_total':  r.get('international_total', 0) or 0,
+                    }
+                    data = {**data, **payable_map}
+            except Exception as e:
+                logger.error("_load_palawan_details Brand A payable query: %s", e)
+
+        for db_col, widget in getattr(self, 'palawan_inputs', {}).items():
+            val = data.get(db_col, 0) or 0
+            widget.blockSignals(True)
+            try:
+                if widget.isReadOnly():
+                    widget.setText(f"{float(val):.2f}" if float(val) else "")
+                elif widget.validator() and hasattr(widget.validator(), 'decimals'):
+                    widget.setText(f"{float(val):.2f}" if float(val) else "")
+                else:
+                    widget.setText(str(int(val)) if int(float(val)) else "")
+            except (TypeError, ValueError):
+                widget.setText("")
+            widget.blockSignals(False)
+        # Recalc totals
+        for section in ("sendout", "payout", "international"):
+            p  = float(getattr(self, 'palawan_inputs', {}).get(f"palawan_{section}_principal",  QLineEdit()).text() or 0)
+            sc = float(getattr(self, 'palawan_inputs', {}).get(f"palawan_{section}_sc",         QLineEdit()).text() or 0)
+            cm = float(getattr(self, 'palawan_inputs', {}).get(f"palawan_{section}_commission",  QLineEdit()).text() or 0)
+            total_disp = getattr(self, 'palawan_total_displays', {}).get(section)
+            if total_disp:
+                total_disp.setText(f"{p + sc + cm:.2f}")
 
     BANK_ACCOUNTS = [
                 {"id": 1, "bank_name": "CIB-BDO", "account_name": "Global Reliance", "account_number": "0077-9002-3923"},
@@ -1965,7 +2243,7 @@ class AdminDashboard(QWidget):
             # Also load OS options
             self.load_os_options()
         except Exception as e:
-            print(f"Error loading corporations: {e}")
+            logger.error("Error loading corporations: %s", e)
             QMessageBox.critical(self, "Database Error", f"Failed to load corporations: {e}")
 
     def load_os_options(self):
@@ -1983,7 +2261,7 @@ class AdminDashboard(QWidget):
                     if os_name:
                         self.os_selector.addItem(os_name)
         except Exception as e:
-            print(f"Error loading OS options: {e}")
+            logger.error("Error loading OS options: %s", e)
 
     def on_filter_type_changed(self):
 
@@ -2022,7 +2300,7 @@ class AdminDashboard(QWidget):
                         if row['branch']:
                             self.branch_selector.addItem(row['branch'])
         except Exception as e:
-            print(f"Error loading branches: {e}")
+            logger.error("Error loading branches: %s", e)
             QMessageBox.critical(self, "Database Error", f"Failed to load branches: {e}")
 
     def load_branches_by_os(self):
@@ -2044,7 +2322,7 @@ class AdminDashboard(QWidget):
                         if row['branch']:
                             self.branch_selector.addItem(row['branch'])
         except Exception as e:
-            print(f"Error loading branches by OS: {e}")
+            logger.error("Error loading branches by OS: %s", e)
             QMessageBox.critical(self, "Database Error", f"Failed to load branches: {e}")
 
     def _refresh_admin_corporations(self):
@@ -2098,7 +2376,7 @@ class AdminDashboard(QWidget):
             for sup in supervisors:
                 self.branch_os_selector.addItem(sup['name'], sup['name'])
         except Exception as e:
-            print(f"Error loading OS options: {e}")
+            logger.error("Error loading OS options: %s", e)
 
     def _on_add_branch(self):
         name = self.branch_name_input.text().strip()
@@ -2200,6 +2478,7 @@ class AdminDashboard(QWidget):
                 except Exception:
                     pass
 
+                # daily_reports is exclusively the Brand B table; no brand filter needed.
                 reset_query = f"""
                     UPDATE {table}
                     SET is_locked = 0
@@ -2513,7 +2792,7 @@ class AdminDashboard(QWidget):
                 for row in result:
                     self.report_corp_combo.addItem(row['corporation'])
         except Exception as e:
-            print(f"Error loading corporations: {e}")
+            logger.error("Error loading corporations: %s", e)
 
     def load_report_os_list(self):
         """Load OS list for report dialog"""
@@ -2529,7 +2808,7 @@ class AdminDashboard(QWidget):
                     os_name = row['os_name'] if isinstance(row, dict) else row[0]
                     self.report_os_combo.addItem(os_name)
         except Exception as e:
-            print(f"Error loading OS list: {e}")
+            logger.error("Error loading OS list: %s", e)
 
     def generate_daily_cash_report(self, dialog):
         """Generate Daily Cash Count report by Corporation or OS with all debit/credit fields"""
@@ -2708,15 +2987,17 @@ class AdminDashboard(QWidget):
                     totals[db_col] = totals.get(db_col, 0) + val
                     col_idx += 1
                 
-                # Debit Total
-                val = float(row_data.get('debit_total', 0) or 0)
-                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                # Debit Total — recalculated from actual fields
+                row_beginning = float(row_data.get('beginning_balance', 0) or 0)
+                row_debit_sum = sum(float(row_data.get(c, 0) or 0) for c in debit_columns)
+                row_debit_total = row_beginning + row_debit_sum
+                cell = ws.cell(row=row_idx, column=col_idx, value=row_debit_total)
                 cell.number_format = '#,##0.00'
                 cell.border = border
                 cell.font = Font(bold=True)
-                totals['debit_total'] = totals.get('debit_total', 0) + val
+                totals['debit_total'] = totals.get('debit_total', 0) + row_debit_total
                 col_idx += 1
-                
+
                 # Credit fields
                 for db_col in credit_columns:
                     val = float(row_data.get(db_col, 0) or 0)
@@ -2725,23 +3006,29 @@ class AdminDashboard(QWidget):
                     cell.border = border
                     totals[db_col] = totals.get(db_col, 0) + val
                     col_idx += 1
-                
-                # Credit Total
-                val = float(row_data.get('credit_total', 0) or 0)
-                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+
+                # Credit Total — recalculated from actual fields
+                row_credit_total = sum(float(row_data.get(c, 0) or 0) for c in credit_columns)
+                cell = ws.cell(row=row_idx, column=col_idx, value=row_credit_total)
                 cell.number_format = '#,##0.00'
                 cell.border = border
                 cell.font = Font(bold=True)
-                totals['credit_total'] = totals.get('credit_total', 0) + val
+                totals['credit_total'] = totals.get('credit_total', 0) + row_credit_total
                 col_idx += 1
-                
-                # Summary fields
-                for summary_col in ['ending_balance', 'cash_count', 'cash_result']:
-                    val = float(row_data.get(summary_col, 0) or 0)
-                    cell = ws.cell(row=row_idx, column=col_idx, value=val)
+
+                # Summary fields — ending_balance and cash_result recalculated
+                row_ending = row_debit_total - row_credit_total
+                row_cash_count = float(row_data.get('cash_count', 0) or 0)
+                row_cash_result = row_cash_count - row_ending
+                for summary_col, summary_val in [
+                    ('ending_balance', row_ending),
+                    ('cash_count',     row_cash_count),
+                    ('cash_result',    row_cash_result),
+                ]:
+                    cell = ws.cell(row=row_idx, column=col_idx, value=summary_val)
                     cell.number_format = '#,##0.00'
                     cell.border = border
-                    totals[summary_col] = totals.get(summary_col, 0) + val
+                    totals[summary_col] = totals.get(summary_col, 0) + summary_val
                     col_idx += 1
             
             # Total row
@@ -2882,7 +3169,7 @@ class AdminDashboard(QWidget):
                 for row in result:
                     self.range_corp_combo.addItem(row['corporation'])
         except Exception as e:
-            print(f"Error loading corporations: {e}")
+            logger.error("Error loading corporations: %s", e)
 
     def _load_range_os_list(self):
         """Load OS list for date range report dialog"""
@@ -2898,7 +3185,7 @@ class AdminDashboard(QWidget):
                     os_name = row['os_name'] if isinstance(row, dict) else row[0]
                     self.range_os_combo.addItem(os_name)
         except Exception as e:
-            print(f"Error loading OS list: {e}")
+            logger.error("Error loading OS list: %s", e)
 
     def _generate_date_range_report(self, dialog):
         """Generate Date Range Report for Brand A with daily breakdown and grand totals"""
@@ -3504,13 +3791,23 @@ class AdminDashboard(QWidget):
         layout = QVBoxLayout(dialog)
         layout.setSpacing(12)
 
+        if self.account_type == 1:
+            sheets_info = (
+                "Daily Cash Count &nbsp;·&nbsp; Palawan &nbsp;·&nbsp; "
+                "MC &nbsp;·&nbsp; Fund Transfer &nbsp;·&nbsp; Payable &nbsp;·&nbsp; "
+                "Daily Transaction &nbsp;·&nbsp; Other Services &nbsp;·&nbsp; "
+                "P&amp;L &nbsp;·&nbsp; New Sanla &nbsp;·&nbsp; New Renew &nbsp;·&nbsp; "
+                "Global Other Services &nbsp;·&nbsp; FT HO"
+            )
+        else:
+            sheets_info = (
+                "Daily Cash Count &nbsp;·&nbsp; Palawan &nbsp;·&nbsp; "
+                "MC &nbsp;·&nbsp; Fund Transfer &nbsp;·&nbsp; Payable &nbsp;·&nbsp; "
+                "Global Payable &nbsp;·&nbsp; Payable Reports"
+            )
         info_lbl = QLabel(
             f"Generates a comprehensive Excel workbook for <b>{brand_label}</b>.<br><br>"
-            "<b>Sheets:</b> Daily Cash Count &nbsp;·&nbsp; Palawan &nbsp;·&nbsp; "
-            "MC &nbsp;·&nbsp; Fund Transfer &nbsp;·&nbsp; Payable &nbsp;·&nbsp; "
-            "Daily Transaction &nbsp;·&nbsp; Other Services &nbsp;·&nbsp; "
-            "P&amp;L &nbsp;·&nbsp; New Sanla &nbsp;·&nbsp; New Renew &nbsp;·&nbsp; "
-            "Global Other Services &nbsp;·&nbsp; FT HO"
+            f"<b>Sheets:</b> {sheets_info}"
         )
         info_lbl.setWordWrap(True)
         info_lbl.setTextFormat(Qt.RichText)
@@ -3579,6 +3876,18 @@ class AdminDashboard(QWidget):
 
         self._fbr_corp_radio.toggled.connect(_toggle_fbr_filter)
 
+        # ── Branch Status filter ───────────────────────────────────────────
+        reg_grp = QGroupBox("Branch Status")
+        reg_lay = QHBoxLayout(reg_grp)
+        reg_lay.addWidget(QLabel("Show:"))
+        self._fbr_reg_filter = QComboBox()
+        self._fbr_reg_filter.addItem("Registered Only", "registered")
+        self._fbr_reg_filter.addItem("Not Registered",  "not_registered")
+        self._fbr_reg_filter.addItem("All Branches",    "all")
+        reg_lay.addWidget(self._fbr_reg_filter)
+        reg_lay.addStretch()
+        layout.addWidget(reg_grp)
+
         # ── Single date picker ─────────────────────────────────────────────
         date_grp = QGroupBox("Date")
         date_lay = QHBoxLayout(date_grp)
@@ -3638,6 +3947,8 @@ class AdminDashboard(QWidget):
             QMessageBox.warning(self, "Selection Required",
                 f"Please select a {filter_label}.")
             return
+
+        reg_filter = self._fbr_reg_filter.currentData()   # "registered" | "not_registered" | "all"
 
         brand_label = "Brand A" if self.account_type == 1 else "Brand B"
         safe_brand  = brand_label.replace(" ", "_")
@@ -3754,7 +4065,7 @@ class AdminDashboard(QWidget):
             # ── Core sheet writer ─────────────────────────────────────────────
             # col_groups: list of (group_name, [(sub_label, [db_cols], is_lotes)])
             # db_cols with multiple items → their values are summed into one column
-            def _write_grouped_sheet(ws, col_groups, table, use_branch_join=False):
+            def _write_grouped_sheet(ws, col_groups, table, use_branch_join=False, category_filter=None, show_lotes_total=False, show_amt_total=True):
                 _write_info(ws)
 
                 table_cols = _get_table_cols(table)
@@ -3791,34 +4102,107 @@ class AdminDashboard(QWidget):
                         select_parts.append(f"SUM({inner}) AS `{all_cols[0]}`")
 
                 # ── Build WHERE clause with corp/os filter ────────────────
+                cat_join = ""  # extra JOIN for 30%/60% category filter
+
                 if filter_type == "corporation" and not use_branch_join:
-                    where_clause = "AND dr.corporation = %s"
-                    sql_params   = (selected_date, filter_value)
+                    if category_filter == "30":
+                        cat_join = ("INNER JOIN branches b ON b.name COLLATE utf8mb4_general_ci "
+                                    "= dr.branch COLLATE utf8mb4_general_ci")
+                        where_clause = "AND dr.corporation = %s AND b.global_tag = 'GLOBAL'"
+                        sql_params   = (selected_date, filter_value)
+                    elif category_filter == "60":
+                        # 60% = all branches in the group, no extra restriction
+                        cat_join = (
+                            "INNER JOIN branches b ON b.name COLLATE utf8mb4_general_ci "
+                            "= dr.branch COLLATE utf8mb4_general_ci"
+                        )
+                        where_clause = "AND dr.corporation = %s"
+                        sql_params   = (selected_date, filter_value)
+                    else:
+                        where_clause = "AND dr.corporation = %s"
+                        sql_params   = (selected_date, filter_value)
                 elif filter_type == "corporation" and use_branch_join:
                     where_clause = "AND b.global_tag = 'GLOBAL'"
                     sql_params   = (selected_date,)
                 else:  # os/group – always need branches join
-                    where_clause = ""
-                    sql_params   = (selected_date,)
+                    if category_filter == "30":
+                        where_clause = "AND b.global_tag = 'GLOBAL'"
+                    elif category_filter == "60":
+                        # 60% = all branches in the group, no extra restriction
+                        where_clause = ""
+                    else:
+                        # For global-tagged tables (e.g. global_other_services_tbl),
+                        # restrict to branches with a global tag
+                        where_clause = "AND b.global_tag = 'GLOBAL'" if use_branch_join else ""
+                    sql_params = (selected_date,)
 
                 try:
-                    if filter_type == "os" or use_branch_join:
+                    if category_filter:
+                        # ── Branches-first approach for payable 60%/30% sheets ──────────
+                        # Querying FROM the data table excludes branches with no data for
+                        # the selected date.  Start from `branches` instead, and move the
+                        # date condition into the LEFT JOIN ON clause so every branch
+                        # (even those with no submission) always appears.
+                        global_where = ""
+                        if category_filter == "30":
+                            global_where = "AND b.global_tag = 'GLOBAL'"
+
+                        if filter_type == "os":
+                            sql = (
+                                f"SELECT b.name AS branch, {', '.join(select_parts)} "
+                                f"FROM branches b "
+                                f"LEFT JOIN `{table}` dr "
+                                f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                                f"  AND dr.date = %s "
+                                f"WHERE b.os_name = %s {global_where} "
+                                f"GROUP BY b.name ORDER BY b.name"
+                            )
+                            sql_params = (selected_date, filter_value)
+                        else:
+                            # corporation filter – join corps table to filter by name
+                            sql = (
+                                f"SELECT b.name AS branch, {', '.join(select_parts)} "
+                                f"FROM branches b "
+                                f"INNER JOIN corporations c "
+                                f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                f"  AND c.name = %s "
+                                f"LEFT JOIN `{table}` dr "
+                                f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                                f"  AND dr.date = %s "
+                                f"WHERE 1=1 {global_where} "
+                                f"GROUP BY b.name ORDER BY b.name"
+                            )
+                            sql_params = (filter_value, selected_date)
+
+                    elif filter_type == "os":
                         os_join = (
                             "INNER JOIN branches b "
                             "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                             f"AND b.os_name = %s"
                         )
+                        sql_params = (filter_value, selected_date)
                         sql = (
                             f"SELECT dr.branch, {', '.join(select_parts)} "
-                            f"FROM `{table}` dr {os_join} "
+                            f"FROM `{table}` dr {os_join} {cat_join} "
                             f"WHERE dr.date = %s {where_clause} "
                             f"GROUP BY dr.branch ORDER BY dr.branch"
                         )
-                        sql_params = (filter_value, selected_date)
+                    elif use_branch_join:
+                        branch_join = (
+                            "INNER JOIN branches b "
+                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci"
+                        )
+                        sql = (
+                            f"SELECT dr.branch, {', '.join(select_parts)} "
+                            f"FROM `{table}` dr {branch_join} "
+                            f"WHERE dr.date = %s {where_clause} "
+                            f"GROUP BY dr.branch ORDER BY dr.branch"
+                        )
+                        # sql_params already set correctly above
                     else:
                         sql = (
                             f"SELECT dr.branch, {', '.join(select_parts)} "
-                            f"FROM `{table}` dr "
+                            f"FROM `{table}` dr {cat_join} "
                             f"WHERE dr.date = %s {where_clause} "
                             f"GROUP BY dr.branch ORDER BY dr.branch"
                         )
@@ -3831,8 +4215,7 @@ class AdminDashboard(QWidget):
                 SUB_HDR_ROW = 8   # sub-label row
                 HDR_ROW     = SUB_HDR_ROW  # data starts after this
 
-                # ── Row 7: Group name headers (merged per group) ──────────────
-                # "Branch" spanning both header rows in col 1
+ 
                 ws.merge_cells(start_row=GRP_HDR_ROW, start_column=1,
                                end_row=SUB_HDR_ROW,   end_column=1)
                 c = ws.cell(row=GRP_HDR_ROW, column=1, value="Branch")
@@ -3872,14 +4255,28 @@ class AdminDashboard(QWidget):
                     for ci in range(start, end + 1):
                         ws.cell(row=GRP_HDR_ROW, column=ci).border = border
 
-                # "AMT TOTAL" spanning both header rows
-                total_col = col_idx
-                ws.merge_cells(start_row=GRP_HDR_ROW, start_column=total_col,
-                               end_row=SUB_HDR_ROW,   end_column=total_col)
-                c = ws.cell(row=GRP_HDR_ROW, column=total_col, value="AMT TOTAL")
-                c.font = HDR_FONT; c.fill = GRAND_FILL
-                c.border = border
-                c.alignment = Alignment(horizontal='center', vertical='center')
+                # "TOTAL LOTES" column (optional)
+                lotes_total_col = None
+                if show_lotes_total:
+                    lotes_total_col = col_idx
+                    ws.merge_cells(start_row=GRP_HDR_ROW, start_column=lotes_total_col,
+                                   end_row=SUB_HDR_ROW,   end_column=lotes_total_col)
+                    c = ws.cell(row=GRP_HDR_ROW, column=lotes_total_col, value="TOTAL LOTES")
+                    c.font = HDR_FONT; c.fill = LOTES_FILL
+                    c.border = border
+                    c.alignment = Alignment(horizontal='center', vertical='center')
+                    col_idx += 1
+
+                # "AMT TOTAL" column (optional)
+                total_col = None
+                if show_amt_total:
+                    total_col = col_idx
+                    ws.merge_cells(start_row=GRP_HDR_ROW, start_column=total_col,
+                                   end_row=SUB_HDR_ROW,   end_column=total_col)
+                    c = ws.cell(row=GRP_HDR_ROW, column=total_col, value="AMT TOTAL")
+                    c.font = HDR_FONT; c.fill = GRAND_FILL
+                    c.border = border
+                    c.alignment = Alignment(horizontal='center', vertical='center')
 
                 # ── Row 8: Sub-label headers ──────────────────────────────────
                 ws.cell(row=SUB_HDR_ROW, column=1).border = border  # already merged
@@ -3893,31 +4290,43 @@ class AdminDashboard(QWidget):
                     c.alignment = Alignment(horizontal='center', wrap_text=True)
                     col_idx += 1
 
-                ws.cell(row=SUB_HDR_ROW, column=total_col).border = border  # already merged
+                if total_col is not None:
+                    ws.cell(row=SUB_HDR_ROW, column=total_col).border = border  # already merged
 
                 # Data rows
                 grand_totals = {primary_key: 0.0 for _, primary_key, _, _, _ in flat}
+                grand_lotes_total = 0
                 for ri, row_data in enumerate(results, HDR_ROW + 1):
                     ws.cell(row=ri, column=1, value=row_data.get('branch', '')).border = border
                     row_amt = 0.0
+                    row_lotes = 0
                     for ci, (_, primary_key, is_lotes, _, all_cols) in enumerate(flat, 2):
                         raw = row_data.get(primary_key, 0) or 0
-                        val = int(raw) if is_lotes else float(raw)
+                        val = int(float(raw)) if is_lotes else float(raw)
                         cell = ws.cell(row=ri, column=ci, value=val)
                         cell.border = border
                         if is_lotes:
                             cell.alignment = Alignment(horizontal='center')
                             cell.fill = LOTES_FILL
+                            row_lotes += int(float(raw))
+                            grand_totals[primary_key] = grand_totals.get(primary_key, 0.0) + int(float(raw))
                         else:
                             cell.number_format = '#,##0.00'
                             cell.alignment = Alignment(horizontal='right')
                             row_amt += float(val)
                             grand_totals[primary_key] = grand_totals.get(primary_key, 0.0) + float(val)
 
-                    c = ws.cell(row=ri, column=total_col, value=row_amt)
-                    c.number_format = '#,##0.00'; c.font = TOTAL_FONT
-                    c.border = border; c.fill = TOTAL_FILL
-                    c.alignment = Alignment(horizontal='right')
+                    if lotes_total_col is not None:
+                        c = ws.cell(row=ri, column=lotes_total_col, value=row_lotes)
+                        c.alignment = Alignment(horizontal='center')
+                        c.fill = LOTES_FILL; c.border = border
+                        grand_lotes_total += row_lotes
+
+                    if total_col is not None:
+                        c = ws.cell(row=ri, column=total_col, value=row_amt)
+                        c.number_format = '#,##0.00'; c.font = TOTAL_FONT
+                        c.border = border; c.fill = TOTAL_FILL
+                        c.alignment = Alignment(horizontal='right')
 
                 # Total row
                 tr = HDR_ROW + len(results) + 1
@@ -3936,16 +4345,26 @@ class AdminDashboard(QWidget):
                         cell.alignment = Alignment(horizontal='right')
                         grand_sum += val
 
-                c = ws.cell(row=tr, column=total_col, value=grand_sum)
-                c.number_format = '#,##0.00'; c.font = TOTAL_FONT
-                c.fill = GRAND_FILL; c.border = border
-                c.alignment = Alignment(horizontal='right')
+                if lotes_total_col is not None:
+                    lotes_grand = sum(int(grand_totals.get(pk, 0)) for _, pk, is_l, _, _ in flat if is_l)
+                    c = ws.cell(row=tr, column=lotes_total_col, value=lotes_grand)
+                    c.alignment = Alignment(horizontal='center')
+                    c.font = TOTAL_FONT; c.fill = GRAND_FILL; c.border = border
+
+                if total_col is not None:
+                    c = ws.cell(row=tr, column=total_col, value=grand_sum)
+                    c.number_format = '#,##0.00'; c.font = TOTAL_FONT
+                    c.fill = GRAND_FILL; c.border = border
+                    c.alignment = Alignment(horizontal='right')
 
                 # Column widths
                 ws.column_dimensions['A'].width = 25
                 for ci, (_, _, is_lotes, _, _) in enumerate(flat, 2):
                     ws.column_dimensions[get_column_letter(ci)].width = 8 if is_lotes else 13
-                ws.column_dimensions[get_column_letter(total_col)].width = 14
+                if lotes_total_col is not None:
+                    ws.column_dimensions[get_column_letter(lotes_total_col)].width = 12
+                if total_col is not None:
+                    ws.column_dimensions[get_column_letter(total_col)].width = 14
                 ws.freeze_panes = f'B{HDR_ROW + 1}'
 
             # ── Check existing columns in daily_table ────────────────────────
@@ -4007,35 +4426,70 @@ class AdminDashboard(QWidget):
                 c_cols = [c for c in self.credit_fields.values()
                           if not tbl_cols or c in tbl_cols]
 
-                # ── Build SELECT with lotes columns ──────────────────────────
-                sel_parts = ["dr.branch",
-                             "COALESCE(dr.`beginning_balance`, 0) AS `beginning_balance`"]
+                # ── Build SELECT with GROUP BY aggregation ───────────────────
+                # For Brand A: daily_reports_brand_a has N rows per branch/date (one per user).
+                # Palawan adjustment fields are BRANCH-LEVEL singletons (same value in every
+                # user row) → use MAX to avoid fan-out multiplication.
+                # Regular transaction fields are per-user → use SUM.
+                # For Brand B: 1 row per branch, so SUM/MAX behave identically.
+                BRAND_A_SINGLETON_FIELDS = {
+                    'palawan_cancel', 'palawan_suki_discounts', 'palawan_suki_rebates',
+                    'palawan_pay_out_incentives', 'palawan_suki_card',
+                }
+                def _agg_fn(col):
+                    """Return MAX for branch-level singletons, SUM for transaction fields."""
+                    if self.account_type == 1 and col in BRAND_A_SINGLETON_FIELDS:
+                        return "MAX"
+                    return "SUM"
+
+                sel_parts = [
+                    "dr.branch",
+                    "MAX(COALESCE(dr.`beginning_balance`, 0)) AS `beginning_balance`",
+                ]
                 for col in d_cols:
-                    sel_parts.append(f"COALESCE(dr.`{col}`, 0) AS `{col}`")
+                    fn = _agg_fn(col)
+                    sel_parts.append(f"{fn}(COALESCE(dr.`{col}`, 0)) AS `{col}`")
                     lc = f"{col}_lotes"
-                    sel_parts.append(
-                        f"COALESCE(dr.`{lc}`, 0) AS `{lc}`"
-                        if (not tbl_cols or lc in tbl_cols) else f"0 AS `{lc}`"
-                    )
-                sel_parts.append("COALESCE(dr.`debit_total`, 0) AS `debit_total`")
+                    if not tbl_cols or lc in tbl_cols:
+                        sel_parts.append(f"{fn}(COALESCE(dr.`{lc}`, 0)) AS `{lc}`")
+                        # Capture text notes clients type in the lotes field
+                        sel_parts.append(
+                            f"GROUP_CONCAT(DISTINCT IF(dr.`{lc}` REGEXP '[a-zA-Z]',"
+                            f" dr.`{lc}`, NULL) SEPARATOR ' | ') AS `{lc}_note`"
+                        )
+                    else:
+                        sel_parts.append(f"0 AS `{lc}`")
+                sel_parts.append("MAX(COALESCE(dr.`debit_total`, 0)) AS `debit_total`")
                 for col in c_cols:
-                    sel_parts.append(f"COALESCE(dr.`{col}`, 0) AS `{col}`")
+                    fn = _agg_fn(col)
+                    sel_parts.append(f"{fn}(COALESCE(dr.`{col}`, 0)) AS `{col}`")
                     lc = f"{col}_lotes"
-                    sel_parts.append(
-                        f"COALESCE(dr.`{lc}`, 0) AS `{lc}`"
-                        if (not tbl_cols or lc in tbl_cols) else f"0 AS `{lc}`"
-                    )
-                sel_parts.append("COALESCE(dr.`credit_total`, 0) AS `credit_total`")
+                    if not tbl_cols or lc in tbl_cols:
+                        sel_parts.append(f"{fn}(COALESCE(dr.`{lc}`, 0)) AS `{lc}`")
+                        # Capture text notes clients type in the lotes field
+                        sel_parts.append(
+                            f"GROUP_CONCAT(DISTINCT IF(dr.`{lc}` REGEXP '[a-zA-Z]',"
+                            f" dr.`{lc}`, NULL) SEPARATOR ' | ') AS `{lc}_note`"
+                        )
+                    else:
+                        sel_parts.append(f"0 AS `{lc}`")
+                sel_parts.append("MAX(COALESCE(dr.`credit_total`, 0)) AS `credit_total`")
                 sel_parts += [
-                    "COALESCE(dr.`ending_balance`, 0) AS `ending_balance`",
-                    "COALESCE(dr.`cash_count`, 0) AS `cash_count`",
-                    "COALESCE(dr.`cash_result`, 0) AS `cash_result`",
+                    "MAX(COALESCE(dr.`ending_balance`, 0)) AS `ending_balance`",
+                    "MAX(COALESCE(dr.`cash_count`, 0)) AS `cash_count`",
+                    "MAX(COALESCE(dr.`cash_result`, 0)) AS `cash_result`",
                 ]
                 for sf in salary_fields + pc_fields_no_sal:
                     sel_parts.append(
-                        f"COALESCE(dr.`{sf}`, 0) AS `{sf}`"
+                        f"SUM(COALESCE(dr.`{sf}`, 0)) AS `{sf}`"
                         if (not tbl_cols or sf in tbl_cols) else f"0 AS `{sf}`"
                     )
+                # Extra note columns for Fund Transfer and PC-Salary
+                for _enc in ('fund_transfer_bank_account', 'fund_transfer_to_branch_dest',
+                             'fund_transfer_from_branch_dest', 'pc_salary_breakdown',
+                             'ft_ho_breakdown'):
+                    if not tbl_cols or _enc in tbl_cols:
+                        sel_parts.append(f"MAX(dr.`{_enc}`) AS `{_enc}`")
                 sel_clause = ", ".join(sel_parts)
 
                 try:
@@ -4045,14 +4499,15 @@ class AdminDashboard(QWidget):
                             "INNER JOIN branches b "
                             "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                             "AND b.os_name = %s "
-                            "WHERE dr.date = %s ORDER BY dr.branch"
+                            "WHERE dr.date = %s "
+                            "GROUP BY dr.branch ORDER BY dr.branch"
                         )
                         rows = db_manager.execute_query(sql, (filter_value, selected_date)) or []
                     else:
                         sql = (
                             f"SELECT {sel_clause} FROM `{self.daily_table}` dr "
                             "WHERE dr.corporation = %s AND dr.date = %s "
-                            "ORDER BY dr.branch"
+                            "GROUP BY dr.branch ORDER BY dr.branch"
                         )
                         rows = db_manager.execute_query(sql, (filter_value, selected_date)) or []
                 except Exception as ex:
@@ -4061,11 +4516,13 @@ class AdminDashboard(QWidget):
 
                 # ── Aggregate by branch ──────────────────────────────────────
                 branch_totals = {}
+                branch_notes  = {}  # text notes from lotes fields
                 branches_list = []
                 for row_data in rows:
                     bn = row_data.get('branch', 'Unknown')
                     if bn not in branch_totals:
                         branch_totals[bn] = {}
+                        branch_notes[bn]  = {}
                         branches_list.append(bn)
                     for col in (['beginning_balance'] + d_cols +
                                 ['debit_total'] + c_cols +
@@ -4076,8 +4533,12 @@ class AdminDashboard(QWidget):
                     for col in d_cols + c_cols:
                         lc = f"{col}_lotes"
                         branch_totals[bn][lc] = (
-                            branch_totals[bn].get(lc, 0) + int(row_data.get(lc, 0) or 0)
+                            branch_totals[bn].get(lc, 0) + int(float(row_data.get(lc, 0) or 0))
                         )
+                        # Collect text note if client typed in lotes field
+                        note_val = row_data.get(f"{lc}_note", '') or ''
+                        if note_val:
+                            branch_notes[bn][lc] = note_val
                     for sf in salary_fields:
                         branch_totals[bn]['salary'] = (
                             branch_totals[bn].get('salary', 0.0) + float(row_data.get(sf, 0) or 0)
@@ -4086,7 +4547,80 @@ class AdminDashboard(QWidget):
                         branch_totals[bn]['total_pc'] = (
                             branch_totals[bn].get('total_pc', 0.0) + float(row_data.get(sf, 0) or 0)
                         )
+                    # FT and PC-Salary notes
+                    if True:
+                        # Build a full bank-account detail map once per row
+                        _BANK_DETAIL = {b['id']: b for b in getattr(self, 'BANK_ACCOUNTS', [])}
+                        # ft_ho_breakdown takes priority (multiple FT entries)
+                        _ft_ho_bd = (row_data.get('ft_ho_breakdown') or '').strip()
+                        if _ft_ho_bd:
+                            try:
+                                _bd_items = json.loads(_ft_ho_bd)
+                                _ft_parts = []
+                                for _item in _bd_items:
+                                    if isinstance(_item, dict):
+                                        # dict format: {bank_account_id, amount, ...}
+                                        _bid = _item.get('bank_account_id') or _item.get('id')
+                                        _bdt = _BANK_DETAIL.get(int(_bid)) if _bid else None
+                                        if _bdt:
+                                            _ft_parts.append(
+                                                f"{_bdt['bank_name']} - {_bdt['account_name']}"
+                                                f" ({_bdt.get('account_number', '')})"
+                                                f": {_item.get('amount', '')}"
+                                            )
+                                        else:
+                                            _ft_parts.append(str(_item))
+                                    elif isinstance(_item, (list, tuple)) and len(_item) >= 3:
+                                        # list format: [bank_display, bank_id, amount]
+                                        _ft_parts.append(f"{_item[0]}: {_item[2]}")
+                                    elif isinstance(_item, (list, tuple)) and len(_item) >= 2:
+                                        _ft_parts.append(f"{_item[0]}: {_item[1]}")
+                                if _ft_parts:
+                                    branch_notes[bn]['fund_transfer_to_head_office_lotes'] = (
+                                        'Fund Transfer to HO:\n' + '\n'.join(_ft_parts)
+                                    )
+                            except Exception:
+                                pass
+                        else:
+                            _bank_id = row_data.get('fund_transfer_bank_account')
+                            if _bank_id:
+                                _bdt = _BANK_DETAIL.get(int(_bank_id))
+                                if _bdt:
+                                    branch_notes[bn]['fund_transfer_to_head_office_lotes'] = (
+                                        f"Bank: {_bdt['bank_name']}\n"
+                                        f"Account: {_bdt['account_name']}\n"
+                                        f"No: {_bdt.get('account_number', 'N/A')}"
+                                    )
+                                else:
+                                    branch_notes[bn]['fund_transfer_to_head_office_lotes'] = f"Bank ID: {_bank_id}"
+                        _ft_to_dest = (row_data.get('fund_transfer_to_branch_dest') or '').strip()
+                        if _ft_to_dest:
+                            branch_notes[bn]['fund_transfer_to_branch_lotes'] = f"To Branch: {_ft_to_dest}"
+                        _ft_from_src = (row_data.get('fund_transfer_from_branch_dest') or '').strip()
+                        if _ft_from_src:
+                            branch_notes[bn]['fund_transfer_from_branch_lotes'] = f"From Branch: {_ft_from_src}"
+                        _pc_sal_bd = (row_data.get('pc_salary_breakdown') or '').strip()
+                        if _pc_sal_bd:
+                            try:
+                                _bd_items = json.loads(_pc_sal_bd)
+                                _parts = [f"{_it[0]}: {_it[1]}" for _it in _bd_items
+                                          if isinstance(_it, (list, tuple)) and len(_it) >= 2]
+                                if _parts:
+                                    branch_notes[bn]['pc_salary_lotes'] = '\n'.join(_parts)
+                            except Exception:
+                                pass
                 branches_sorted = sorted(branches_list)
+
+                # Recalculate derived totals from actual field values (fixes stale DB values)
+                for bn in branches_list:
+                    bt = branch_totals[bn]
+                    _beginning  = bt.get('beginning_balance', 0.0)
+                    _debit_sum  = sum(bt.get(col, 0.0) for col in d_cols)
+                    _credit_sum = sum(bt.get(col, 0.0) for col in c_cols)
+                    bt['debit_total']    = _beginning + _debit_sum
+                    bt['credit_total']   = _credit_sum
+                    bt['ending_balance'] = bt['debit_total'] - bt['credit_total']
+                    bt['cash_result']    = bt.get('cash_count', 0.0) - bt['ending_balance']
 
                 # ── Header row 6: "Field" | Branch names (merged 2 cols) | TOTAL ──
                 HDR = 6
@@ -4158,6 +4692,16 @@ class AdminDashboard(QWidget):
 
                         lc = ws.cell(row=current_row, column=ci, value=lotes_val)
                         lc.border = bdr; lc.alignment = Alignment(horizontal='center')
+                        if show_lotes:
+                            _note = branch_notes.get(bn, {}).get(f"{db_col}_lotes", '')
+                            if _note:
+                                try:
+                                    from openpyxl.comments import Comment as _OXLComment
+                                    lc.comment = _OXLComment(_note, "Client Note")
+                                    lc.comment.width = 300
+                                    lc.comment.height = 80
+                                except Exception:
+                                    pass
                         ci += 1
 
                         ac = ws.cell(row=current_row, column=ci, value=amt_val)
@@ -4247,23 +4791,143 @@ class AdminDashboard(QWidget):
             _write_dcc_sheet(ws1)
 
             # ════════════════════════════════════════════════════════════════
-            # Sheet 2 – Palawan
+            # Sheet 2 – Palawan  (mirrors palawan_page.py exactly)
+            # Columns: Branch | Palawan In | Lotes In | Palawan Out | Lotes Out | Total
             # ════════════════════════════════════════════════════════════════
+            def _write_palawan_sheet(ws):
+                _write_info(ws)
+
+                # ── Build query identical to palawan_page.py ──────────────
+                select_cols = """
+                    SELECT b.name AS branch,
+                           COALESCE(dr.palawan_send_out, 0)                    AS palawan_send_out,
+                           COALESCE(dr.palawan_sc, 0)                          AS palawan_sc,
+                           COALESCE(dr.palawan_pay_out, 0)                     AS palawan_pay_out,
+                           COALESCE(dr.palawan_pay_out_incentives, 0)          AS palawan_pay_out_incentives,
+                           COALESCE(dr.palawan_send_out_lotes, 0)              AS palawan_send_out_lotes,
+                           COALESCE(dr.palawan_sc_lotes, 0)                    AS palawan_sc_lotes,
+                           COALESCE(dr.palawan_pay_out_lotes, 0)               AS palawan_pay_out_lotes,
+                           COALESCE(dr.palawan_pay_out_incentives_lotes, 0)    AS palawan_pay_out_incentives_lotes
+                """
+
+                if reg_filter == "registered":
+                    reg_clause = "AND b.is_registered = 1"
+                elif reg_filter == "not_registered":
+                    reg_clause = "AND b.is_registered = 0"
+                else:
+                    reg_clause = ""
+
+                if filter_type == "corporation":
+                    query = f"""
+                        {select_cols}
+                        FROM branches b
+                        LEFT JOIN corporations c
+                            ON (b.corporation_id = c.id OR b.sub_corporation_id = c.id)
+                        LEFT JOIN `{self.daily_table}` dr
+                            ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                           AND dr.corporation = %s
+                           AND dr.date = %s
+                        WHERE (b.corporation_id  = (SELECT id FROM corporations WHERE name = %s)
+                            OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
+                        {reg_clause}
+                        ORDER BY b.name
+                    """
+                    params = (filter_value, selected_date, filter_value, filter_value)
+                else:  # os / group
+                    query = f"""
+                        {select_cols}
+                        FROM branches b
+                        LEFT JOIN `{self.daily_table}` dr
+                            ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                           AND dr.date = %s
+                        WHERE b.os_name = %s
+                        {reg_clause}
+                        ORDER BY b.name
+                    """
+                    params = (selected_date, filter_value)
+
+                try:
+                    results = db_manager.execute_query(query, params) or []
+                except Exception as ex:
+                    ws['A7'] = f"Error loading data: {ex}"
+                    return
+
+                # ── Column headers (row 7) ────────────────────────────────
+                headers = ["Branch", "Palawan In", "Lotes In", "Palawan Out", "Lotes Out"]
+                hdr_fills = [HDR_FILL, _fill("16A085"), LOTES_FILL, _fill("E74C3C"), LOTES_FILL]
+                for col_idx, (hdr, fill) in enumerate(zip(headers, hdr_fills), start=1):
+                    c = ws.cell(row=7, column=col_idx, value=hdr)
+                    c.font      = HDR_FONT
+                    c.fill      = fill
+                    c.border    = border
+                    c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                ws.row_dimensions[7].height = 20
+
+                # ── Data rows (row 8 onwards) ─────────────────────────────
+                total_in      = 0.0
+                total_out     = 0.0
+                total_lotes_in  = 0
+                total_lotes_out = 0
+                data_row = 8
+
+                for row_data in results:
+                    branch_name  = row_data['branch']
+                    send_out     = float(row_data['palawan_send_out']              or 0)
+                    sc           = float(row_data['palawan_sc']                    or 0)
+                    pay_out      = float(row_data['palawan_pay_out']               or 0)
+                    incentives   = float(row_data['palawan_pay_out_incentives']    or 0)
+                    so_lotes     = int(row_data['palawan_send_out_lotes']          or 0)
+                    sc_lotes     = int(row_data['palawan_sc_lotes']                or 0)
+                    po_lotes     = int(row_data['palawan_pay_out_lotes']           or 0)
+                    inc_lotes    = int(row_data['palawan_pay_out_incentives_lotes']or 0)
+
+                    palawan_in  = send_out + sc
+                    palawan_out = pay_out + incentives
+                    lotes_in    = so_lotes + sc_lotes
+                    lotes_out   = po_lotes + inc_lotes
+
+                    values = [branch_name, palawan_in, lotes_in, palawan_out, lotes_out]
+                    for col_idx, val in enumerate(values, start=1):
+                        c = ws.cell(row=data_row, column=col_idx, value=val)
+                        c.border = border
+                        if col_idx > 1:
+                            if col_idx in (3, 5):  # lotes columns → integer
+                                c.number_format = '0'
+                            else:
+                                c.number_format = '#,##0.00'
+                            c.alignment = Alignment(horizontal='right')
+                        else:
+                            c.alignment = Alignment(horizontal='left')
+
+                    total_in      += palawan_in
+                    total_out     += palawan_out
+                    total_lotes_in  += lotes_in
+                    total_lotes_out += lotes_out
+                    data_row += 1
+
+                # ── Totals row ────────────────────────────────────────────
+                totals = ["TOTAL", total_in, total_lotes_in, total_out, total_lotes_out]
+                for col_idx, val in enumerate(totals, start=1):
+                    c = ws.cell(row=data_row, column=col_idx, value=val)
+                    c.font   = TOTAL_FONT
+                    c.fill   = TOTAL_FILL
+                    c.border = border
+                    if col_idx > 1:
+                        if col_idx in (3, 5):
+                            c.number_format = '0'
+                        else:
+                            c.number_format = '#,##0.00'
+                        c.alignment = Alignment(horizontal='right')
+                    else:
+                        c.alignment = Alignment(horizontal='left')
+
+                # ── Column widths ─────────────────────────────────────────
+                ws.column_dimensions['A'].width = 40
+                for col_letter in ['B', 'C', 'D', 'E']:
+                    ws.column_dimensions[col_letter].width = 16
+
             ws2 = wb.create_sheet(title="Palawan")
-            palawan_groups = [
-                ("PALAWAN SEND OUT", [
-                    ("S.O. Lotes",  ["palawan_send_out_lotes"], True),
-                    ("S.O. Amount", ["palawan_send_out"],       False),
-                    ("S.C.",        ["palawan_sc"],             False),
-                ]),
-                ("PALAWAN PAY OUT", [
-                    ("P.O. Lotes",     ["palawan_pay_out_lotes"],            True),
-                    ("P.O. Amount",    ["palawan_pay_out"],                  False),
-                    ("Inc. Lotes",     ["palawan_pay_out_incentives_lotes"], True),
-                    ("Inc. Amount",    ["palawan_pay_out_incentives"],       False),
-                ]),
-            ]
-            _write_grouped_sheet(ws2, palawan_groups, self.daily_table)
+            _write_palawan_sheet(ws2)
 
             # ════════════════════════════════════════════════════════════════
             # Sheet 3 – MC
@@ -4279,7 +4943,7 @@ class AdminDashboard(QWidget):
                     ("Amount", ["mc_out"],       False),
                 ]),
             ]
-            _write_grouped_sheet(ws3, mc_groups, self.daily_table)
+            _write_grouped_sheet(ws3, mc_groups, self.daily_table, show_amt_total=False)
 
             # ════════════════════════════════════════════════════════════════
             # Sheet 4 – Fund Transfer  (matches standalone Fund Transfer export)
@@ -4362,6 +5026,9 @@ class AdminDashboard(QWidget):
                 def _expr(col):
                     return (f"COALESCE(SUM(dr.`{col}`), 0)" if col else "0")
 
+                # Brand B has no cash float — skip the cash_float_tbl JOIN entirely
+                _is_brand_b = (self.account_type != 1)
+                _cf_select  = "0 AS cash_float" if _is_brand_b else "COALESCE(SUM(cf.cash_float), 0) AS cash_float"
                 sel_ft = (
                     "dr.branch AS branch, "
                     "COALESCE(b.area, 'UNASSIGNED') AS area, "
@@ -4370,11 +5037,12 @@ class AdminDashboard(QWidget):
                     "COALESCE(b.global_tag, '') AS global_tag, "
                     "COALESCE(b.sunday, '') AS sunday, "
                     f"{_expr(cc_col)}  AS cash_count, "
-                    "COALESCE(SUM(cf.cash_float), 0) AS cash_float"
+                    f"{_cf_select}"
                 )
                 join_c  = ("LEFT JOIN corporations c "
                            "ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)")
-                join_cf = ("LEFT JOIN cash_float_tbl cf "
+                join_cf = ("" if _is_brand_b else
+                           "LEFT JOIN cash_float_tbl cf "
                            "ON cf.branch COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                            "AND cf.date = dr.date")
                 grp     = ("GROUP BY dr.branch, b.area, b.line_of_business, b.global_tag, b.sunday "
@@ -4445,7 +5113,7 @@ class AdminDashboard(QWidget):
                         if sunday == 'NO':
                             sunday = 'NO SUNDAY'
                         cash_count = float(rd.get('cash_count', 0) or 0)
-                        cash_float = float(rd.get('cash_float', 0) or 0)
+                        cash_float = 0.0 if _is_brand_b else float(rd.get('cash_float', 0) or 0)
 
                         row_vals = [
                             (rd.get('area', '') or '',        'center', None),
@@ -4456,7 +5124,7 @@ class AdminDashboard(QWidget):
                             (sunday,                           'center', None),
                             (rd.get('branch', ''),             'left',   None),
                             ('',                               'center', None),
-                            (cash_float if cash_float else '', 'center', '#,##0.00'),
+                            ('' if _is_brand_b else (cash_float if cash_float else ''), 'center', '#,##0.00'),
                             (cash_count,                       'right',  '#,##0.00'),
                             ('',                               'right',  None),
                             ('',                               'right',  None),
@@ -4544,122 +5212,555 @@ class AdminDashboard(QWidget):
             # ════════════════════════════════════════════════════════════════
             # Sheet 5 – Payable (Palawan Reconciliation)
             # ════════════════════════════════════════════════════════════════
-            ws5 = wb.create_sheet(title="Payable")
-            payable_groups = [
+            _payable_groups_a = [
                 ("SEND OUT", [
-                    ("S.O. Lotes",   ["palawan_sendout_lotes_total"],  True),
-                    ("S.O. Capital", ["palawan_sendout_principal"],    False),
-                    ("S.O. SC",      ["palawan_sendout_sc"],           False),
-                    ("S.O. Comm.",   ["palawan_sendout_commission"],   False),
-                    ("S.O. Total",   ["palawan_sendout_regular_total"],False),
+                    ("S.O. Lotes",   ["sendout_lotes"],        True),
+                    ("S.O. Capital", ["sendout_capital"],      False),
+                    ("S.O. SC",      ["sendout_sc"],           False),
+                    ("S.O. Comm.",   ["sendout_commission"],   False),
+                    ("S.O. Total",   ["sendout_total"],        False),
                 ]),
                 ("PAY OUT", [
-                    ("P.O. Lotes",   ["palawan_payout_lotes_total"],  True),
-                    ("P.O. Capital", ["palawan_payout_principal"],    False),
-                    ("P.O. SC",      ["palawan_payout_sc"],           False),
-                    ("P.O. Comm.",   ["palawan_payout_commission"],   False),
-                    ("P.O. Total",   ["palawan_payout_regular_total"],False),
+                    ("P.O. Lotes",   ["payout_lotes"],         True),
+                    ("P.O. Capital", ["payout_capital"],       False),
+                    ("P.O. SC",      ["payout_sc"],            False),
+                    ("P.O. Comm.",   ["payout_commission"],    False),
+                    ("P.O. Total",   ["payout_total"],         False),
                 ]),
                 ("INTERNATIONAL", [
-                    ("Int. Lotes",   ["palawan_international_lotes_total"],  True),
-                    ("Int. Capital", ["palawan_international_principal"],    False),
-                    ("Int. SC",      ["palawan_international_sc"],           False),
-                    ("Int. Comm.",   ["palawan_international_commission"],   False),
-                    ("Int. Total",   ["palawan_international_regular_total"],False),
+                    ("Int. Lotes",   ["international_lotes"],        True),
+                    ("Int. Capital", ["international_capital"],      False),
+                    ("Int. SC",      ["international_sc"],           False),
+                    ("Int. Comm.",   ["international_commission"],   False),
+                    ("Int. Total",   ["international_total"],        False),
                 ]),
                 ("OTHER", [
-                    ("SKID",       ["palawan_suki_discounts"],     False),
-                    ("SKIR",       ["palawan_suki_rebates"],       False),
-                    ("Cancel",     ["palawan_cancel"],             False),
-                    ("P.O. Inc.",  ["palawan_pay_out_incentives"], False),
+                    ("SKID",      ["skid"],         False),
+                    ("SKIR",      ["skir"],         False),
+                    ("Cancel",    ["cancellation"], False),
+                    ("P.O. Inc.", ["inc"],          False),
                 ]),
             ]
-            _write_grouped_sheet(ws5, payable_groups, self.daily_table)
+            if self.account_type == 1:
+                # Brand A: split payable into 60% (specific corps) and 30% (Global) sheets
+                ws5a = wb.create_sheet(title="Payable 60%")
+                _write_grouped_sheet(ws5a, _payable_groups_a, "payable_tbl_brand_a", category_filter="60", show_amt_total=False)
+                ws5b = wb.create_sheet(title="Payable 30%")
+                _write_grouped_sheet(ws5b, _payable_groups_a, "payable_tbl_brand_a", category_filter="30", show_amt_total=False)
+            else:
+                ws5 = wb.create_sheet(title="Payable")
+                _write_grouped_sheet(ws5, _payable_groups_a, "payable_tbl_brand_a", show_amt_total=False)
 
             # ════════════════════════════════════════════════════════════════
-            # Sheet 6 – Daily Transaction
+            # Sheet 6+ – Brand-specific sheets
             # ════════════════════════════════════════════════════════════════
-            ws6 = wb.create_sheet(title="Daily Transaction")
-            _write_grouped_sheet(ws6, DT_COLUMN_GROUPS, self.daily_table)
+            if self.account_type == 1:
+                # ── Brand A: Daily Transaction, Other Services, P&L, New Sanla, New Renew, GOS, FT HO ──
+                ws6 = wb.create_sheet(title="Daily Transaction")
+                _write_grouped_sheet(ws6, DT_COLUMN_GROUPS, "daily_transaction_tbl_brand_a", show_amt_total=False)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 7 – Other Services
-            # ════════════════════════════════════════════════════════════════
-            ws7 = wb.create_sheet(title="Other Services")
-            _write_grouped_sheet(ws7, OTHER_SERVICES_COLUMN_GROUPS, self.daily_table)
+                ws7 = wb.create_sheet(title="Other Services")
+                _write_grouped_sheet(ws7, OTHER_SERVICES_COLUMN_GROUPS, "other_services_tbl_brand_a", show_amt_total=False)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 8 – P&L
-            # ════════════════════════════════════════════════════════════════
-            ws8 = wb.create_sheet(title="P&L")
-            _write_grouped_sheet(ws8, PL_COLUMN_GROUPS, self.daily_table)
+                ws8 = wb.create_sheet(title="P&L")
+                _write_grouped_sheet(ws8, PL_COLUMN_GROUPS, "PL_tbl_brand_a", show_amt_total=False)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 9 – New Sanla
-            # ════════════════════════════════════════════════════════════════
-            ws9 = wb.create_sheet(title="New Sanla")
-            sanla_groups = [
-                ("JEWELRY EMPENO", [
-                    ("Lotes",   ["empeno_jew_new_lotes"], True),
-                    ("Capital", ["empeno_jew_new"],       False),
-                ]),
-                ("STORAGE EMPENO", [
-                    ("Lotes",   ["empeno_sto_new_lotes"], True),
-                    ("Capital", ["empeno_sto_new"],       False),
-                ]),
-            ]
-            _write_grouped_sheet(ws9, sanla_groups, self.daily_table)
+                ws9 = wb.create_sheet(title="New Sanla")
+                sanla_groups = [
+                    ("JEWELRY EMPENO", [
+                        ("Lotes",   ["empeno_jew_new_lotes"], True),
+                        ("Capital", ["empeno_jew_new"],       False),
+                    ]),
+                    ("STORAGE EMPENO", [
+                        ("Lotes",   ["empeno_sto_new_lotes"], True),
+                        ("Capital", ["empeno_sto_new"],       False),
+                    ]),
+                ]
+                _write_grouped_sheet(ws9, sanla_groups, self.daily_table, show_amt_total=False)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 10 – New Renew
-            # ════════════════════════════════════════════════════════════════
-            ws10 = wb.create_sheet(title="New Renew")
-            renew_groups = [
-                ("JEWELRY", [
-                    ("JEW NEW Lotes",   ["empeno_jew_new_lotes"],           True),
-                    ("JEW NEW Capital", ["empeno_jew_new"],                 False),
-                    ("JEW RENEW Lotes", ["empeno_jew_renew_lotes"],         True),
-                    ("JEW RENEW Cap.",  ["empeno_jew_renew"],               False),
-                ]),
-                ("STORAGE", [
-                    ("STO NEW Lotes",   ["empeno_sto_new_lotes"],           True),
-                    ("STO NEW Capital", ["empeno_sto_new"],                 False),
-                    ("STO RENEW Lotes", ["fund_empeno_sto_renew_lotes"],    True),
-                    ("STO RENEW Cap.",  ["fund_empeno_sto_renew"],          False),
-                ]),
-            ]
-            _write_grouped_sheet(ws10, renew_groups, self.daily_table)
+                ws10 = wb.create_sheet(title="New Renew")
+                renew_groups = [
+                    ("JEWELRY", [
+                        ("JEW NEW Lotes",   ["empeno_jew_new_lotes"],           True),
+                        ("JEW NEW Capital", ["empeno_jew_new"],                 False),
+                        ("JEW RENEW Lotes", ["empeno_jew_renew_lotes"],         True),
+                        ("JEW RENEW Cap.",  ["empeno_jew_renew"],               False),
+                    ]),
+                    ("STORAGE", [
+                        ("STO NEW Lotes",   ["empeno_sto_new_lotes"],           True),
+                        ("STO NEW Capital", ["empeno_sto_new"],                 False),
+                        ("STO RENEW Lotes", ["fund_empeno_sto_renew_lotes"],    True),
+                        ("STO RENEW Cap.",  ["fund_empeno_sto_renew"],          False),
+                    ]),
+                ]
+                _write_grouped_sheet(ws10, renew_groups, self.daily_table, show_amt_total=False)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 11 – Global Other Services
-            # ════════════════════════════════════════════════════════════════
-            ws11 = wb.create_sheet(title="Global Other Services")
-            gos_groups = [
-                ("GCASH OUT",        [("Lotes", ["gcash_out_lotes"],        True),  ("Capital", ["gcash_out"],        False)]),
-                ("MONEYGRAM",        [("Lotes", ["moneygram_lotes"],        True),  ("Capital", ["moneygram"],        False)]),
-                ("TRANSFAST",        [("Lotes", ["transfast_lotes"],        True),  ("Capital", ["transfast"],        False)]),
-                ("RIA",              [("Lotes", ["ria_lotes"],              True),  ("Capital", ["ria"],              False)]),
-                ("SMART MONEY OUT",  [("Lotes", ["smart_money_out_lotes"],  True),  ("Capital", ["smart_money_out"],  False)]),
-                ("GCASH PADALA",     [("Lotes", ["gcash_padala_lotes"],     True),  ("Capital", ["gcash_padala"],     False)]),
-                ("ABRA OUT",         [("Lotes", ["abra_out_lotes"],         True),  ("Capital", ["abra_out"],         False)]),
-                ("REMITLY",          [("Lotes", ["remitly_lotes"],          True),  ("Capital", ["remitly"],          False)]),
-                ("PAL PAY CASH OUT", [("Lotes", ["pal_pay_cash_out_lotes"], True),  ("Capital", ["pal_pay_cash_out"], False)]),
-                ("MC OUT",           [("Lotes", ["mc_out_lotes"],           True),  ("Capital", ["mc_out"],           False)]),
-            ]
-            _write_grouped_sheet(ws11, gos_groups, "global_other_services_tbl", use_branch_join=True)
+                ws11 = wb.create_sheet(title="Global Other Services")
+                gos_groups = [
+                    ("GCASH OUT",        [("Lotes", ["gcash_out_lotes"],        True),  ("Capital", ["gcash_out"],        False)]),
+                    ("MONEYGRAM",        [("Lotes", ["moneygram_lotes"],        True),  ("Capital", ["moneygram"],        False)]),
+                    ("TRANSFAST",        [("Lotes", ["transfast_lotes"],        True),  ("Capital", ["transfast"],        False)]),
+                    ("RIA",              [("Lotes", ["ria_lotes"],              True),  ("Capital", ["ria"],              False)]),
+                    ("SMART MONEY OUT",  [("Lotes", ["smart_money_out_lotes"],  True),  ("Capital", ["smart_money_out"],  False)]),
+                    ("GCASH PADALA",     [("Lotes", ["gcash_padala_lotes"],     True),  ("Capital", ["gcash_padala"],     False)]),
+                    ("ABRA OUT",         [("Lotes", ["abra_out_lotes"],         True),  ("Capital", ["abra_out"],         False)]),
+                    ("REMITLY",          [("Lotes", ["remitly_lotes"],          True),  ("Capital", ["remitly"],          False)]),
+                    ("PAL PAY CASH OUT", [("Lotes", ["pal_pay_cash_out_lotes"], True),  ("Capital", ["pal_pay_cash_out"], False)]),
+                    ("MC OUT",           [("Lotes", ["mc_out_lotes"],           True),  ("Capital", ["mc_out"],           False)]),
+                    ("EC PAY OUT",       [("Capital", ["ec_pay_out"],                       False)]),
+                ]
+                _write_grouped_sheet(ws11, gos_groups, "global_other_services_tbl", use_branch_join=True, show_amt_total=False)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 12 – FT HO
-            # ════════════════════════════════════════════════════════════════
-            ws12 = wb.create_sheet(title="FT HO")
-            ft_ho_groups = [
-                ("FUND TRANSFER HO", [
-                    ("FT From Branch", ["fund_transfer_from_branch"],    False),
-                    ("FT To HO",       ["fund_transfer_to_head_office"], False),
-                    ("FT To Branch",   ["fund_transfer_to_branch"],      False),
-                ]),
-            ]
-            _write_grouped_sheet(ws12, ft_ho_groups, self.daily_table)
+                ws12 = wb.create_sheet(title="FT HO")
+                ft_ho_groups = [
+                    ("FUND TRANSFER HO", [
+                        ("FT From Branch", ["fund_transfer_from_branch"],    False),
+                        ("FT To HO",       ["fund_transfer_to_head_office"], False),
+                        ("FT To Branch",   ["fund_transfer_to_branch"],      False),
+                    ]),
+                ]
+                _write_grouped_sheet(ws12, ft_ho_groups, self.daily_table, show_amt_total=False)
+
+                # ── DEPO BR sheet ────────────────────────────────────────────
+                ws13 = wb.create_sheet(title="DEPO BR")
+
+                def _write_depo_br_sheet(ws):
+                    _write_info(ws)
+
+                    depo_headers = [
+                        "BRANCHES",
+                        "FT FROM BRANCH",
+                        "CR BRANCH NAME",
+                        "FT TO HEAD OFFICE",
+                        "REMARKS DEPO",
+                        "FT TO BRANCH",
+                        "CT BRANCH NAME",
+                    ]
+
+                    HDR_ROW  = 7
+                    DATA_START = 8
+
+                    for c_idx, h in enumerate(depo_headers, 1):
+                        c = ws.cell(row=HDR_ROW, column=c_idx, value=h)
+                        c.font = HDR_FONT; c.fill = HDR_FILL; c.border = border
+                        c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+                    # Build query — branches-first so every branch appears
+                    reg_where = ""
+                    if reg_filter == "registered":
+                        reg_where = "AND b.is_registered = 1"
+                    elif reg_filter == "not_registered":
+                        reg_where = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+
+                    try:
+                        if filter_type == "os":
+                            sql = f"""
+                                SELECT b.name AS branch,
+                                       COALESCE(dr.fund_transfer_from_branch, 0)        AS ft_from_branch,
+                                       COALESCE(dr.fund_transfer_from_branch_dest, '')   AS cr_branch_name,
+                                       COALESCE(dr.fund_transfer_to_head_office, 0)      AS ft_to_ho,
+                                       dr.fund_transfer_bank_account                     AS raw_bank_id,
+                                       dr.ft_ho_breakdown                                AS raw_ft_breakdown,
+                                       COALESCE(dr.fund_transfer_to_branch, 0)           AS ft_to_branch,
+                                       COALESCE(dr.fund_transfer_to_branch_dest, '')     AS ct_branch_name
+                                FROM branches b
+                                LEFT JOIN `{self.daily_table}` dr
+                                    ON b.name COLLATE utf8mb4_general_ci
+                                     = dr.branch COLLATE utf8mb4_general_ci
+                                    AND dr.date = %s
+                                WHERE b.os_name = %s {reg_where}
+                                ORDER BY b.name
+                            """
+                            sql_params = (selected_date, filter_value)
+                        else:
+                            sql = f"""
+                                SELECT b.name AS branch,
+                                       COALESCE(dr.fund_transfer_from_branch, 0)        AS ft_from_branch,
+                                       COALESCE(dr.fund_transfer_from_branch_dest, '')   AS cr_branch_name,
+                                       COALESCE(dr.fund_transfer_to_head_office, 0)      AS ft_to_ho,
+                                       dr.fund_transfer_bank_account                     AS raw_bank_id,
+                                       dr.ft_ho_breakdown                                AS raw_ft_breakdown,
+                                       COALESCE(dr.fund_transfer_to_branch, 0)           AS ft_to_branch,
+                                       COALESCE(dr.fund_transfer_to_branch_dest, '')     AS ct_branch_name
+                                FROM branches b
+                                INNER JOIN corporations c
+                                    ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                    AND c.name = %s
+                                LEFT JOIN `{self.daily_table}` dr
+                                    ON b.name COLLATE utf8mb4_general_ci
+                                     = dr.branch COLLATE utf8mb4_general_ci
+                                    AND dr.date = %s
+                                WHERE 1=1 {reg_where}
+                                ORDER BY b.name
+                            """
+                            sql_params = (filter_value, selected_date)
+
+                        results = db_manager.execute_query(sql, sql_params) or []
+                    except Exception as ex:
+                        ws.cell(row=DATA_START, column=1, value=f"Error loading data: {ex}")
+                        return
+
+                    # Bank account ID lookup (same list as BANK_ACCOUNTS on AdminDashboard)
+                    _bank_detail = {b['id']: b for b in getattr(self, 'BANK_ACCOUNTS', [])}
+
+                    def _resolve_depo(raw_bank_id, raw_ft_breakdown):
+                        _bd = (raw_ft_breakdown or '').strip()
+                        if _bd:
+                            try:
+                                items = json.loads(_bd)
+                                parts = []
+                                for item in items:
+                                    if isinstance(item, dict):
+                                        bid = item.get('bank_account_id') or item.get('id')
+                                        bdt = _bank_detail.get(int(bid)) if bid else None
+                                        if bdt:
+                                            parts.append(
+                                                f"{bdt['bank_name']} - {bdt['account_name']}"
+                                                f" ({bdt.get('account_number', '')})"
+                                                f": {item.get('amount', '')}"
+                                            )
+                                        else:
+                                            parts.append(str(item))
+                                    elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                                        # Format: [display_name, bank_id, amount]
+                                        display_name = str(item[0])
+                                        amount = item[2] if len(item) >= 3 else ''
+                                        parts.append(f"{display_name}: {amount}" if amount != '' else display_name)
+                                if parts:
+                                    return '; '.join(parts)
+                            except Exception:
+                                pass
+                        if raw_bank_id:
+                            try:
+                                bdt = _bank_detail.get(int(raw_bank_id))
+                            except (ValueError, TypeError):
+                                bdt = None
+                            if bdt:
+                                return f"{bdt['bank_name']} - {bdt['account_name']} ({bdt.get('account_number', '')})"
+                            return str(raw_bank_id)
+                        return ''
+
+                    total_from = total_ho = total_to = 0.0
+
+                    for r_idx, row in enumerate(results, DATA_START):
+                        ft_from  = float(row.get('ft_from_branch', 0) or 0)
+                        cr_name  = str(row.get('cr_branch_name', '') or '')
+                        ft_ho    = float(row.get('ft_to_ho', 0) or 0)
+                        rem_depo = _resolve_depo(row.get('raw_bank_id'), row.get('raw_ft_breakdown'))
+                        ft_to    = float(row.get('ft_to_branch', 0) or 0)
+                        ct_name  = str(row.get('ct_branch_name', '') or '')
+
+                        total_from += ft_from
+                        total_ho   += ft_ho
+                        total_to   += ft_to
+
+                        values = [
+                            row.get('branch', ''),
+                            ft_from,
+                            cr_name,
+                            ft_ho,
+                            rem_depo,
+                            ft_to,
+                            ct_name,
+                        ]
+                        for c_idx, val in enumerate(values, 1):
+                            cell = ws.cell(row=r_idx, column=c_idx, value=val)
+                            cell.border = border
+                            if c_idx in (2, 4, 6):
+                                cell.number_format = '#,##0.00'
+                                cell.alignment = Alignment(horizontal='right')
+                            else:
+                                cell.alignment = Alignment(horizontal='left')
+
+                    # Totals row
+                    tot_row = DATA_START + len(results)
+                    tot_vals = ["TOTAL", total_from, "", total_ho, "", total_to, ""]
+                    for c_idx, val in enumerate(tot_vals, 1):
+                        cell = ws.cell(row=tot_row, column=c_idx, value=val)
+                        cell.font = TOTAL_FONT; cell.fill = TOTAL_FILL; cell.border = border
+                        if c_idx in (2, 4, 6):
+                            cell.number_format = '#,##0.00'
+                            cell.alignment = Alignment(horizontal='right')
+
+                    # Column widths
+                    ws.column_dimensions['A'].width = 28
+                    ws.column_dimensions['B'].width = 18
+                    ws.column_dimensions['C'].width = 22
+                    ws.column_dimensions['D'].width = 18
+                    ws.column_dimensions['E'].width = 22
+                    ws.column_dimensions['F'].width = 18
+                    ws.column_dimensions['G'].width = 22
+                    ws.freeze_panes = 'B8'
+
+                _write_depo_br_sheet(ws13)
+
+            else:
+                # ── Brand B: Global Payable and Payable Reports ────────────
+                ws6 = wb.create_sheet(title="Global Payable")
+                global_payable_groups = [
+                    ("SEND OUT", [
+                        ("S.O. Lotes",   ["sendout_lotes"],   True),
+                        ("S.O. Capital", ["sendout_capital"],  False),
+                        ("S.O. SC",      ["sendout_sc"],       False),
+                        ("S.O. Comm.",   ["sendout_commission"],False),
+                        ("S.O. Total",   ["sendout_total"],    False),
+                    ]),
+                    ("PAY OUT", [
+                        ("P.O. Lotes",   ["payout_lotes"],   True),
+                        ("P.O. Capital", ["payout_capital"],  False),
+                        ("P.O. SC",      ["payout_sc"],       False),
+                        ("P.O. Comm.",   ["payout_commission"],False),
+                        ("P.O. Total",   ["payout_total"],    False),
+                    ]),
+                    ("INTERNATIONAL", [
+                        ("Int. Lotes",   ["international_lotes"],   True),
+                        ("Int. Capital", ["international_capital"],  False),
+                        ("Int. SC",      ["international_sc"],       False),
+                        ("Int. Comm.",   ["international_commission"],False),
+                        ("Int. Total",   ["international_total"],    False),
+                    ]),
+                    ("OTHER", [
+                        ("SKID",       ["skid"],        False),
+                        ("SKIR",       ["skir"],        False),
+                        ("Cancel",     ["cancellation"],False),
+                        ("P.O. Inc.",  ["inc"],         False),
+                    ]),
+                ]
+                _write_grouped_sheet(ws6, global_payable_groups, "payable_tbl_brand_a", use_branch_join=True, show_amt_total=False)
+
+                ws7 = wb.create_sheet(title="Payable Reports")
+
+                def _write_pepp_report_sheet(ws):
+                    from decimal import Decimal, ROUND_HALF_UP
+
+                    def _r2(v):
+                        return float(Decimal(str(v)).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+                    def _m2(a, b):
+                        return float((Decimal(str(a)) * Decimal(str(b))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP))
+
+                    _corp_abbrev_map = {
+                        'SILVERSTAR JEWELRY PAWNSHOP INC':                'SJPI',
+                        'ALEXITE JEWELRY PAWNSHOP INC':                   'AJPI',
+                        'SAN RAMON PLATINUM PAWNSHOP INC':                'SRPPI',
+                        'HOMENEEDS PAWNSHOP INC':                         'HPI',
+                        'KRISTAL CLEAR DIAMOND AND GOLD PAWNSHOP INC':    'KCDGPI',
+                        'SAFELOCK PAWNSHOP INC':                          'SPI',
+                        'MEGAWORLD DOMESTIC PAWNSHOP INC':                'MDPI',
+                        'GLOBAL RELIANCE MANAGEMENT & HOLDINGS CORP.':    'GRMHC',
+                    }
+                    _registry_map = {
+                        'SILVERSTAR JEWELRY PAWNSHOP INC':                'P250682A',
+                        'ALEXITE JEWELRY PAWNSHOP INC':                   'P250683A',
+                        'SAN RAMON PLATINUM PAWNSHOP INC':                'P250681A',
+                        'HOMENEEDS PAWNSHOP INC':                         'P250677A',
+                        'KRISTAL CLEAR DIAMOND AND GOLD PAWNSHOP INC':    'P250678A',
+                        'SAFELOCK PAWNSHOP INC':                          'P250680A',
+                        'MEGAWORLD DOMESTIC PAWNSHOP INC':                'P250679A',
+                        'GLOBAL RELIANCE MANAGEMENT & HOLDINGS CORP.':    'P210021A',
+                    }
+
+                    corp_name   = filter_value
+                    corp_upper  = corp_name.upper().strip().rstrip('.')
+                    corp_abbrev = next((v for k, v in _corp_abbrev_map.items() if k.upper().strip().rstrip('.') == corp_upper), corp_name[:4].upper())
+                    registry    = next((v for k, v in _registry_map.items()    if k.upper().strip().rstrip('.') == corp_upper), '')
+                    is_global   = 'GLOBAL RELIANCE' in corp_upper
+                    payable_tbl = "payable_tbl_brand_a"
+
+                    try:
+                        if filter_type == "os":
+                            result = db_manager.execute_query(f"""
+                                SELECT SUM(COALESCE(p.sendout_capital, 0))        AS total_sendout_capital,
+                                       SUM(COALESCE(p.sendout_commission, 0))     AS total_sendout_commission,
+                                       SUM(COALESCE(p.sendout_sc, 0))             AS total_sendout_sc,
+                                       SUM(COALESCE(p.payout_capital, 0))         AS total_payout_capital,
+                                       SUM(COALESCE(p.payout_commission, 0))      AS total_payout_commission,
+                                       SUM(COALESCE(p.payout_sc, 0))              AS total_payout_sc,
+                                       SUM(COALESCE(p.international_commission, 0)) AS total_international_commission,
+                                       SUM(COALESCE(p.skid, 0))                   AS total_skid,
+                                       SUM(COALESCE(p.skir, 0))                   AS total_skir,
+                                       SUM(COALESCE(p.cancellation, 0))           AS total_cancellation,
+                                       SUM(COALESCE(p.inc, 0))                    AS total_inc
+                                FROM {payable_tbl} p
+                                INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                                WHERE b.os_name = %s AND p.date = %s AND b.is_registered = 1
+                            """, (filter_value, selected_date))
+                        elif is_global:
+                            result = db_manager.execute_query(f"""
+                                SELECT SUM(COALESCE(p.sendout_capital, 0))        AS total_sendout_capital,
+                                       SUM(COALESCE(p.sendout_commission, 0))     AS total_sendout_commission,
+                                       SUM(COALESCE(p.sendout_sc, 0))             AS total_sendout_sc,
+                                       SUM(COALESCE(p.payout_capital, 0))         AS total_payout_capital,
+                                       SUM(COALESCE(p.payout_commission, 0))      AS total_payout_commission,
+                                       SUM(COALESCE(p.payout_sc, 0))              AS total_payout_sc,
+                                       SUM(COALESCE(p.international_commission, 0)) AS total_international_commission,
+                                       SUM(COALESCE(p.skid, 0))                   AS total_skid,
+                                       SUM(COALESCE(p.skir, 0))                   AS total_skir,
+                                       SUM(COALESCE(p.cancellation, 0))           AS total_cancellation,
+                                       SUM(COALESCE(p.inc, 0))                    AS total_inc
+                                FROM {payable_tbl} p
+                                INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                                WHERE b.global_tag = 'GLOBAL' AND p.date = %s AND b.is_registered = 1
+                            """, (selected_date,))
+                        else:
+                            result = db_manager.execute_query(f"""
+                                SELECT SUM(COALESCE(p.sendout_capital, 0))        AS total_sendout_capital,
+                                       SUM(COALESCE(p.sendout_commission, 0))     AS total_sendout_commission,
+                                       SUM(COALESCE(p.sendout_sc, 0))             AS total_sendout_sc,
+                                       SUM(COALESCE(p.payout_capital, 0))         AS total_payout_capital,
+                                       SUM(COALESCE(p.payout_commission, 0))      AS total_payout_commission,
+                                       SUM(COALESCE(p.payout_sc, 0))              AS total_payout_sc,
+                                       SUM(COALESCE(p.international_commission, 0)) AS total_international_commission,
+                                       SUM(COALESCE(p.skid, 0))                   AS total_skid,
+                                       SUM(COALESCE(p.skir, 0))                   AS total_skir,
+                                       SUM(COALESCE(p.cancellation, 0))           AS total_cancellation,
+                                       SUM(COALESCE(p.inc, 0))                    AS total_inc
+                                FROM {payable_tbl} p
+                                INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                                INNER JOIN corporations c ON b.corporation_id = c.id AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                                WHERE p.corporation = %s AND p.date = %s AND b.is_registered = 1
+                            """, (filter_value, selected_date))
+                    except Exception as ex:
+                        ws['A1'] = f"Error loading data: {ex}"
+                        return
+
+                    if not result or not result[0]:
+                        ws['A1'] = "No data found."
+                        return
+
+                    row_data = result[0]
+                    if not isinstance(row_data, dict):
+                        _keys = [
+                            'total_sendout_capital', 'total_sendout_commission', 'total_sendout_sc',
+                            'total_payout_capital',  'total_payout_commission',  'total_payout_sc',
+                            'total_international_commission',
+                            'total_skid', 'total_skir', 'total_cancellation', 'total_inc',
+                        ]
+                        row_data = dict(zip(_keys, row_data))
+
+                    if all(v is None for v in row_data.values()):
+                        ws['A1'] = "No data found."
+                        return
+
+                    sendout_capital          = float(row_data.get('total_sendout_capital')          or 0)
+                    sendout_commission       = float(row_data.get('total_sendout_commission')       or 0)
+                    sendout_sc               = float(row_data.get('total_sendout_sc')               or 0)
+                    payout_capital           = float(row_data.get('total_payout_capital')           or 0)
+                    payout_commission        = float(row_data.get('total_payout_commission')        or 0)
+                    payout_sc                = float(row_data.get('total_payout_sc')                or 0)
+                    international_commission = float(row_data.get('total_international_commission') or 0)
+                    total_skid               = float(row_data.get('total_skid')                     or 0)
+                    total_skir               = float(row_data.get('total_skir')                     or 0)
+                    total_cancellation       = float(row_data.get('total_cancellation')             or 0)
+                    total_inc                = float(row_data.get('total_inc')                      or 0)
+
+                    pepp_commission_61       = _m2(sendout_commission, 0.61)
+                    skid_61                  = _m2(total_skid, 0.61)
+                    corp_commission_43       = _m2(payout_commission, 0.43)
+                    corp_international_80    = _m2(international_commission, 0.80)
+                    skir_57                  = _m2(total_skir, 0.57)
+
+                    send_subtotal                = _r2(sendout_capital + pepp_commission_61 + sendout_sc)
+                    send_subtotal_after_discount = _r2(send_subtotal - skid_61)
+                    total_net_send               = _r2(send_subtotal_after_discount - total_cancellation)
+                    release_subtotal             = _r2(payout_capital + corp_commission_43 + corp_international_80)
+                    release_subtotal_with_inc    = _r2(release_subtotal + total_inc)
+                    total_net_released           = _r2(release_subtotal_with_inc + skir_57)
+                    net_receivable_payable       = _r2(total_net_send - total_net_released)
+
+                    hdr_font_pr = Font(bold=True, size=12)
+                    sec_font_pr = Font(bold=True, size=11)
+                    reg_font_pr = Font(size=10)
+                    tot_font_pr = Font(bold=True, size=11)
+                    hdr_fill_pr = PatternFill("solid", fgColor="E6F3FF")
+                    sub_fill_pr = PatternFill("solid", fgColor="F0F0F0")
+                    tot_fill_pr = PatternFill("solid", fgColor="D9D9D9")
+                    right_al    = Alignment(horizontal='right')
+                    center_al   = Alignment(horizontal='center')
+
+                    r = 1
+                    ws.merge_cells(f'A{r}:D{r}')
+                    ws[f'A{r}'] = f"Palawan Express Pera Padala - {corp_name}"
+                    ws[f'A{r}'].font      = hdr_font_pr
+                    ws[f'A{r}'].alignment = center_al
+                    ws[f'A{r}'].fill      = hdr_fill_pr
+                    r += 1
+
+                    ws[f'A{r}'] = f"PEPP Reconciliation for {selected_date}"
+                    ws[f'C{r}'] = "Partner Registry No."
+                    ws[f'D{r}'] = registry
+                    for cell in [ws[f'A{r}'], ws[f'C{r}'], ws[f'D{r}']]:
+                        cell.font = hdr_font_pr
+                    ws[f'C{r}'].alignment = right_al
+                    ws[f'D{r}'].alignment = right_al
+                    r += 2
+
+                    rows_pr = [
+                        ("Send Transaction",                                                   "", "",                               "",                                    "section"),
+                        (f"    PEPP Remittance from {corp_name}",                              "", "P",                              f"{sendout_capital:,.2f}",              "indent"),
+                        ("    PEPP share: 61% of commission",                                  "P", f"{sendout_commission:,.2f}",    f"{pepp_commission_61:,.2f}",           "indent"),
+                        ("    PEPP share: Service Charge",                                     "", f"{sendout_sc:,.2f}",             f"{sendout_sc:,.2f}",                   "indent"),
+                        ("        Subtotal",                                                   "", "",                               f"{send_subtotal:,.2f}",                "subtotal"),
+                        ("    Less: Discount (Suki Card)",                                     "", f"({total_skid:,.2f})",           f"({skid_61:,.2f})",                    "indent"),
+                        ("        Subtotal",                                                   "", "",                               f"{send_subtotal_after_discount:,.2f}", "subtotal"),
+                        ("    Less: Cancellation",                                             "", f"({total_cancellation:,.2f})",   f"({total_cancellation:,.2f})",         "indent"),
+                        ("    Total Net Send",                                                 "", "",                               f"{total_net_send:,.2f}",               "total"),
+                        ("", "", "", "", "blank"),
+                        (f"    RELEASE Transaction (Payable to {corp_abbrev})",                "", "",                               "",                                    "section"),
+                        (f"    PEPP Remittances released at {corp_abbrev}",                    "", "P",                              f"{payout_capital:,.2f}",               "indent"),
+                        (f"    {corp_abbrev} share: 43% of commission",                        "P", f"{payout_commission:,.2f}",     f"{corp_commission_43:,.2f}",           "indent"),
+                        (f"    {corp_abbrev} share: 50% of commission (LBC Domestic Payout)",  "", "",                               "",                                    "indent"),
+                        (f"    {corp_abbrev} share: 80% of commission (International Payout)", "", f"{international_commission:,.2f}", f"{corp_international_80:,.2f}",    "indent"),
+                        ("    Service Charge",                                                 "", f"{payout_sc:,.2f}",              "-",                                   "indent"),
+                        ("        Subtotal",                                                   "", "",                               f"{release_subtotal:,.2f}",             "subtotal"),
+                        (f"    Add: {corp_abbrev} Branch Incentives released",                 "", "",                               f"{total_inc:,.2f}",                   "indent"),
+                        ("        Subtotal",                                                   "", "",                               f"{release_subtotal_with_inc:,.2f}",    "subtotal"),
+                        ("    Add: Rebates (Suki Card)",                                       "", f"{total_skir:,.2f}",             f"{skir_57:,.2f}",                     "indent"),
+                        ("    Total Net Released",                                             "", "",                               f"{total_net_released:,.2f}",           "total"),
+                        ("", "", "", "", "blank"),
+                        ("    Net Send",                   "", "", f"{total_net_send:,.2f}",         "regular"),
+                        ("    Less : Net Released",        "", "", f"{total_net_released:,.2f}",     "regular"),
+                        ("    Net Receivable / (Payable)", "", "", f"{net_receivable_payable:,.2f}", "total"),
+                    ]
+
+                    for col1, col2, col3, col4, row_type in rows_pr:
+                        ws[f'A{r}'] = col1
+                        ws[f'B{r}'] = col2
+                        ws[f'C{r}'] = col3
+                        ws[f'D{r}'] = col4
+
+                        if row_type == "section":
+                            for c in ['A', 'B', 'C', 'D']:
+                                ws[f'{c}{r}'].font = sec_font_pr
+                        elif row_type == "total":
+                            for c in ['A', 'B', 'C', 'D']:
+                                ws[f'{c}{r}'].font = tot_font_pr
+                                ws[f'{c}{r}'].fill = tot_fill_pr
+                        elif row_type == "subtotal":
+                            for c in ['A', 'B', 'C', 'D']:
+                                ws[f'{c}{r}'].font = tot_font_pr
+                                ws[f'{c}{r}'].fill = sub_fill_pr
+                        else:
+                            for c in ['A', 'B', 'C', 'D']:
+                                ws[f'{c}{r}'].font = reg_font_pr
+
+                        ws[f'C{r}'].alignment = right_al
+                        ws[f'D{r}'].alignment = right_al
+                        r += 1
+
+                    r += 2
+                    ws[f'A{r}'] = "Prepared by:"
+                    ws[f'C{r}'] = "Noted by:"
+                    r += 2
+                    ws[f'A{r}'] = "Rochelle G. Serrano"
+                    ws[f'C{r}'] = "Aimee M. Martinez"
+
+                    ws.column_dimensions['A'].width = 55
+                    ws.column_dimensions['B'].width = 8
+                    ws.column_dimensions['C'].width = 18
+                    ws.column_dimensions['D'].width = 18
+
+                _write_pepp_report_sheet(ws7)
 
             # ── Save ─────────────────────────────────────────────────────────
             wb.save(file_path)
@@ -4706,15 +5807,9 @@ class AdminDashboard(QWidget):
             data = result[0]
             self._current_entry_data = data  
 
-            self.beginning_balance_input.setText(str(data.get('beginning_balance', 0)))
-            self.ending_balance_display.setText(str(data.get('ending_balance', 0)))
-            self.cash_count_input.setText(str(data.get('cash_count', 0)))
-            self.cash_result_display.setText(str(data.get('cash_result', 0)))
-            
-            debit_total = data.get('debit_total', 0)
-            credit_total = data.get('credit_total', 0)
-            self.debit_total_display.setText(f"{debit_total:.2f}")
-            self.credit_total_display.setText(f"{credit_total:.2f}")
+            beginning = float(data.get('beginning_balance') or 0)
+            self.beginning_balance_input.setText(f"{beginning:.2f}")
+            self.cash_count_input.setText(f"{float(data.get('cash_count') or 0):.2f}")
 
             for ui_label, db_column in self.debit_fields.items():
                 if db_column in data and data[db_column] is not None:
@@ -4739,6 +5834,49 @@ class AdminDashboard(QWidget):
                     self.credit_lotes_inputs[ui_label].setText(str(data[lotes_col]))
                 else:
                     self.credit_lotes_inputs[ui_label].setText("0")
+
+            # Recalculate totals from actual field values (fixes stale stored values)
+            debit_sum = sum(
+                float(self.debit_inputs[lbl].text().strip() or 0)
+                for lbl in self.debit_fields
+            )
+            credit_sum = sum(
+                float(self.credit_inputs[lbl].text().strip() or 0)
+                for lbl in self.credit_fields
+            )
+            debit_total = beginning + debit_sum
+            credit_total = credit_sum
+            ending_balance = debit_total - credit_total
+            cash_count = float(data.get('cash_count') or 0)
+            cash_result = cash_count - ending_balance
+
+            self.debit_total_display.setText(f"{debit_total:.2f}")
+            self.credit_total_display.setText(f"{credit_total:.2f}")
+            self.ending_balance_display.setText(f"{ending_balance:.2f}")
+            self.cash_result_display.setText(f"{cash_result:.2f}")
+
+            variance_status = data.get('variance_status', '')
+            if abs(cash_result) < 0.01:
+                variance_status = 'balanced'
+            elif cash_result > 0:
+                variance_status = 'over'
+            else:
+                variance_status = 'short'
+            if variance_status == 'short':
+                self.variance_status_display.setText("SHORT")
+                self.variance_status_display.setStyleSheet(
+                    "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #ffcdd2; color: #c62828;"
+                )
+            elif variance_status == 'over':
+                self.variance_status_display.setText("OVER")
+                self.variance_status_display.setStyleSheet(
+                    "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #fff3cd; color: #856404;"
+                )
+            else:
+                self.variance_status_display.setText("✓ Balanced")
+                self.variance_status_display.setStyleSheet(
+                    "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #c8e6c9; color: #2e7d32;"
+                )
 
             self.selected_bank_account = data.get('fund_transfer_bank_account')
             if self.bank_account_btn:
@@ -4784,24 +5922,6 @@ class AdminDashboard(QWidget):
                     self.from_branch_dest_btn.setToolTip("No source branch specified")
 
             self.current_record_id = data.get('id')
-            
-
-            variance_status = data.get('variance_status', 'balanced')
-            if variance_status == 'short':
-                self.variance_status_display.setText("⚠️ SHORT")
-                self.variance_status_display.setStyleSheet(
-                    "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #ffcdd2; color: #c62828;"
-                )
-            elif variance_status == 'over':
-                self.variance_status_display.setText("⚠️ OVER")
-                self.variance_status_display.setStyleSheet(
-                    "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #fff3cd; color: #856404;"
-                )
-            else:
-                self.variance_status_display.setText("✓ Balanced")
-                self.variance_status_display.setStyleSheet(
-                    "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #c8e6c9; color: #2e7d32;"
-                )
 
             # Check review status
             brand_key = "A" if self.account_type == 1 else "B"
@@ -4823,10 +5943,13 @@ class AdminDashboard(QWidget):
             except Exception:
                 self.reviewed_checkbox.setEnabled(False)
 
+            # Load palawan details into collapsible
+            self._load_palawan_details(data)
+
             QMessageBox.information(self, "✅ Loaded", f"Entry for {selected_date} loaded successfully!")
 
         except Exception as e:
-            print(f"Error loading entry: {e}")
+            logger.error("Error loading entry: %s", e)
             QMessageBox.critical(self, "Error", f"Failed to load entry: {e}")
 
     def _on_review_toggled(self, checked):
@@ -4856,7 +5979,7 @@ class AdminDashboard(QWidget):
                     "color: #2e7d32;", "color: #c0392b;"
                 ))
         except Exception as e:
-            print(f"Error toggling review mark: {e}")
+            logger.error("Error toggling review mark: %s", e)
 
     def get_current_entry_data(self):
         """Return the current loaded entry data for breakdown views"""
@@ -5006,6 +6129,61 @@ class AdminDashboard(QWidget):
         self.reviewed_checkbox.blockSignals(False)
         self.reviewed_checkbox.setEnabled(False)
 
+    def _recalc_totals(self):
+        """Recalculate and display Total Cash Receipt, Total Cash Out,
+        Ending Balance, Cash Result and Variance live as the admin edits fields."""
+        try:
+            beginning = float(self.beginning_balance_input.text().strip().replace(',', '') or 0)
+        except ValueError:
+            beginning = 0.0
+        try:
+            cash_count = float(self.cash_count_input.text().strip().replace(',', '') or 0)
+        except ValueError:
+            cash_count = 0.0
+
+        debit_sum = 0.0
+        for inp in self.debit_inputs.values():
+            try:
+                debit_sum += float(inp.text().strip().replace(',', '') or 0)
+            except ValueError:
+                pass
+
+        credit_sum = 0.0
+        for inp in self.credit_inputs.values():
+            try:
+                credit_sum += float(inp.text().strip().replace(',', '') or 0)
+            except ValueError:
+                pass
+
+        debit_total    = beginning + debit_sum
+        credit_total   = credit_sum
+        ending_balance = debit_total - credit_total
+        cash_result    = cash_count - ending_balance
+
+        self.debit_total_display.setText(f"{debit_total:.2f}")
+        self.credit_total_display.setText(f"{credit_total:.2f}")
+        self.ending_balance_display.setText(f"{ending_balance:.2f}")
+        self.cash_result_display.setText(f"{cash_result:.2f}")
+
+        if abs(cash_result) < 0.01:
+            self.variance_status_display.setText("✓ Balanced")
+            self.variance_status_display.setStyleSheet(
+                "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px;"
+                " background-color: #c8e6c9; color: #2e7d32;"
+            )
+        elif cash_result > 0:
+            self.variance_status_display.setText("OVER")
+            self.variance_status_display.setStyleSheet(
+                "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px;"
+                " background-color: #fff3cd; color: #856404;"
+            )
+        else:
+            self.variance_status_display.setText("SHORT")
+            self.variance_status_display.setStyleSheet(
+                "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px;"
+                " background-color: #ffcdd2; color: #c62828;"
+            )
+
     def save_entry(self):
         """Save edited entry to the database"""
         if not hasattr(self, 'current_record_id') or not self.current_record_id:
@@ -5084,7 +6262,7 @@ class AdminDashboard(QWidget):
 
             debit_total = beginning + debit_sum
             credit_total = credit_sum
-            ending_balance = beginning + debit_sum - credit_sum
+            ending_balance = debit_total - credit_total
             cash_result = cash_count - ending_balance
 
 
@@ -5095,28 +6273,117 @@ class AdminDashboard(QWidget):
             else:
                 variance_status = "short"
 
+            update_data['beginning_balance'] = beginning
+            update_data['cash_count'] = cash_count
             update_data['debit_total'] = debit_total
             update_data['credit_total'] = credit_total
             update_data['ending_balance'] = ending_balance
             update_data['cash_result'] = cash_result
             update_data['variance_status'] = variance_status
 
+            # Merge palawan detail values
+            # Brand A: sendout/payout/international go to payable_tbl_brand_a
+            # (those columns don't exist in daily_reports_brand_a)
+            _PAYABLE_SECTION_COLS = {
+                'palawan_sendout_principal', 'palawan_sendout_sc', 'palawan_sendout_commission',
+                'palawan_sendout_lotes_total', 'palawan_sendout_regular_total',
+                'palawan_payout_principal', 'palawan_payout_sc', 'palawan_payout_commission',
+                'palawan_payout_lotes_total', 'palawan_payout_regular_total',
+                'palawan_international_principal', 'palawan_international_sc',
+                'palawan_international_commission', 'palawan_international_lotes_total',
+                'palawan_international_regular_total',
+                # adjustments — stored in payable_tbl_brand_a as skid/skir/cancellation/inc
+                'palawan_suki_discounts', 'palawan_suki_rebates',
+                'palawan_cancel', 'palawan_pay_out_incentives',
+            }
+            payable_a_vals = {}
+            for db_col, widget in getattr(self, 'palawan_inputs', {}).items():
+                if widget.isReadOnly():
+                    continue  
+                try:
+                    val = float(widget.text().strip() or 0)
+                except ValueError:
+                    val = 0
+                if self.account_type == 1 and db_col in _PAYABLE_SECTION_COLS:
+                    payable_a_vals[db_col] = val  # goes to payable_tbl_brand_a
+                else:
+                    update_data[db_col] = val
+            # Also collect auto-calc totals
+            for section in ("sendout", "payout", "international"):
+                disp = getattr(self, 'palawan_total_displays', {}).get(section)
+                if disp:
+                    try:
+                        total_val = float(disp.text() or 0)
+                    except ValueError:
+                        total_val = 0
+                    col = f"palawan_{section}_regular_total"
+                    if self.account_type == 1:
+                        payable_a_vals[col] = total_val
+                    else:
+                        update_data[col] = total_val
 
             set_clauses = []
             values = []
             for col, val in update_data.items():
                 set_clauses.append(f"`{col}` = %s")
                 values.append(val)
-            
-            values.extend([branch_name, selected_date])
-            
+
+            # Use the primary key (id) so we update exactly the one record loaded,
+            # regardless of how many corporation rows share the same branch+date.
+            values.append(self.current_record_id)
+
             update_query = f"""
                 UPDATE {self.daily_table}
                 SET {', '.join(set_clauses)}
-                WHERE branch = %s AND date = %s
+                WHERE id = %s
             """
             
             rows_affected = self.db.execute_query(update_query, values)
+
+            # Brand A: upsert palawan sendout/payout/international to payable_tbl_brand_a
+            if self.account_type == 1 and payable_a_vals:
+                _col_map = {
+                    'palawan_sendout_principal':           'sendout_capital',
+                    'palawan_sendout_sc':                  'sendout_sc',
+                    'palawan_sendout_commission':          'sendout_commission',
+                    'palawan_sendout_lotes_total':         'sendout_lotes',
+                    'palawan_sendout_regular_total':       'sendout_total',
+                    'palawan_payout_principal':            'payout_capital',
+                    'palawan_payout_sc':                   'payout_sc',
+                    'palawan_payout_commission':           'payout_commission',
+                    'palawan_payout_lotes_total':          'payout_lotes',
+                    'palawan_payout_regular_total':        'payout_total',
+                    'palawan_international_principal':     'international_capital',
+                    'palawan_international_sc':            'international_sc',
+                    'palawan_international_commission':    'international_commission',
+                    'palawan_international_lotes_total':   'international_lotes',
+                    'palawan_international_regular_total': 'international_total',
+                    'palawan_suki_discounts':              'skid',
+                    'palawan_suki_rebates':                'skir',
+                    'palawan_cancel':                      'cancellation',
+                    'palawan_pay_out_incentives':          'inc',
+                }
+                entry_data   = getattr(self, '_current_entry_data', {}) or {}
+                corporation  = entry_data.get('corporation', '')
+                branch_name  = self.branch_selector.currentText()
+                p_cols        = {_col_map[k]: v for k, v in payable_a_vals.items() if k in _col_map}
+                if p_cols:
+                    col_names    = ', '.join(p_cols.keys())
+                    set_parts    = ', '.join(f"{c}=VALUES({c})" for c in p_cols.keys())
+                    placeholders = ', '.join(['%s'] * len(p_cols))
+                    upsert_sql   = (
+                        "INSERT INTO payable_tbl_brand_a "
+                        "(corporation, branch, date, " + col_names + ") "
+                        "VALUES (%s, %s, %s, " + placeholders + ") "
+                        "ON DUPLICATE KEY UPDATE " + set_parts + ", updated_at=CURRENT_TIMESTAMP"
+                    )
+                    try:
+                        self.db.execute_query(
+                            upsert_sql,
+                            [corporation, branch_name, selected_date] + list(p_cols.values())
+                        )
+                    except Exception as pe:
+                        logger.error("_save payable_tbl_brand_a upsert: %s", pe)
 
             if rows_affected is not None and rows_affected > 0:
 
@@ -5141,6 +6408,9 @@ class AdminDashboard(QWidget):
                         "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #c8e6c9; color: #2e7d32;"
                     )
                 
+                # Also sync supplementary tables so they stay consistent
+                self._update_supplementary_tables(selected_date, update_data)
+
                 QMessageBox.information(
                     self,
                     "✅ Saved",
@@ -5154,8 +6424,179 @@ class AdminDashboard(QWidget):
                 )
 
         except Exception as e:
-            print(f"Error saving entry: {e}")
+            logger.error("Error saving entry: %s", e)
             QMessageBox.critical(self, "Error", f"Failed to save entry: {e}")
+
+    def _update_supplementary_tables(self, selected_date, all_vals: dict):
+        """Mirror the changed field values into the supplementary tables that the
+        client populates on submit, keeping them in sync when the admin edits an entry."""
+
+        entry = self._current_entry_data or {}
+        branch      = entry.get('branch', self.branch_selector.currentText())
+        corporation = entry.get('corporation', '')
+        username    = entry.get('username', '')
+
+        base_cols = ['date', 'branch', 'corporation', 'username']
+        base_vals = [selected_date, branch, corporation, username]
+
+        def _upsert(table, field_names):
+            try:
+                col_rows = self.db.execute_query(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                    (table,)
+                )
+                if col_rows:
+                    existing_cols = {r['COLUMN_NAME'] for r in col_rows}
+                    field_names = [f for f in field_names if f in existing_cols]
+                    eff_base = [(c, v) for c, v in zip(base_cols, base_vals) if c in existing_cols]
+                else:
+                    eff_base = list(zip(base_cols, base_vals))
+
+                if not field_names:
+                    return
+
+                row = {f: float(all_vals.get(f, 0) or 0) for f in field_names}
+                eff_base_cols = [c for c, v in eff_base]
+                eff_base_vals = [v for c, v in eff_base]
+                cols = eff_base_cols + list(row.keys())
+                vals = eff_base_vals + list(row.values())
+                ph  = ', '.join(['%s'] * len(cols))
+                upd = ', '.join(f"`{c}`=VALUES(`{c}`)" for c in row)
+                q = (
+                    f"INSERT INTO `{table}` ({', '.join(f'`{c}`' for c in cols)}) "
+                    f"VALUES ({ph})"
+                    + (f" ON DUPLICATE KEY UPDATE {upd}" if upd else "")
+                )
+                self.db.execute_query(q, vals)
+                logger.debug("Admin sync → %s", table)
+            except Exception as e:
+                logger.error("Admin _update_supplementary_tables %s: %s", table, e)
+
+        # Brand A only tables
+        if self.account_type == 1:
+            _upsert("daily_transaction_tbl_brand_a", [
+                "empeno_jew_new", "empeno_jew_new_lotes",
+                "empeno_jew_renew", "empeno_jew_renew_lotes",
+                "empeno_sto_new", "empeno_sto_new_lotes",
+                "fund_empeno_sto_renew", "fund_empeno_sto_renew_lotes",
+                "empeno_motor_car", "empeno_motor_car_lotes",
+                "mc_out", "mc_out_lotes",
+                "empeno_silver", "empeno_silver_lotes",
+                "rescate_jewelry", "rescate_jewelry_lotes",
+                "cr_storage", "cr_storage_lotes",
+                "rescate_silver", "rescate_silver_lotes",
+                "res_storage", "res_storage_lotes",
+                "res_motor", "res_motor_lotes",
+                "osf_storage", "osf_storage_lotes",
+                "osf_silver", "osf_silver_lotes",
+                "osf_motor", "osf_motor_lotes",
+                "insurance_sunlife_20", "insurance_sunlife_20_lotes",
+                "palawan_send_out", "palawan_send_out_lotes",
+                "palawan_sc", "palawan_sc_lotes",
+                "palawan_pay_out", "palawan_pay_out_lotes",
+                "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
+                "ecbills", "ecbills_lotes", "ecload", "ecload_lotes", "eccash", "eccash_lotes", "eccash_out", "eccash_out_lotes",
+                "gcash_in", "gcash_in_lotes",
+                "gcash_out", "gcash_out_lotes",
+                "transfast", "transfast_lotes",
+                "ria_out", "ria_out_lotes",
+                "i2i_remittance_in", "i2i_remittance_in_lotes",
+                "i2i_bills_payment", "i2i_bills_payment_lotes",
+                "i2i_instapay", "i2i_instapay_lotes",
+                "sendah_load_sc", "sendah_load_sc_lotes",
+                "sendah_bills_sc", "sendah_bills_sc_lotes",
+                "paymaya_in", "paymaya_in_lotes",
+                "smart_money_sc", "smart_money_sc_lotes",
+                "smart_money_po", "smart_money_po_lotes",
+                "gcash_padala_sendah", "gcash_padala_sendah_lotes",
+                "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
+                "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
+                "remitly", "remitly_lotes",
+            ])
+
+            _upsert("other_services_tbl_brand_a", [
+                "palawan_send_out", "palawan_send_out_lotes",
+                "palawan_sc", "palawan_sc_lotes",
+                "palawan_pay_out", "palawan_pay_out_lotes",
+                "sendah_load_sc", "sendah_load_sc_lotes",
+                "smart_money_sc", "smart_money_sc_lotes",
+                "smart_money_po", "smart_money_po_lotes",
+                "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
+                "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
+                "palawan_pay_bills_sc",
+                "palawan_load_sc",
+                "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
+                "palawan_suki_card",
+                "gcash_in", "gcash_in_lotes",
+                "gcash_out", "gcash_out_lotes",
+                "gcash_padala_sendah", "gcash_padala_sendah_lotes",
+                "abra_so_sc", "abra_po",
+                "gprs_in",
+                "remitly", "remitly_lotes",
+                "paymaya_in", "paymaya_in_lotes",
+                "paymaya_out",
+                "ria_in_sc", "ria_in_sc_lotes",
+                "ria_out", "ria_out_lotes",
+                "bdo_sc", "bdo_po",
+                "transfast", "transfast_lotes",
+                "banko_in", "banko_out",
+                "sendah_bills_sc", "sendah_bills_sc_lotes",
+                "eccash_out",
+                "i2i_remittance_in", "i2i_remittance_in_lotes",
+                "i2i_bills_payment", "i2i_bills_payment_lotes",
+                "i2i_bank_transfer", "i2i_pesonet",
+                "i2i_instapay", "i2i_instapay_lotes",
+                "truemoney_out",
+                "i2i_remittance_out",
+            ])
+
+            _upsert("PL_tbl_brand_a", [
+                "interest", "penalty", "stamp", "rescuardo_affidavit",
+                "jew_ai", "service_charge",
+                "habol_renew_tubos", "habol_rt_interest_stamp",
+                "storage_ai", "osf_storage", "cr_storage_int_penalty",
+                "silver_ai", "osf_silver", "res_storage_int_penalty",
+                "motor_ai", "osf_motor", "penalty_motor",
+                "miscellaneous_fee",
+                "pc_transpo", "pc_salary",
+                "pc_inc_motor", "pc_inc_emp", "pc_inc_suki_card",
+                "pc_inc_insurance", "pc_inc_mc",
+                "pc_supplies_xerox_maintenance",
+                "pc_electric", "pc_water", "pc_internet",
+                "pc_rental", "pc_permits_bir_payments", "pc_lbc_jrs_jnt",
+                "palawan_suki_discounts", "palawan_suki_rebates",
+                "storage_rebates", "silver_rebates", "palawan_suki_card",
+            ])
+
+            # global_other_services_tbl — only for branches with a global tag
+            global_tag = entry.get('global_tag', '')
+            if not global_tag:
+                try:
+                    gt_rows = self.db.execute_query(
+                        "SELECT global_tag FROM branches WHERE name = %s LIMIT 1",
+                        (branch,)
+                    )
+                    global_tag = (gt_rows[0]['global_tag'] or '') if gt_rows else ''
+                except Exception:
+                    global_tag = ''
+
+            if global_tag and global_tag.upper() not in ('', 'NO'):
+                all_vals['ria'] = all_vals.get('ria_out', 0) or 0
+                all_vals['ec_pay_out'] = all_vals.get('eccash_out', 0) or 0
+                _upsert("global_other_services_tbl", [
+                    "gcash_out", "gcash_out_lotes",
+                    "moneygram", "moneygram_lotes",
+                    "transfast", "transfast_lotes",
+                    "ria", "ria_lotes",
+                    "smart_money_out", "smart_money_out_lotes",
+                    "gcash_padala", "gcash_padala_lotes",
+                    "abra_out", "abra_out_lotes",
+                    "remitly", "remitly_lotes",
+                    "pal_pay_cash_out", "pal_pay_cash_out_lotes",
+                    "mc_out", "mc_out_lotes",
+                    "ec_pay_out",
+                ])
 
     def closeEvent(self, event):
        

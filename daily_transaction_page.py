@@ -6,8 +6,11 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QPainter
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from db_worker import run_query_async
+import logging
+
+logger = logging.getLogger(__name__)
 from date_range_widget import DateRangeWidget
 import datetime
 import json
@@ -51,10 +54,10 @@ def _get_table_columns(table_name: str) -> set:
             if columns:
                 _db_columns_cache[table_name] = columns
                 _db_cache_time = current_time
-                print(f"Loaded {len(columns)} columns from {table_name}")
+                logger.debug("Loaded %d columns from %s", len(columns), table_name)
                 return columns
     except Exception as e:
-        print(f"Error getting columns for {table_name}: {e}")
+        logger.error("Error getting columns for %s: %s", table_name, e)
     
 
     if table_name in _db_columns_cache:
@@ -136,7 +139,7 @@ def _load_dynamic_fields_for_report(report_type: str) -> list:
                         if group not in dynamic_groups:
                             dynamic_groups.append(group)
     except Exception as e:
-        print(f"Error loading dynamic fields for {report_type}: {e}")
+        logger.error("Error loading dynamic fields for %s: %s", report_type, e)
     
     return dynamic_groups
 
@@ -168,20 +171,30 @@ COLUMN_GROUPS = [
                       "palawan_pay_out", "palawan_pay_out_incentives"], False),
     ]),
     ("INSURANCE", [
-        ("20s", ["insurance_20"], False),
-        ("30s", ["insurance_philam_30"], False),
-        ("60s", ["insurance_philam_60"], False),
-        ("90s", ["insurance_philam_90"], False),
+        ("Lotes", ["insurance_sunlife_20_lotes"], True),
+        ("20s", ["insurance_sunlife_20"], False),
     ]),
-    ("O.S.F", [
+    ("EC PAY BILLS", [
+        ("Lotes", ["ecbills_lotes"], True),
+        ("Capital", ["ecbills"], False),
+    ]),
+    ("EC PAY LOAD", [
+        ("Lotes", ["ecload_lotes"], True),
+        ("Capital", ["ecload"], False),
+    ]),
+    ("EC PAY CASH IN", [
+        ("Lotes", ["eccash_lotes"], True),
+        ("Capital", ["eccash"], False),
+    ]),
+    ("O. S. F", [
         ("Lotes", ["osf_storage_lotes", "osf_silver_lotes", "osf_motor_lotes"], True),
         ("Capital", ["osf_storage", "osf_silver", "osf_motor"], False),
     ]),
-    ("RESCATE JEW.", [
+    ("RESCATE JEWELRY", [
         ("Lotes", ["rescate_jewelry_lotes"], True),
         ("Capital", ["rescate_jewelry"], False),
     ]),
-    ("RESCATE STO.", [
+    ("RESCATE STORAGE", [
         ("Lotes", ["cr_storage_lotes", "rescate_silver_lotes",
                     "res_storage_lotes", "res_motor_lotes"], True),
         ("Capital", ["cr_storage", "rescate_silver", "res_storage", "res_motor"], False),
@@ -194,9 +207,9 @@ COLUMN_GROUPS = [
         ("Lotes", ["gcash_out_lotes"], True),
         ("Capital", ["gcash_out"], False),
     ]),
-    ("MONEYGRAM", [
-        ("Lotes", ["moneygram_lotes"], True),
-        ("Capital", ["moneygram"], False),
+    ("EC PAY CASH OUT", [
+        ("Lotes", ["eccash_out_lotes"], True),
+        ("Capital", ["eccash_out"], False),
     ]),
     ("TRANSFAST", [
         ("Lotes", ["transfast_lotes"], True),
@@ -206,11 +219,11 @@ COLUMN_GROUPS = [
         ("Lotes", ["ria_out_lotes"], True),
         ("Capital", ["ria_out"], False),
     ]),
-    ("I2I REM. IN", [
+    ("I2I REMITTANCE IN", [
         ("Lotes", ["i2i_remittance_in_lotes"], True),
         ("Capital", ["i2i_remittance_in"], False),
     ]),
-    ("I2I BILLS", [
+    ("I2I BILLS PAYMENT", [
         ("Lotes", ["i2i_bills_payment_lotes"], True),
         ("Capital", ["i2i_bills_payment"], False),
     ]),
@@ -222,7 +235,7 @@ COLUMN_GROUPS = [
         ("Lotes", ["sendah_load_sc_lotes"], True),
         ("Capital", ["sendah_load_sc"], False),
     ]),
-    ("SENDAH BILLS", [
+    ("SENDAH BILLS PAYMENT", [
         ("Lotes", ["sendah_bills_sc_lotes"], True),
         ("Capital", ["sendah_bills_sc"], False),
     ]),
@@ -230,11 +243,11 @@ COLUMN_GROUPS = [
         ("Lotes", ["paymaya_in_lotes"], True),
         ("Capital", ["paymaya_in"], False),
     ]),
-    ("SMART $ IN", [
+    ("SMART MONEY IN", [
         ("Lotes", ["smart_money_sc_lotes"], True),
         ("Capital", ["smart_money_sc"], False),
     ]),
-    ("SMART $ OUT", [
+    ("SMART MONEY OUT", [
         ("Lotes", ["smart_money_po_lotes"], True),
         ("Capital", ["smart_money_po"], False),
     ]),
@@ -258,73 +271,64 @@ COLUMN_GROUPS = [
 
 
 OTHER_SERVICES_COLUMN_GROUPS = [
-    ("PAL SEND OUT",  [("Lotes", ["palawan_send_out_lotes"], True),
-                       ("Amount", ["palawan_send_out"], False)]),
-    ("PAL SC",        [("Lotes", ["palawan_sc_lotes"], True),
-                       ("Amount", ["palawan_sc"], False)]),
-    ("PAL PAY OUT",   [("Lotes", ["palawan_pay_out_lotes"], True),
-                       ("Amount", ["palawan_pay_out"], False)]),
-    ("PAL INC.",      [("Lotes", ["palawan_pay_out_incentives_lotes"], True),
-                       ("Amount", ["palawan_pay_out_incentives"], False)]),
-    ("PAL PAY IN",    [("Lotes", ["palawan_pay_cash_in_sc_lotes"], True),
-                       ("Amount", ["palawan_pay_cash_in_sc"], False)]),
-    ("PAL PAY BILLS", [("Amount", ["palawan_pay_bills_sc"], False)]),
-    ("PAL LOAD",      [("Amount", ["palawan_load_sc"], False)]),
-    ("PAL PAY OUT",   [("Lotes", ["palawan_pay_cash_out_lotes"], True),
-                       ("Amount", ["palawan_pay_cash_out"], False)]),
-    ("SUKI CARD",     [("Amount", ["palawan_suki_card"], False)]),
-    ("PPAY OUT SC",   [("Amount", ["palawan_pay_cash_out_sc"], False)]),
-    ("SENDAH LOAD",   [("Lotes", ["sendah_load_sc_lotes"], True),
-                       ("Amount", ["sendah_load_sc"], False)]),
-    ("SENDAH BILLS",  [("Lotes", ["sendah_bills_sc_lotes"], True),
-                       ("Amount", ["sendah_bills_sc"], False)]),
-    ("SMART $ IN",    [("Lotes", ["smart_money_sc_lotes"], True),
-                       ("Amount", ["smart_money_sc"], False)]),
-    ("SMART $ OUT",   [("Lotes", ["smart_money_po_lotes"], True),
-                       ("Amount", ["smart_money_po"], False)]),
-    ("GCASH IN",      [("Lotes", ["gcash_in_lotes"], True),
-                       ("Amount", ["gcash_in"], False)]),
-    ("GCASH OUT",     [("Lotes", ["gcash_out_lotes"], True),
-                       ("Amount", ["gcash_out"], False)]),
-    ("GCASH PADALA",  [("Lotes", ["gcash_padala_sendah_lotes"], True),
-                       ("Amount", ["gcash_padala_sendah"], False)]),
-    ("ABRA IN",       [("Amount", ["abra_so_sc"], False)]),
-    ("ABRA OUT",      [("Amount", ["abra_po"], False)]),
-    ("REMITLY",       [("Lotes", ["remitly_lotes"], True),
-                       ("Amount", ["remitly"], False)]),
-    ("PAYMAYA IN",    [("Lotes", ["paymaya_in_lotes"], True),
-                       ("Amount", ["paymaya_in"], False)]),
-    ("PAYMAYA OUT",   [("Amount", ["paymaya_out"], False)]),
-    ("RIA IN",        [("Lotes", ["ria_in_sc_lotes"], True),
-                       ("Amount", ["ria_in_sc"], False)]),
-    ("RIA OUT",       [("Amount", ["ria_out"], False)]),
-    ("BDO SC",        [("Amount", ["bdo_sc"], False)]),
-    ("BDO OUT",       [("Amount", ["bdo_po"], False)]),
-    ("TRANSFAST",     [("Lotes", ["transfast_lotes"], True),
-                       ("Amount", ["transfast"], False)]),
-    ("AYANAH SC",     [("Amount", ["ayanah_sc"], False)]),
-    ("AYANAH OUT",    [("Amount", ["ayanah_out"], False)]),
-    ("MONEYGRAM",     [("Lotes", ["moneygram_lotes"], True),
-                       ("Amount", ["moneygram"], False)]),
-    ("I2I REM IN",    [("Lotes", ["i2i_remittance_in_lotes"], True),
-                       ("Amount", ["i2i_remittance_in"], False)]),
-    ("I2I BILLS",     [("Lotes", ["i2i_bills_payment_lotes"], True),
-                       ("Amount", ["i2i_bills_payment"], False)]),
-    ("I2I BANK TRF",  [("Amount", ["i2i_bank_transfer"], False)]),
-    ("I2I PESONET",   [("Amount", ["i2i_pesonet"], False)]),
-    ("I2I INSTAPAY",  [("Lotes", ["i2i_instapay_lotes"], True),
-                       ("Amount", ["i2i_instapay"], False)]),
-    ("FIXCO OUT",     [("Amount", ["fixco"], False)]),
-    ("I2I REM OUT",   [("Amount", ["i2i_remittance_out"], False)]),
-    ("ECBILLS",       [("Amount", ["ecbills"], False)]),
-    ("ECLOAD",        [("Amount", ["ecload"], False)]),
-    ("ECPINS",        [("Amount", ["ecpins"], False)]),
-    ("ECCASH",        [("Amount", ["eccash"], False)]),
-    ("ECTICKETS",     [("Amount", ["ectickets"], False)]),
-    ("ECCATALOGUE",   [("Amount", ["eccatalogue"], False)]),
-    ("ECLINK",        [("Amount", ["eclink"], False)]),
-    ("ECGIFT",        [("Amount", ["ecgift"], False)]),
-    ("ECCASH-OUT",    [("Amount", ["eccash_out"], False)]),
+    ("PAL SEND OUT",    [("Lotes", ["palawan_send_out_lotes"], True),
+                         ("Amount", ["palawan_send_out"], False)]),
+    ("PAL SC",          [("Lotes", ["palawan_sc_lotes"], True),
+                         ("Amount", ["palawan_sc"], False)]),
+    ("PAL PAY OUT",     [("Lotes", ["palawan_pay_out_lotes"], True),
+                         ("Amount", ["palawan_pay_out"], False)]),
+    ("SENDAH LOAD",     [("Lotes", ["sendah_load_sc_lotes"], True),
+                         ("Amount", ["sendah_load_sc"], False)]),
+    ("SMART $ IN",      [("Lotes", ["smart_money_sc_lotes"], True),
+                         ("Amount", ["smart_money_sc"], False)]),
+    ("SMART $ OUT",     [("Lotes", ["smart_money_po_lotes"], True),
+                         ("Amount", ["smart_money_po"], False)]),
+    ("PAL INC.",        [("Lotes", ["palawan_pay_out_incentives_lotes"], True),
+                         ("Amount", ["palawan_pay_out_incentives"], False)]),
+    ("PAL PAY IN",      [("Lotes", ["palawan_pay_cash_in_sc_lotes"], True),
+                         ("Amount", ["palawan_pay_cash_in_sc"], False)]),
+    ("PAL PAY BILLS",   [("Amount", ["palawan_pay_bills_sc"], False)]),
+    ("PAL LOAD",        [("Amount", ["palawan_load_sc"], False)]),
+    ("PAL PAY CASH OUT",[("Lotes", ["palawan_pay_cash_out_lotes"], True),
+                         ("Amount", ["palawan_pay_cash_out"], False)]),
+    ("SUKI CARD",       [("Amount", ["palawan_suki_card"], False)]),
+    ("GCASH IN",        [("Lotes", ["gcash_in_lotes"], True),
+                         ("Amount", ["gcash_in"], False)]),
+    ("GCASH OUT",       [("Lotes", ["gcash_out_lotes"], True),
+                         ("Amount", ["gcash_out"], False)]),
+    ("GCASH PADALA",    [("Lotes", ["gcash_padala_sendah_lotes"], True),
+                         ("Amount", ["gcash_padala_sendah"], False)]),
+    ("ABRA IN",         [("Amount", ["abra_so_sc"], False)]),
+    ("ABRA OUT",        [("Amount", ["abra_po"], False)]),
+    ("GPRS IN",         [("Amount", ["gprs_in"], False)]),
+    ("REMITLY",         [("Lotes", ["remitly_lotes"], True),
+                         ("Amount", ["remitly"], False)]),
+    ("PAYMAYA IN",      [("Lotes", ["paymaya_in_lotes"], True),
+                         ("Amount", ["paymaya_in"], False)]),
+    ("PAYMAYA OUT",     [("Amount", ["paymaya_out"], False)]),
+    ("RIA IN",          [("Lotes", ["ria_in_sc_lotes"], True),
+                         ("Amount", ["ria_in_sc"], False)]),
+    ("RIA OUT",         [("Lotes", ["ria_out_lotes"], True),
+                         ("Amount", ["ria_out"], False)]),
+    ("BDO SC",          [("Amount", ["bdo_sc"], False)]),
+    ("BDO OUT",         [("Amount", ["bdo_po"], False)]),
+    ("TRANSFAST",       [("Lotes", ["transfast_lotes"], True),
+                         ("Amount", ["transfast"], False)]),
+    ("BANKO IN",        [("Amount", ["banko_in"], False)]),
+    ("BANKO OUT",       [("Amount", ["banko_out"], False)]),
+    ("SENDAH BILLS",    [("Lotes", ["sendah_bills_sc_lotes"], True),
+                         ("Amount", ["sendah_bills_sc"], False)]),
+    ("EC PAY OUT",      [("Amount", ["eccash_out"], False)]),
+    ("I2I REM IN",      [("Lotes", ["i2i_remittance_in_lotes"], True),
+                         ("Amount", ["i2i_remittance_in"], False)]),
+    ("I2I BILLS",       [("Lotes", ["i2i_bills_payment_lotes"], True),
+                         ("Amount", ["i2i_bills_payment"], False)]),
+    ("I2I BANK TRF",    [("Amount", ["i2i_bank_transfer"], False)]),
+    ("I2I PESONET",     [("Amount", ["i2i_pesonet"], False)]),
+    ("I2I INSTAPAY",    [("Lotes", ["i2i_instapay_lotes"], True),
+                         ("Amount", ["i2i_instapay"], False)]),
+    ("TRUEMONEY OUT",   [("Amount", ["truemoney_out"], False)]),
+    ("I2I REM OUT",     [("Amount", ["i2i_remittance_out"], False)]),
 ]
 
 
@@ -347,11 +351,6 @@ PL_COLUMN_GROUPS = [
     ("OSF MOTOR",         [("Amount", ["osf_motor"], False)]),
     ("PENALTY MOTOR",     [("Amount", ["penalty_motor"], False)]),
     ("MISC. FEE",         [("Amount", ["miscellaneous_fee"], False)]),
-    ("DISC SUKI",         [("Amount", ["palawan_suki_discounts"], False)]),
-    ("REBATES SUKI",      [("Amount", ["palawan_suki_rebates"], False)]),
-    ("REBATES STO.",      [("Amount", ["storage_rebates"], False)]),
-    ("REBATES SILVER",    [("Amount", ["silver_rebates"], False)]),
-    ("SUKI CARD",         [("Amount", ["palawan_suki_card"], False)]),
     ("PC TRANSPO",        [("Amount", ["pc_transpo"], False)]),
     ("SALARY",            [("Amount", ["pc_salary"], False)]),
     ("INC. MOTOR",        [("Amount", ["pc_inc_motor"], False)]),
@@ -366,6 +365,11 @@ PL_COLUMN_GROUPS = [
     ("RENT",              [("Amount", ["pc_rental"], False)]),
     ("BUS. PERMIT",       [("Amount", ["pc_permits_bir_payments"], False)]),
     ("PC LBC",            [("Amount", ["pc_lbc_jrs_jnt"], False)]),
+    ("DISC SUKI",         [("Amount", ["palawan_suki_discounts"], False)]),
+    ("REBATES SUKI",      [("Amount", ["palawan_suki_rebates"], False)]),
+    ("REBATES STO.",      [("Amount", ["storage_rebates"], False)]),
+    ("REBATES SILVER",    [("Amount", ["silver_rebates"], False)]),
+    ("SUKI CARD",         [("Amount", ["palawan_suki_card"], False)]),
 ]
 
 
@@ -424,68 +428,61 @@ HEADERS, COL_META = _build_columns()
 
 GROUP_COLORS = {
 
-    "JEWELRY":      QColor("#dc3545"),
-    "STORAGE":      QColor("#e67e22"),
-    "MOTOR/CAR":    QColor("#8e44ad"),
-    "MC":           QColor("#2980b9"),
-    "SILVER":       QColor("#7f8c8d"),
-    "PALAWAN":      QColor("#28a745"),
-    "INSURANCE":    QColor("#17a2b8"),
-    "O.S.F":        QColor("#6f42c1"),
-    "RESCATE JEW.": QColor("#c0392b"),
-    "RESCATE STO.": QColor("#d35400"),
-    "GCASH IN":     QColor("#16a085"),
-    "GCASH OUT":    QColor("#1abc9c"),
-    "MONEYGRAM":    QColor("#2c3e50"),
-    "TRANSFAST":    QColor("#34495e"),
-    "RIA":          QColor("#e74c3c"),
-    "I2I REM. IN":  QColor("#3498db"),
-    "I2I BILLS":    QColor("#2471a3"),
-    "I2I INSTAPAY": QColor("#1a5276"),
-    "SENDAH LOAD":  QColor("#f39c12"),
-    "SENDAH BILLS": QColor("#d4ac0d"),
-    "PAYMAYA":      QColor("#27ae60"),
-    "SMART $ IN":   QColor("#0e6655"),
-    "SMART $ OUT":  QColor("#117864"),
-    "GCASH PADALA": QColor("#148f77"),
-    "PAL PAY IN":   QColor("#1e8449"),
-    "PAL PAY OUT":  QColor("#196f3d"),
-    "REMITLY":      QColor("#7d3c98"),
+    "JEWELRY":               QColor("#dc3545"),
+    "STORAGE":               QColor("#e67e22"),
+    "MOTOR/CAR":             QColor("#8e44ad"),
+    "MC":                    QColor("#2980b9"),
+    "SILVER":                QColor("#7f8c8d"),
+    "PALAWAN":               QColor("#28a745"),
+    "INSURANCE":             QColor("#17a2b8"),
+    "EC PAY BILLS":          QColor("#0d6efd"),
+    "EC PAY LOAD":           QColor("#0a58ca"),
+    "EC PAY CASH IN":        QColor("#084298"),
+    "EC PAY CASH OUT":       QColor("#06357a"),
+    "O. S. F":               QColor("#6f42c1"),
+    "RESCATE JEWELRY":       QColor("#c0392b"),
+    "RESCATE STORAGE":       QColor("#d35400"),
+    "GCASH IN":              QColor("#16a085"),
+    "GCASH OUT":             QColor("#1abc9c"),
+    "TRANSFAST":             QColor("#34495e"),
+    "RIA":                   QColor("#e74c3c"),
+    "I2I REMITTANCE IN":     QColor("#3498db"),
+    "I2I BILLS PAYMENT":     QColor("#2471a3"),
+    "I2I INSTAPAY":          QColor("#1a5276"),
+    "SENDAH LOAD":           QColor("#f39c12"),
+    "SENDAH BILLS PAYMENT":  QColor("#d4ac0d"),
+    "PAYMAYA":               QColor("#27ae60"),
+    "SMART MONEY IN":        QColor("#0e6655"),
+    "SMART MONEY OUT":       QColor("#117864"),
+    "GCASH PADALA":          QColor("#148f77"),
+    "PAL PAY IN":            QColor("#1e8449"),
+    "PAL PAY OUT":           QColor("#196f3d"),
+    "REMITLY":               QColor("#7d3c98"),
 
-    "PAL SEND OUT": QColor("#1e8449"),
-    "PAL SC":       QColor("#196f3d"),
-    "PAL INC.":     QColor("#145a32"),
-    "PAL PAY BILLS":QColor("#0b5345"),
-    "PAL LOAD":     QColor("#0a3d2e"),
-    "SUKI CARD":    QColor("#1a6b55"),
-    "PPAY OUT SC":  QColor("#117a65"),
-    "SENDAH LOAD":  QColor("#f39c12"),
-    "SENDAH BILLS": QColor("#d4ac0d"),
-    "SMART $ IN":   QColor("#0e6655"),
-    "SMART $ OUT":  QColor("#117864"),
-    "GCASH IN":     QColor("#16a085"),
-    "GCASH OUT":    QColor("#1abc9c"),
-    "GCASH PADALA": QColor("#148f77"),
-    "ABRA IN":      QColor("#2e86c1"),
-    "ABRA OUT":     QColor("#1a5276"),
-    "REMITLY":      QColor("#7d3c98"),
-    "PAYMAYA IN":   QColor("#27ae60"),
-    "PAYMAYA OUT":  QColor("#1e8449"),
-    "RIA IN":       QColor("#e74c3c"),
-    "RIA OUT":      QColor("#c0392b"),
-    "BDO SC":       QColor("#2471a3"),
-    "BDO OUT":      QColor("#1a5276"),
-    "TRANSFAST":    QColor("#34495e"),
-    "AYANAH SC":    QColor("#d4ac0d"),
-    "AYANAH OUT":   QColor("#b7950b"),
-    "MONEYGRAM":    QColor("#2c3e50"),
-    "I2I REM IN":   QColor("#3498db"),
-    "I2I BILLS":    QColor("#2471a3"),
-    "I2I BANK TRF": QColor("#21618c"),
-    "I2I PESONET":  QColor("#1b4f72"),
-    "I2I INSTAPAY": QColor("#1a5276"),
-    "FIXCO OUT":    QColor("#6c3483"),
-    "I2I REM OUT":  QColor("#4a235a"),
+    "PAL SEND OUT":          QColor("#1e8449"),
+    "PAL SC":                QColor("#196f3d"),
+    "PAL INC.":              QColor("#145a32"),
+    "PAL PAY BILLS":         QColor("#0b5345"),
+    "PAL LOAD":              QColor("#0a3d2e"),
+    "SUKI CARD":             QColor("#1a6b55"),
+    "PPAY OUT SC":           QColor("#117a65"),
+    "ABRA IN":               QColor("#2e86c1"),
+    "ABRA OUT":              QColor("#1a5276"),
+    "PAYMAYA IN":            QColor("#27ae60"),
+    "PAYMAYA OUT":           QColor("#1e8449"),
+    "RIA IN":                QColor("#e74c3c"),
+    "RIA OUT":               QColor("#c0392b"),
+    "BDO SC":                QColor("#2471a3"),
+    "BDO OUT":               QColor("#1a5276"),
+    "AYANAH SC":             QColor("#d4ac0d"),
+    "AYANAH OUT":            QColor("#b7950b"),
+    "MONEYGRAM":             QColor("#2c3e50"),
+    "I2I REM IN":            QColor("#3498db"),
+    "I2I BILLS":             QColor("#2471a3"),
+    "I2I BANK TRF":          QColor("#21618c"),
+    "I2I PESONET":           QColor("#1b4f72"),
+    "FIXCO OUT":             QColor("#6c3483"),
+    "I2I REM OUT":           QColor("#4a235a"),
 
     "INTEREST":     QColor("#c0392b"),
     "PENALTY":      QColor("#922b21"),
@@ -532,7 +529,7 @@ class ColoredHeaderView(QHeaderView):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self.colors = {}
-        self.setFont(QFont("", 8, QFont.Bold))
+        self.setFont(QFont("Segoe UI", 11, QFont.Bold))
 
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
@@ -543,7 +540,7 @@ class ColoredHeaderView(QHeaderView):
         painter.setPen(pen)
         painter.drawRect(rect.adjusted(0, 0, -1, -1))
         painter.setPen(QColor("white"))
-        painter.setFont(QFont("", 8, QFont.Bold))
+        painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
         text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
         painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, str(text) if text else "")
         painter.restore()
@@ -554,7 +551,7 @@ class MergedGroupHeaderView(QHeaderView):
         super().__init__(orientation, parent)
         self.colors = {}
         self.groups = groups or []
-        self.setFont(QFont("", 9, QFont.Bold))
+        self.setFont(QFont("Segoe UI", 11, QFont.Bold))
 
         self._merge_info = {}
         self._col_to_group = {}  
@@ -588,7 +585,7 @@ class MergedGroupHeaderView(QHeaderView):
                 painter.setPen(pen)
                 painter.drawRect(merged_rect.adjusted(0, 0, -1, -1))
                 painter.setPen(QColor("white"))
-                painter.setFont(QFont("", 9, QFont.Bold))
+                painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
                 painter.drawText(merged_rect, Qt.AlignCenter, group_name)
 
         else:
@@ -599,7 +596,7 @@ class MergedGroupHeaderView(QHeaderView):
             painter.setPen(pen)
             painter.drawRect(rect.adjusted(0, 0, -1, -1))
             painter.setPen(QColor("white"))
-            painter.setFont(QFont("", 9, QFont.Bold))
+            painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
             text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
             painter.drawText(rect, Qt.AlignCenter, str(text) if text else "")
         
@@ -725,6 +722,7 @@ class DailyTransactionPage(QWidget):
         scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.table = QTableWidget()
+        self.table.setFont(QFont("Segoe UI", 10, QFont.Bold))
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.setColumnCount(len(HEADERS))
         self.table.setMinimumHeight(300)
@@ -776,7 +774,7 @@ class DailyTransactionPage(QWidget):
         self.table.setHorizontalHeader(ch)
         self.table.setHorizontalHeaderLabels(group_headers)
         ch.setVisible(True)
-        ch.setFixedHeight(32)
+        ch.setFixedHeight(38)
         for i in range(len(group_headers)):
             ch.setSectionResizeMode(i, QHeaderView.Interactive)
         
@@ -791,7 +789,7 @@ class DailyTransactionPage(QWidget):
         
         self.table.clearSpans()
         
-        self.table.setRowHeight(0, 28)
+        self.table.setRowHeight(0, 36)
         
         headers, _ = _build_columns(groups)
         
@@ -802,7 +800,7 @@ class DailyTransactionPage(QWidget):
         branch_item.setForeground(QColor("white"))
         font = branch_item.font()
         font.setBold(True)
-        font.setPointSize(9)
+        font.setPointSize(11)
         branch_item.setFont(font)
         branch_item.setFlags(branch_item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(0, 0, branch_item)
@@ -818,7 +816,7 @@ class DailyTransactionPage(QWidget):
                 cell_item.setForeground(QColor("white"))
                 font = cell_item.font()
                 font.setBold(True)
-                font.setPointSize(9)
+                font.setPointSize(11)
                 cell_item.setFont(font)
                 cell_item.setFlags(cell_item.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(0, col, cell_item)
@@ -831,7 +829,7 @@ class DailyTransactionPage(QWidget):
         self.table.setStyleSheet("""
             QTableWidget {
                 gridline-color:#d0d0d0; border:1px solid #c0c0c0;
-                font-size:11px; selection-background-color:#e3f2fd;
+                font-size:11px; font-weight:bold; selection-background-color:#e3f2fd;
                 background-color: white;
             }
             QTableWidget::item:selected { background-color:#e3f2fd; color:black; }
@@ -902,7 +900,7 @@ class DailyTransactionPage(QWidget):
             for r in rows:
                 self.corp_selector.addItem(r['corporation'])
         except Exception as e:
-            print(f"Error loading corporations: {e}")
+            logger.error("Error loading corporations: %s", e)
         finally:
             self.corp_selector.blockSignals(False)
         self._load_groups()
@@ -922,7 +920,7 @@ class DailyTransactionPage(QWidget):
                     name = r['os_name'] if isinstance(r, dict) else r[0]
                     self.group_selector.addItem(name)
         except Exception as e:
-            print(f"Error loading groups: {e}")
+            logger.error("Error loading groups: %s", e)
         finally:
             self.group_selector.blockSignals(False)
 
@@ -945,7 +943,7 @@ class DailyTransactionPage(QWidget):
                 if idx >= 0:
                     self.os_filter_selector.setCurrentIndex(idx)
         except Exception as e:
-            print(f"Error loading OS options: {e}")
+            logger.error("Error loading OS options: %s", e)
         finally:
             self.os_filter_selector.blockSignals(False)
 
@@ -995,10 +993,10 @@ class DailyTransactionPage(QWidget):
             original_count = len(needed_cols)
             needed_cols = needed_cols & available_columns
             if len(needed_cols) < original_count:
-                print(f"Filtered out {original_count - len(needed_cols)} non-existent columns")
+                logger.debug("Filtered out %d non-existent columns", original_count - len(needed_cols))
         
         if not needed_cols:
-            print("Warning: No valid columns to query after filtering")
+            logger.warning("No valid columns to query after filtering")
             self._is_loading = False
             return
 
@@ -1082,7 +1080,7 @@ class DailyTransactionPage(QWidget):
 
             branch_item = QTableWidgetItem(row_data['branch'])
             branch_item.setFlags(branch_item.flags() & ~Qt.ItemIsEditable)
-            branch_item.setFont(QFont("", 10, QFont.Bold))
+            branch_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
             self.table.setItem(r, 0, branch_item)
 
             for ci, meta in enumerate(col_meta, start=1):
@@ -1101,7 +1099,7 @@ class DailyTransactionPage(QWidget):
         r = self.table.rowCount()
         self.table.insertRow(r)
         total_label = QTableWidgetItem("TOTAL")
-        total_label.setFont(QFont("", 10, QFont.Bold))
+        total_label.setFont(QFont("Segoe UI", 10, QFont.Bold))
         total_label.setData(Qt.BackgroundRole, QBrush(QColor("#e2e6eb")))
         total_label.setData(Qt.ForegroundRole, QBrush(QColor("#050505")))
         total_label.setFlags(total_label.flags() & ~Qt.ItemIsEditable)
@@ -1115,7 +1113,7 @@ class DailyTransactionPage(QWidget):
                 txt = f"{v:,.2f}"
             item = QTableWidgetItem(txt)
             item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            item.setFont(QFont("", 10, QFont.Bold))
+            item.setFont(QFont("Segoe UI", 10, QFont.Bold))
             item.setData(Qt.BackgroundRole, QBrush(QColor("#e2e6eb")))
             item.setData(Qt.ForegroundRole, QBrush(QColor("#050505")))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)

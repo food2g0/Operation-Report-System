@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QFont, QColor, QBrush, QPainter, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from db_worker import run_query_async
 from date_range_widget import DateRangeWidget
 
@@ -31,6 +31,7 @@ COLUMN_GROUPS = [
                            ("Capital", ["pal_pay_cash_out"], False)]),
     ("MC OUT",            [("Lotes", ["mc_out_lotes"], True),
                            ("Capital", ["mc_out"], False)]),
+    ("EC PAY OUT",        [("Capital", ["ec_pay_out"], False)]),
 ]
 
 GROUP_COLORS = {
@@ -44,6 +45,7 @@ GROUP_COLORS = {
     "REMITLY":          QColor("#7d3c98"),
     "PAL PAY CASH OUT": QColor("#196f3d"),
     "MC OUT":           QColor("#2980b9"),
+    "EC PAY OUT":       QColor("#e67e22"),
 }
 
 TABLE_NAME = "global_other_services_tbl"
@@ -73,7 +75,7 @@ class _ColoredHeader(QHeaderView):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self.colors = {}
-        self.setFont(QFont("", 8, QFont.Bold))
+        self.setFont(QFont("Segoe UI", 11, QFont.Bold))
 
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
@@ -82,7 +84,7 @@ class _ColoredHeader(QHeaderView):
         pen = painter.pen(); pen.setColor(QColor("#333")); painter.setPen(pen)
         painter.drawRect(rect.adjusted(0, 0, -1, -1))
         painter.setPen(QColor("white"))
-        painter.setFont(QFont("", 8, QFont.Bold))
+        painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
         text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
         painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, str(text) if text else "")
         painter.restore()
@@ -117,14 +119,14 @@ class _MergedGroupHeader(QHeaderView):
                 pen = painter.pen(); pen.setColor(QColor("#333")); painter.setPen(pen)
                 painter.drawRect(merged.adjusted(0, 0, -1, -1))
                 painter.setPen(QColor("white"))
-                painter.setFont(QFont("", 9, QFont.Bold))
+                painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
                 painter.drawText(merged, Qt.AlignCenter, name)
         else:
             painter.fillRect(rect, bg)
             pen = painter.pen(); pen.setColor(QColor("#333")); painter.setPen(pen)
             painter.drawRect(rect.adjusted(0, 0, -1, -1))
             painter.setPen(QColor("white"))
-            painter.setFont(QFont("", 9, QFont.Bold))
+            painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
             text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
             painter.drawText(rect, Qt.AlignCenter, str(text) if text else "")
         painter.restore()
@@ -275,6 +277,7 @@ class GlobalOtherServicesPage(QWidget):
         scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.table = QTableWidget()
+        self.table.setFont(QFont("Segoe UI", 10, QFont.Bold))
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.setMinimumHeight(300)
         self.table.verticalHeader().setDefaultSectionSize(32)
@@ -320,7 +323,7 @@ class GlobalOtherServicesPage(QWidget):
         self.table.setHorizontalHeader(ch)
         self.table.setHorizontalHeaderLabels(group_headers)
         ch.setVisible(True)
-        ch.setFixedHeight(32)
+        ch.setFixedHeight(38)
         for i in range(len(group_headers)):
             ch.setSectionResizeMode(i, QHeaderView.Interactive)
 
@@ -331,14 +334,14 @@ class GlobalOtherServicesPage(QWidget):
         if self.table.rowCount() == 0:
             return
         self.table.clearSpans()
-        self.table.setRowHeight(0, 28)
+        self.table.setRowHeight(0, 36)
         headers, _ = _build_columns(groups)
 
         item = QTableWidgetItem("")
         item.setTextAlignment(Qt.AlignCenter)
         item.setBackground(QColor("#495057"))
         item.setForeground(QColor("white"))
-        f = item.font(); f.setBold(True); f.setPointSize(9); item.setFont(f)
+        f = item.font(); f.setBold(True); f.setPointSize(11); item.setFont(f)
         item.setFlags(item.flags() & ~Qt.ItemIsEditable)
         self.table.setItem(0, 0, item)
 
@@ -350,7 +353,7 @@ class GlobalOtherServicesPage(QWidget):
                 ci.setTextAlignment(Qt.AlignCenter)
                 ci.setBackground(gc)
                 ci.setForeground(QColor("white"))
-                f2 = ci.font(); f2.setBold(True); f2.setPointSize(9); ci.setFont(f2)
+                f2 = ci.font(); f2.setBold(True); f2.setPointSize(11); ci.setFont(f2)
                 ci.setFlags(ci.flags() & ~Qt.ItemIsEditable)
                 self.table.setItem(0, col, ci)
                 col += 1
@@ -359,7 +362,7 @@ class GlobalOtherServicesPage(QWidget):
         self.table.setStyleSheet("""
             QTableWidget {
                 gridline-color:#d0d0d0; border:1px solid #c0c0c0;
-                font-size:11px; selection-background-color:#e3f2fd;
+                font-size:11px; font-weight:bold; selection-background-color:#e3f2fd;
                 background-color: white;
             }
             QTableWidget::item:selected { background-color:#e3f2fd; color:black; }
@@ -560,7 +563,7 @@ class GlobalOtherServicesPage(QWidget):
 
             branch_item = QTableWidgetItem(row_data['branch'])
             branch_item.setFlags(branch_item.flags() & ~Qt.ItemIsEditable)
-            branch_item.setFont(QFont("", 10, QFont.Bold))
+            branch_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
             self.table.setItem(r, 0, branch_item)
 
             for ci, meta in enumerate(col_meta, start=1):
@@ -581,7 +584,7 @@ class GlobalOtherServicesPage(QWidget):
         self.table.insertRow(tr)
         self.table.setRowHeight(tr, 36)
         total_item = QTableWidgetItem("TOTAL")
-        total_item.setFont(QFont("", 10, QFont.Bold))
+        total_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
         total_item.setBackground(QColor("#343a40"))
         total_item.setForeground(QColor("white"))
         total_item.setTextAlignment(Qt.AlignCenter)
@@ -596,7 +599,7 @@ class GlobalOtherServicesPage(QWidget):
                 txt = f"{val:,.2f}"
             ti = QTableWidgetItem(txt)
             ti.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            ti.setFont(QFont("", 10, QFont.Bold))
+            ti.setFont(QFont("Segoe UI", 10, QFont.Bold))
             ti.setBackground(QColor("#343a40"))
             ti.setForeground(QColor("white"))
             ti.setFlags(ti.flags() & ~Qt.ItemIsEditable)

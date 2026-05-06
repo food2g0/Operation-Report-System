@@ -1,22 +1,19 @@
 """
-PalawanDetailsTab
+PalawanPayableTab
 -----------------
-Tab widget for Palawan Details (Brand B) data entry.
-Design matches PalawanPayableTab.
-
+A tab widget for Palawan Payable data entry (Brand A).
 Provides data-entry for:
   - PALAWAN SEND-OUT      : Lotes, Principal, SC, Commission, TOTAL
   - PALAWAN PAY-OUT       : Lotes, Principal, SC, Commission, TOTAL
   - PALAWAN INTERNATIONAL : Lotes, Principal, SC, Commission, TOTAL
-  - PALAWAN ADJUSTMENTS
 
-Data is saved to `payable_tbl_brand_a` (shared with Brand A).
+Data is saved to `payable_tbl_brand_a` and flows into payable_page.py.
 """
 
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout,
     QGroupBox, QFormLayout, QPushButton, QScrollArea, QFrame,
-    QMessageBox,
+    QSizePolicy, QMessageBox
 )
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtCore import Qt
@@ -40,23 +37,12 @@ _SAVE_COLOR = "#0F172A"
 _SAVE_HOVER = "#1E293B"
 
 
-class PalawanDetailsTab(QWidget):
-    """Tab widget for Palawan Details (Brand B) - design matches PalawanPayableTab."""
+class PalawanPayableTab(QWidget):
+    """Tab widget for Palawan Payable data entry (Brand A)."""
 
-    def set_enabled(self, enabled: bool):
-        """Enable or disable all input fields."""
-        for fields in (self._so_fields, self._po_fields, self._int_fields):
-            for key in ("lotes", "principal", "sc", "commission"):
-                fields[key].setEnabled(enabled)
-        for inp in self.adjustments_inputs.values():
-            inp.setEnabled(enabled)
-        if hasattr(self, '_save_btn'):
-            self._save_btn.setEnabled(enabled)
-
-    def __init__(self, parent):
+    def __init__(self, parent_dashboard):
         super().__init__()
-        self.parent = parent
-        self._dashboard = parent  # alias used by _save()
+        self._dashboard = parent_dashboard
         self._setup_ui()
 
     # ──────────────────────────────────────────────────────────────────────
@@ -67,6 +53,7 @@ class PalawanDetailsTab(QWidget):
         outer.setContentsMargins(_sz(12), _sz(12), _sz(12), _sz(12))
         outer.setSpacing(_sz(10))
 
+        # Scroll area so it works on smaller screens
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
@@ -78,7 +65,8 @@ class PalawanDetailsTab(QWidget):
         inner_layout.setContentsMargins(_sz(12), _sz(10), _sz(12), _sz(10))
         inner_layout.setSpacing(_sz(10))
 
-        title = QLabel("PALAWAN DETAILS — BRAND B")
+        # Title
+        title = QLabel("PALAWAN PAYABLE — BRAND A")
         title.setStyleSheet(
             f"color: {_SLATE_800}; font-size: {_sz(14)}px; font-weight: 800; "
             f"letter-spacing: 1.5px; background: transparent;"
@@ -89,9 +77,9 @@ class PalawanDetailsTab(QWidget):
         sections_row = QHBoxLayout()
         sections_row.setSpacing(_sz(10))
 
-        self._so_group,  self._so_fields  = self._make_section("PALAWAN SEND-OUT",     _SO_COLOR)
-        self._po_group,  self._po_fields  = self._make_section("PALAWAN PAY-OUT",       _PO_COLOR)
-        self._int_group, self._int_fields = self._make_section("PALAWAN INTERNATIONAL", _INT_COLOR)
+        self._so_group,  self._so_fields  = self._make_section("PALAWAN SEND-OUT",       _SO_COLOR)
+        self._po_group,  self._po_fields  = self._make_section("PALAWAN PAY-OUT",         _PO_COLOR)
+        self._int_group, self._int_fields = self._make_section("PALAWAN INTERNATIONAL",   _INT_COLOR)
 
         sections_row.addWidget(self._so_group)
         sections_row.addWidget(self._po_group)
@@ -100,7 +88,7 @@ class PalawanDetailsTab(QWidget):
 
         # Adjustments section
         self.adjustments_inputs = {}
-        adj_box = QGroupBox("PALAWAN ADJUSTMENTS (Auto-carries to Brand B Cash Flow)")
+        adj_box = QGroupBox("PALAWAN ADJUSTMENTS")
         adj_box.setStyleSheet(f"""
             QGroupBox {{
                 border: 2px solid #F59E0B;
@@ -122,30 +110,26 @@ class PalawanDetailsTab(QWidget):
         adj_form = QFormLayout()
         adj_form.setSpacing(_sz(8))
         adj_form.setContentsMargins(_sz(8), _sz(18), _sz(8), _sz(8))
-
-        for adj_label, adj_placeholder, db_col in [
-            ("Palawan Pay Out Incentives", "Enter Incentives Amount",   "palawan_pay_out_incentives"),
-            ("Palawan Suki Discounts",     "Enter Suki Discounts",      "palawan_suki_discounts"),
-            ("Palawan Suki Rebates",       "Enter Suki Rebates",        "palawan_suki_rebates"),
-            ("Palawan Cancel",             "Enter Cancellation Amount", "palawan_cancel"),
+        for adj_label, adj_placeholder in [
+            ("Palawan Pay Out Incentives", "Enter Incentives Amount"),
+            ("Palawan Suki Discounts",     "Enter Suki Discounts"),
+            ("Palawan Suki Rebates",       "Enter Suki Rebates"),
+            ("Palawan Cancel",             "Enter Cancellation Amount"),
         ]:
             inp = QLineEdit()
             inp.setValidator(QDoubleValidator(0.0, 1e12, 2))
             inp.setPlaceholderText(adj_placeholder)
-            inp.setProperty("db_column", db_col)
-            inp.textChanged.connect(self.parent.recalculate_all)
             self.adjustments_inputs[adj_label] = inp
             lbl = QLabel(adj_label + ":")
             lbl.setStyleSheet(f"font-size: {_sz(13)}px; font-weight: 600; color: #92400E;")
             adj_form.addRow(lbl, inp)
-
         adj_box.setLayout(adj_form)
         inner_layout.addWidget(adj_box)
 
-        # Save button
+        # Save button row
         btn_row = QHBoxLayout()
         btn_row.addStretch()
-        self._save_btn = QPushButton("Save Palawan B")
+        self._save_btn = QPushButton("Save Palawan A")
         self._save_btn.setFixedHeight(_sz(36))
         self._save_btn.setMinimumWidth(_sz(200))
         self._save_btn.setStyleSheet(f"""
@@ -168,31 +152,6 @@ class PalawanDetailsTab(QWidget):
         inner_layout.addStretch()
         scroll.setWidget(inner)
         outer.addWidget(scroll)
-
-        # ── Legacy aliases used by _connect_palawan_adjustments_to_brand_b ──
-        self.sendout_inputs = {
-            "Principal":  self._so_fields["principal"],
-            "SC":         self._so_fields["sc"],
-            "Commission": self._so_fields["commission"],
-        }
-        self.payout_inputs = {
-            "Principal":  self._po_fields["principal"],
-            "SC":         self._po_fields["sc"],
-            "Commission": self._po_fields["commission"],
-        }
-        self.international_inputs = {
-            "Principal":  self._int_fields["principal"],
-            "SC":         self._int_fields["sc"],
-            "Commission": self._int_fields["commission"],
-        }
-        self.lotes_inputs = {
-            "Lotes Send-Out":      self._so_fields["lotes"],
-            "Lotes Pay-Out":       self._po_fields["lotes"],
-            "Lotes International": self._int_fields["lotes"],
-        }
-        self.sendout_total_display       = self._so_fields["total_display"]
-        self.payout_total_display        = self._po_fields["total_display"]
-        self.international_total_display = self._int_fields["total_display"]
 
     def _make_section(self, title: str, color: str):
         """Create one group box with Lotes + Principal + SC + Commission + TOTAL."""
@@ -274,43 +233,21 @@ class PalawanDetailsTab(QWidget):
                 pass
         total_display.setText(f"{total:.2f}")
 
-    # ── Compat shims used by old code ──────────────────────────────────────
-    def calculate_palawan_totals(self):
-        for flds in (self._so_fields, self._po_fields, self._int_fields):
-            self._recalc_section(flds, flds["total_display"])
-
-    def calculate_lotes_total(self):
-        pass  # lotes totals are per-section now
-
-    def calculate_adjustments_total(self):
-        pass  # no separate adjustments total display
-
-    def create_money_input(self, placeholder=""):
-        field = QLineEdit()
-        field.setValidator(QDoubleValidator(0.0, 1e12, 2))
-        field.setPlaceholderText(placeholder)
-        field.textChanged.connect(self.parent.recalculate_all)
-        return field
-
     # ──────────────────────────────────────────────────────────────────────
     # DATA ACCESS
     # ──────────────────────────────────────────────────────────────────────
     def get_data(self) -> dict:
-        """Return current field values as a dict for DB insertion.
-        Returns same keys as PalawanPayableTab so _save_palawan_to_payable
-        can use a single code path for both brands."""
+        """Return current field values as a dict for DB insertion."""
         def _int(f):
             try: return int(f.text().strip() or 0)
             except ValueError: return 0
-
         def _dec(f):
             try: return float(f.text().strip() or 0)
             except ValueError: return 0.0
 
         sf, pf, inf = self._so_fields, self._po_fields, self._int_fields
         adj = self.adjustments_inputs
-
-        result = {
+        return {
             "so_lotes":       _int(sf["lotes"]),
             "so_principal":   _dec(sf["principal"]),
             "so_sc":          _dec(sf["sc"]),
@@ -332,29 +269,8 @@ class PalawanDetailsTab(QWidget):
             "palawan_cancel":             _dec(adj.get("Palawan Cancel",             QLineEdit())),
         }
 
-        # Legacy aliases so _restore_palawan_tab / cashflow mirror still work
-        result["palawan_sendout_principal"]           = result["so_principal"]
-        result["palawan_sendout_sc"]                  = result["so_sc"]
-        result["palawan_sendout_commission"]          = result["so_commission"]
-        result["palawan_sendout_regular_total"]       = result["so_total"]
-        result["palawan_sendout_lotes_total"]         = result["so_lotes"]
-        result["palawan_payout_principal"]            = result["po_principal"]
-        result["palawan_payout_sc"]                   = result["po_sc"]
-        result["palawan_payout_commission"]           = result["po_commission"]
-        result["palawan_payout_regular_total"]        = result["po_total"]
-        result["palawan_payout_lotes_total"]          = result["po_lotes"]
-        result["palawan_international_principal"]     = result["int_principal"]
-        result["palawan_international_sc"]            = result["int_sc"]
-        result["palawan_international_commission"]    = result["int_commission"]
-        result["palawan_international_regular_total"] = result["int_total"]
-        result["palawan_international_lotes_total"]   = result["int_lotes"]
-
-        return result
-
     def load_data(self, data: dict):
-        """Populate all tab fields from a DB row dict.
-        Accepts new-format keys (so_*/po_*/int_*) from payable_tbl_brand_a
-        or old-format keys (palawan_sendout_*) from daily_reports tables."""
+        """Populate fields from a DB row dict (so_*/po_*/int_* keys)."""
         def _set_int(f, val):
             f.blockSignals(True)
             f.setText(str(int(val or 0)) if (val or 0) else "")
@@ -366,24 +282,12 @@ class PalawanDetailsTab(QWidget):
             f.setText(f"{v:.2f}" if v else "")
             f.blockSignals(False)
 
-        def _get(new_key, old_key):
-            """Prefer new-format key; fall back to old palawan_* key."""
-            v = data.get(new_key)
-            if v is None or (isinstance(v, (int, float)) and v == 0):
-                v = data.get(old_key, 0)
-            return v
-
-        for prefix, fields, old_pfx in [
-            ("so",  self._so_fields,  "palawan_sendout"),
-            ("po",  self._po_fields,  "palawan_payout"),
-            ("int", self._int_fields, "palawan_international"),
-        ]:
-            _set_int(fields["lotes"],      _get(f"{prefix}_lotes",      f"{old_pfx}_lotes_total"))
-            _set_dec(fields["principal"],  _get(f"{prefix}_principal",  f"{old_pfx}_principal"))
-            _set_dec(fields["sc"],         _get(f"{prefix}_sc",         f"{old_pfx}_sc"))
-            _set_dec(fields["commission"], _get(f"{prefix}_commission",  f"{old_pfx}_commission"))
+        for prefix, fields in [("so", self._so_fields), ("po", self._po_fields), ("int", self._int_fields)]:
+            _set_int(fields["lotes"],      data.get(f"{prefix}_lotes", 0))
+            _set_dec(fields["principal"],  data.get(f"{prefix}_principal", 0))
+            _set_dec(fields["sc"],         data.get(f"{prefix}_sc", 0))
+            _set_dec(fields["commission"], data.get(f"{prefix}_commission", 0))
             self._recalc_section(fields, fields["total_display"])
-
         adj_map = {
             "Palawan Pay Out Incentives": "palawan_pay_out_incentives",
             "Palawan Suki Discounts":     "palawan_suki_discounts",
@@ -406,11 +310,18 @@ class PalawanDetailsTab(QWidget):
             inp.clear()
             inp.blockSignals(False)
 
+    def set_enabled(self, enabled: bool):
+        for fields in (self._so_fields, self._po_fields, self._int_fields):
+            for key in ("lotes", "principal", "sc", "commission"):
+                fields[key].setEnabled(enabled)
+        for inp in self.adjustments_inputs.values():
+            inp.setEnabled(enabled)
+        self._save_btn.setEnabled(enabled)
+
     # ──────────────────────────────────────────────────────────────────────
-    # STANDALONE SAVE
+    # SAVE (standalone)
     # ──────────────────────────────────────────────────────────────────────
     def _save(self):
-        """Save button handler — writes to payable_tbl_brand_a."""
         dash = self._dashboard
         sd = dash.date_picker.date().toString("yyyy-MM-dd")
         data = self.get_data()
@@ -451,8 +362,8 @@ class PalawanDetailsTab(QWidget):
                     data["int_commission"], data["int_total"],
                 )
             )
-            QMessageBox.information(self, "Saved", f"Palawan Details B saved for {sd}.")
-            logger.info("[PalawanDetailsTab] saved for branch=%s date=%s", dash.branch, sd)
+            QMessageBox.information(self, "Saved", f"Palawan Payable A saved for {sd}.")
+            logger.info("[PalawanPayableTab] saved for branch=%s date=%s", dash.branch, sd)
         except Exception as e:
-            logger.error("[PalawanDetailsTab] save error: %s", e)
-            QMessageBox.critical(self, "Error", f"Failed to save Palawan Details B:\n{e}")
+            logger.error("[PalawanPayableTab] save error: %s", e)
+            QMessageBox.critical(self, "Error", f"Failed to save Palawan Payable A:\n{e}")

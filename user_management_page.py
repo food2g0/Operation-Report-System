@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIntValidator
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from admin_manage import (create_corporation, create_branch, create_client,
                          get_all_supervisors, create_supervisor, delete_supervisor,
                          update_supervisor)
@@ -1047,8 +1047,6 @@ class UserManagementPage(QWidget):
             missing.append("Corporation")
         if not name:
             missing.append("Branch Name")
-        if not os_name:
-            missing.append("Group")
         if not area:
             missing.append("Area")
         if not global_tag:
@@ -1251,7 +1249,10 @@ class UserManagementPage(QWidget):
         )
         if reply == QMessageBox.Yes:
             try:
-                self.db.execute_query("DELETE FROM branches WHERE id = %s", (branch_id,))
+                result = self.db.execute_query("DELETE FROM branches WHERE id = %s", (branch_id,))
+                if result is None:
+                    QMessageBox.critical(self, "Error", "Failed to delete branch — server did not respond correctly.")
+                    return
                 QMessageBox.information(self, "✅ Deleted", f"Branch '{branch_name}' deleted.")
                 self._load_branches()
             except Exception as e:
@@ -1558,10 +1559,16 @@ class UserManagementPage(QWidget):
         )
         if reply == QMessageBox.Yes:
             try:
-                self.db.execute_query(
+                result = self.db.execute_query(
                     "DELETE FROM users WHERE id = %s AND role IN ('admin','super_admin')",
                     (user_id,)
                 )
+                if result is None:
+                    QMessageBox.critical(self, "Error", "Failed to delete user — server did not respond correctly.")
+                    return
+                if isinstance(result, int) and result == 0:
+                    QMessageBox.warning(self, "Not Found", f"User '{username}' was not found or is not an admin/super_admin.")
+                    return
                 QMessageBox.information(self, "✅ Deleted", f"User '{username}' deleted.")
                 self._load_admin_users()
             except Exception as e:
@@ -1628,7 +1635,13 @@ class UserManagementPage(QWidget):
         )
         if reply == QMessageBox.Yes:
             try:
-                self.db.execute_query("DELETE FROM users WHERE id = %s", (client_id,))
+                result = self.db.execute_query("DELETE FROM users WHERE id = %s", (client_id,))
+                if result is None:
+                    QMessageBox.critical(self, "Error", "Failed to delete client — server did not respond correctly.")
+                    return
+                if isinstance(result, int) and result == 0:
+                    QMessageBox.warning(self, "Not Found", f"Client '{username}' was not found.")
+                    return
                 QMessageBox.information(self, "Deleted", f"Client '{username}' deleted.")
                 self._load_clients()
             except Exception as e:
