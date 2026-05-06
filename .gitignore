@@ -33,6 +33,37 @@ db_deadlock_retries.log
 .env
 .env.local
 
+# Private / Secrets
+# Keep templates tracked, ignore real local secret files.
+!.env.example
+.env.*
+*.secret
+*.secrets
+secrets.*
+private.*
+
+# Keys and certificates
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.jks
+*.keystore
+id_rsa
+id_ed25519
+
+# Encrypted config/data artifacts
+*.enc
+
+# Runtime/local state that may contain sensitive data
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+
 # OS
 .DS_Store
 Thumbs.db

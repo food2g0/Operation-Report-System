@@ -51,11 +51,11 @@ def encrypt_config(config_dict, output_path=None):
     Usage:
         from secure_config import encrypt_config
         encrypt_config({
-            'host': '222.127.90.218',
-            'port': 33306,
-            'user': 'ors_user',
-            'password': 'ORS_StrongPass_2026!',
-            'database': 'operation_db',
+            'host': 'DB_HOST_HERE',
+            'port': 3306,
+            'user': 'DB_USER_HERE',
+            'password': 'DB_PASSWORD_HERE',
+            'database': 'DB_NAME_HERE',
         })
     """
     fernet = _derive_key()
@@ -117,13 +117,15 @@ if __name__ == '__main__':
         load_dotenv()
         
         config = {
-            'host': os.getenv('MYSQL_HOST') or input('Host: '),
-            'port': int(os.getenv('MYSQL_PORT') or input('Port: ')),
-            'user': os.getenv('MYSQL_USER') or input('User: '),
-            'password': os.getenv('MYSQL_PASSWORD') or input('Password: '),
-            'database': os.getenv('MYSQL_DATABASE') or input('Database: '),
+            'host':     os.getenv('MYSQL_HOST')     or input('DB Host: '),
+            'port':     int(os.getenv('MYSQL_PORT') or input('DB Port: ')),
+            'user':     os.getenv('MYSQL_USER')     or input('DB User: '),
+            'password': os.getenv('MYSQL_PASSWORD') or input('DB Password: '),
+            'database': os.getenv('MYSQL_DATABASE') or input('DB Name: '),
+            'api_key':  os.getenv('ORS_API_KEY')    or input('API Key (ORS_API_KEY): '),
         }
         encrypt_config(config)
     else:
         print("Usage: python secure_config.py generate")
         print("  Generates encrypted db_config.enc from .env or prompts")
+        print("  Stores DB credentials AND api_key together in one encrypted file")
