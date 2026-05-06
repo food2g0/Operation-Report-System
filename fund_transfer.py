@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument, QDoubleValidator
 from PyQt5.QtCore import Qt, QDate
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from db_worker import run_func_async
 from date_range_widget import DateRangeWidget
 import datetime
@@ -39,7 +39,7 @@ class FundTransferPage(QWidget):
         self.os_label.setVisible(False)
         self.os_selector.setVisible(False)
 
-        self.daily_table = "daily_reports_brand_a"
+        self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
 
         self.date_range_widget = DateRangeWidget()
         self.date_range_widget.dateRangeChanged.connect(self.populate_table)
@@ -66,13 +66,20 @@ class FundTransferPage(QWidget):
         filter_row.addWidget(self.reg_filter_selector)
         self.layout.addLayout(filter_row)
 
-        self.report_type_selector.setCurrentIndex(1) 
         self.report_type_label.setVisible(False)
         self.report_type_selector.setVisible(False)
-        self.corp_label.setVisible(False)
-        self.corp_selector.setVisible(False)
-        self.os_label.setVisible(True)
-        self.os_selector.setVisible(True)
+        if account_type == 2:  # Brand B: filter by corporation
+            self.report_type_selector.setCurrentIndex(0)
+            self.corp_label.setVisible(True)
+            self.corp_selector.setVisible(True)
+            self.os_label.setVisible(False)
+            self.os_selector.setVisible(False)
+        else:  # Brand A: filter by group
+            self.report_type_selector.setCurrentIndex(1)
+            self.corp_label.setVisible(False)
+            self.corp_selector.setVisible(False)
+            self.os_label.setVisible(True)
+            self.os_selector.setVisible(True)
 
         self.tab_widget = QTabWidget()
         self.layout.addWidget(self.tab_widget)
@@ -292,10 +299,10 @@ class FundTransferPage(QWidget):
         self.populate_table()
 
     def load_corporations(self):
-        """Load unique corporations from the daily_reports_brand_a table"""
+        """Load unique corporations from the appropriate daily_reports table"""
         self.corp_selector.clear()
         try:
-            query = "SELECT DISTINCT corporation FROM daily_reports_brand_a ORDER BY corporation"
+            query = f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation"
             corporations = db_manager.execute_query(query)
 
             if not corporations:
@@ -563,6 +570,8 @@ class FundTransferPage(QWidget):
             reg_clause = "AND b.is_registered = 1"
         elif reg_filter == "not_registered":
             reg_clause = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+        # Version for use inside subquery (no b. alias)
+        inner_reg_clause = reg_clause.replace("AND b.is_registered", "AND is_registered")
 
 
         if report_type == "corporation":
@@ -578,21 +587,25 @@ class FundTransferPage(QWidget):
                            COALESCE(b.global_tag, '') as global_tag,
                            COALESCE(b.sunday, '') as sunday,
                            SUM(COALESCE(dr.cash_count, 0)) as cash_count,
-                           SUM(COALESCE(cf.cash_float, 0)) as cash_float
-                    FROM branches b
-                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                           0 as cash_float
+                    FROM (
+                        SELECT name, MAX(area) as area, MAX(line_of_business) as line_of_business,
+                               MAX(global_tag) as global_tag, MAX(sunday) as sunday,
+                               MAX(COALESCE(sub_corporation_id, corporation_id)) as corp_id
+                        FROM branches
+                        WHERE (corporation_id = (SELECT id FROM corporations WHERE name = %s)
+                               OR sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
+                        {inner_reg_clause}
+                        GROUP BY name
+                    ) b
+                    LEFT JOIN corporations c ON c.id = b.corp_id
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
                         AND dr.corporation = %s
                         AND dr.date >= %s AND dr.date <= %s
-                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
-                    WHERE (b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
-                           OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
-                    {reg_clause}
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (filter_value, date_start, date_end, filter_value, filter_value)
+                params = (filter_value, filter_value, filter_value, date_start, date_end)
             else:
                 query = f"""
                     SELECT b.name as branch,
@@ -602,21 +615,25 @@ class FundTransferPage(QWidget):
                            COALESCE(b.global_tag, '') as global_tag,
                            COALESCE(b.sunday, '') as sunday,
                            COALESCE(SUM(dr.cash_count), 0) as cash_count,
-                           COALESCE(SUM(cf.cash_float), 0) as cash_float
-                    FROM branches b
-                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                           0 as cash_float
+                    FROM (
+                        SELECT name, MAX(area) as area, MAX(line_of_business) as line_of_business,
+                               MAX(global_tag) as global_tag, MAX(sunday) as sunday,
+                               MAX(COALESCE(sub_corporation_id, corporation_id)) as corp_id
+                        FROM branches
+                        WHERE (corporation_id = (SELECT id FROM corporations WHERE name = %s)
+                               OR sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
+                        {inner_reg_clause}
+                        GROUP BY name
+                    ) b
+                    LEFT JOIN corporations c ON c.id = b.corp_id
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
                         AND dr.corporation = %s
                         AND dr.date = %s
-                    LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
-                    WHERE (b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
-                           OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
-                    {reg_clause}
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (filter_value, date_start, filter_value, filter_value)
+                params = (filter_value, filter_value, filter_value, date_start)
         else:  # OS mode
             filter_value = self.os_selector.currentText()
             if not filter_value:
@@ -631,18 +648,24 @@ class FundTransferPage(QWidget):
                            COALESCE(b.sunday, '') as sunday,
                            SUM(COALESCE(dr.cash_count, 0)) as cash_count,
                            SUM(COALESCE(cf.cash_float, 0)) as cash_float
-                    FROM branches b
-                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    FROM (
+                        SELECT name, MAX(area) as area, MAX(line_of_business) as line_of_business,
+                               MAX(global_tag) as global_tag, MAX(sunday) as sunday,
+                               MAX(COALESCE(sub_corporation_id, corporation_id)) as corp_id
+                        FROM branches
+                        WHERE os_name = %s
+                        {inner_reg_clause}
+                        GROUP BY name
+                    ) b
+                    LEFT JOIN corporations c ON c.id = b.corp_id
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
                         AND dr.date >= %s AND dr.date <= %s
                     LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
-                    WHERE b.os_name = %s
-                      {reg_clause}
+                        AND cf.date >= %s AND cf.date <= %s
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (date_start, date_end, filter_value)
+                params = (filter_value, date_start, date_end, date_start, date_end)
             else:
                 query = f"""
                     SELECT b.name as branch,
@@ -652,19 +675,25 @@ class FundTransferPage(QWidget):
                            COALESCE(b.global_tag, '') as global_tag,
                            COALESCE(b.sunday, '') as sunday,
                            COALESCE(SUM(dr.cash_count), 0) as cash_count,
-                           COALESCE(SUM(cf.cash_float), 0) as cash_float
-                    FROM branches b
-                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                           COALESCE(MAX(cf.cash_float), 0) as cash_float
+                    FROM (
+                        SELECT name, MAX(area) as area, MAX(line_of_business) as line_of_business,
+                               MAX(global_tag) as global_tag, MAX(sunday) as sunday,
+                               MAX(COALESCE(sub_corporation_id, corporation_id)) as corp_id
+                        FROM branches
+                        WHERE os_name = %s
+                        {inner_reg_clause}
+                        GROUP BY name
+                    ) b
+                    LEFT JOIN corporations c ON c.id = b.corp_id
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
                         AND dr.date = %s
                     LEFT JOIN cash_float_tbl cf ON b.name COLLATE utf8mb4_general_ci = cf.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation COLLATE utf8mb4_general_ci = cf.corporation COLLATE utf8mb4_general_ci AND dr.date = cf.date
-                    WHERE b.os_name = %s
-                      {reg_clause}
+                        AND cf.date = %s
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (date_start, filter_value)
+                params = (filter_value, date_start, date_start)
 
         self._pending_is_range_mode = is_range and date_start != date_end
         _ds, _de, _ir = date_start, date_end, is_range

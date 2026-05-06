@@ -13,9 +13,12 @@ from PyQt5.QtWidgets import (
     QPushButton, QScrollArea, QFrame, QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate, QTimer
+import logging
+
+logger = logging.getLogger(__name__)
 from PyQt5.QtGui import QFont, QColor, QBrush, QPainter
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from db_worker import run_query_async
 from date_range_widget import DateRangeWidget
 
@@ -53,7 +56,7 @@ class ColoredHeaderView(QHeaderView):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self.colors = {}
-        self.setFont(QFont("", 9, QFont.Bold))
+        self.setFont(QFont("Segoe UI", 11, QFont.Bold))
 
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
@@ -62,7 +65,7 @@ class ColoredHeaderView(QHeaderView):
         painter.setPen(QColor("#333"))
         painter.drawRect(rect.adjusted(0, 0, -1, -1))
         painter.setPen(QColor("white"))
-        painter.setFont(QFont("", 9, QFont.Bold))
+        painter.setFont(QFont("Segoe UI", 11, QFont.Bold))
         text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
         painter.drawText(rect, Qt.AlignCenter | Qt.TextWordWrap, str(text) if text else "")
         painter.restore()
@@ -132,6 +135,7 @@ class NewRenewPage(QWidget):
         scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.table = QTableWidget()
+        self.table.setFont(QFont("Segoe UI", 10, QFont.Bold))
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.setColumnCount(len(HEADERS))
         self.table.setHorizontalHeaderLabels(HEADERS)
@@ -165,7 +169,7 @@ class NewRenewPage(QWidget):
             QTableWidget {
                 gridline-color:#d0d0d0; border:1px solid #c0c0c0;
                 background:white; alternate-background-color:#f8f9fa;
-                font-size:12px; selection-background-color:#e3f2fd;
+                font-size:12px; font-weight:bold; selection-background-color:#e3f2fd;
             }
             QTableWidget::item { border:1px solid #e0e0e0; padding:6px; }
             QTableWidget::item:selected { background:#e3f2fd; color:black; }
@@ -207,7 +211,7 @@ class NewRenewPage(QWidget):
                     name = r['os_name'] if isinstance(r, dict) else r[0]
                     self.group_selector.addItem(name)
         except Exception as e:
-            print(f"Error loading groups: {e}")
+            logger.error("Error loading groups: %s", e)
         finally:
             self.group_selector.blockSignals(False)
 
@@ -230,7 +234,7 @@ class NewRenewPage(QWidget):
                 if idx >= 0:
                     self.os_filter_selector.setCurrentIndex(idx)
         except Exception as e:
-            print(f"Error loading OS options: {e}")
+            logger.error("Error loading OS options: %s", e)
         finally:
             self.os_filter_selector.blockSignals(False)
 
@@ -245,8 +249,7 @@ class NewRenewPage(QWidget):
         reg_value = self.reg_filter_selector.currentData()
 
         if not group:
-            self._is_loading = False
-            return
+            pass  # No group filter — show all branches
 
         needed = set()
         for _, db_cols, _ in COLUMNS:
@@ -310,7 +313,7 @@ class NewRenewPage(QWidget):
 
             branch_item = QTableWidgetItem(row_data['branch'])
             branch_item.setFlags(branch_item.flags() & ~Qt.ItemIsEditable)
-            branch_item.setFont(QFont("", 10, QFont.Bold))
+            branch_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
             self.table.setItem(r, 0, branch_item)
 
             for ci, (_, db_cols, is_lotes) in enumerate(COLUMNS, start=1):
@@ -330,7 +333,7 @@ class NewRenewPage(QWidget):
         r = self.table.rowCount()
         self.table.insertRow(r)
         total_item = QTableWidgetItem("TOTAL")
-        total_item.setFont(QFont("", 10, QFont.Bold))
+        total_item.setFont(QFont("Segoe UI", 10, QFont.Bold))
         total_item.setData(Qt.BackgroundRole, QBrush(QColor("#343a40")))
         total_item.setData(Qt.ForegroundRole, QBrush(QColor("#343a40")))
         total_item.setFlags(total_item.flags() & ~Qt.ItemIsEditable)
@@ -341,7 +344,7 @@ class NewRenewPage(QWidget):
             txt = str(int(v)) if is_lotes else f"{v:,.2f}"
             item = QTableWidgetItem(txt)
             item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            item.setFont(QFont("", 10, QFont.Bold))
+            item.setFont(QFont("Segoe UI", 10, QFont.Bold))
             item.setData(Qt.BackgroundRole, QBrush(QColor("#343a40")))
             item.setData(Qt.ForegroundRole, QBrush(QColor("#343a40")))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)

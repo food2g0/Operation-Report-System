@@ -1,10 +1,22 @@
 import sys
 import traceback
 import ctypes
+
+# Load .env before any other imports so env vars are available to api_config, etc.
+try:
+    from dotenv import load_dotenv as _load_dotenv
+    _load_dotenv(override=False)
+except ImportError:
+    pass
+
 from PyQt5.QtWidgets import QApplication, QMessageBox, QLabel
 from PyQt5.QtCore import Qt
+from app_logging import setup_logging, get_logger
+setup_logging()
 from Client.client_dashboard import ClientDashboard
 from login import LoginWindow
+
+logger = get_logger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -43,7 +55,7 @@ def release_single_instance_lock():
 def exception_hook(exctype, value, tb):
     """Global exception handler to prevent silent crashes"""
     error_msg = ''.join(traceback.format_exception(exctype, value, tb))
-    print(f"Uncaught exception:\n{error_msg}")
+    logger.critical("Uncaught exception:\n%s", error_msg)
     
     # Log to file
     try:
@@ -250,9 +262,21 @@ class LoginManager:
     def show_dashboard(self, username, branch, corporation, db_manager):
         # Hide login window
         self.login_window.hide()
-        
+
+        # Route through API when API_MODE is enabled
+        try:
+            from api_config import API_MODE as _API_MODE
+            if _API_MODE:
+                from Client.api_db_manager import APIDbManager
+                _client_db = APIDbManager()
+                _client_db.connect()
+            else:
+                _client_db = db_manager
+        except ImportError:
+            _client_db = db_manager
+
         # Create and show dashboard
-        self.dashboard = ClientDashboard(username, branch, corporation, db_manager)
+        self.dashboard = ClientDashboard(username, branch, corporation, _client_db)
         self.dashboard.logout_requested.connect(self.handle_logout)
         self.dashboard.show()
     

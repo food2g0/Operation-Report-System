@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QFont, QColor, QBrush
 from PyQt5.QtCore import Qt
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from db_worker import run_func_async
 from date_range_widget import DateRangeWidget
 

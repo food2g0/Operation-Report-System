@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 
 
 class ReviewSummaryPage(QWidget):

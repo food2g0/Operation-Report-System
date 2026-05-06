@@ -4,7 +4,10 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QSettings, Qt
 from PyQt5.QtGui import QFont, QPixmap, QIcon
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 from Client.client_dashboard import ClientDashboard
 from db_connect_pooled import db_manager
@@ -22,7 +25,7 @@ try:
     AUTO_UPDATE_ENABLED = True
 except ImportError:
     AUTO_UPDATE_ENABLED = False
-    print("Auto-updater not available (missing dependencies)")
+    logger.warning("Auto-updater not available (missing dependencies)")
 
 
 class LoginWindow(QWidget):
@@ -33,7 +36,7 @@ class LoginWindow(QWidget):
         self._update_checker_threads = [] 
         self.setWindowTitle("Operation Report System")
         self.setFixedSize(820, 500)
-        self.settings = QSettings("MyCompany", "MyApp")
+        self.settings = QSettings("OperationReportSystem", "ORS")
 
 
         self.setup_ui()
@@ -101,8 +104,7 @@ class LoginWindow(QWidget):
 
             check_for_updates_silent(parent=self, auto_install=True)
         except Exception as e:
-
-            print(f"Update check failed: {e}")
+            logger.warning("Update check failed: %s", e)
 
     def center_window(self):
         screen = self.app.desktop().screenGeometry()
@@ -353,12 +355,23 @@ class LoginWindow(QWidget):
         if saved_username:
             self.username_input.setText(saved_username)
             self.remember_me_checkbox.setChecked(True)
+            saved_password = self.settings.value("password")
+            if saved_password:
+                try:
+                    import base64
+                    self.password_input.setText(base64.b64decode(saved_password.encode()).decode())
+                except Exception:
+                    pass
 
     def save_credentials(self, username):
         if self.remember_me_checkbox.isChecked():
+            import base64
             self.settings.setValue("username", username)
+            password = self.password_input.text()
+            self.settings.setValue("password", base64.b64encode(password.encode()).decode())
         else:
             self.settings.remove("username")
+            self.settings.remove("password")
 
     def clear_password_field(self):
 
@@ -367,7 +380,7 @@ class LoginWindow(QWidget):
 
     def handle_logout(self):
         """Handle logout from dashboard"""
-        print("Logout requested - returning to login screen")
+        logger.info("Logout requested - returning to login screen")
         ping_monitor.stop()
 
         if self.dashboard:
@@ -444,7 +457,7 @@ class LoginWindow(QWidget):
 
             self.authenticate_user(username, password)
         except Exception as e:
-            print(f"Login Error: {e}")
+            logger.error("Login Error: %s", e)
             self.show_message("Error", "An error occurred during login. Please try again.", QMessageBox.Critical)
         finally:
 
@@ -487,6 +500,7 @@ class LoginWindow(QWidget):
         
 
         try:
+            # Offline mode: use direct db_manager as a fallback (no network available)
             self.dashboard = ClientDashboard(
                 username, branch, corporation, db_manager,
                 offline_mode=True
@@ -496,8 +510,7 @@ class LoginWindow(QWidget):
             self.hide()
         except Exception as e:
             import traceback
-            print(f"Error loading ClientDashboard in offline mode: {e}")
-            traceback.print_exc()
+            logger.error("Error loading ClientDashboard in offline mode: %s", e, exc_info=True)
             self.show_message("Error", "Failed to load client dashboard.", QMessageBox.Critical)
             return
 
@@ -506,7 +519,7 @@ class LoginWindow(QWidget):
 
             return db_manager.test_connection()
         except Exception as e:
-            print(f"Database connection test failed: {e}")
+            logger.error("Database connection test failed: %s", e)
             return False
 
     def execute_database_query(self, query, params=None):
@@ -522,9 +535,9 @@ class LoginWindow(QWidget):
                     "UPDATE users SET password = %s WHERE id = %s",
                     (hashed, user_id)
                 )
-                print(f"Password migrated to bcrypt for user ID {user_id}")
+                logger.info("Password migrated to bcrypt for user ID %d", user_id)
             except Exception as e:
-                print(f"Failed to migrate password: {e}")
+                logger.error("Failed to migrate password: %s", e)
 
     def check_admin_login(self, username, password):
 
@@ -571,12 +584,11 @@ class LoginWindow(QWidget):
                         self.hide()  
                         return True
                     except Exception as e:
-                        print(f"Error loading dashboard: {e}")
+                        logger.error("Error loading dashboard: %s", e)
                         self.show_message("Error", "Failed to load dashboard.", QMessageBox.Critical)
                         return False
         except Exception as e:
-
-            print(f"Database Error during admin check (users table may be missing): {e}")
+            logger.error("Database Error during admin check (users table may be missing): %s", e)
 
         return False
 
@@ -594,8 +606,7 @@ class LoginWindow(QWidget):
             try:
                 result = self.execute_database_query(query_users, [username])
             except Exception as e:
-
-                print(f"users table query failed, falling back to clients: {e}")
+                logger.error("users table query failed, falling back to clients: %s", e)
 
             if result:
                 user_data = result[0]
@@ -630,7 +641,7 @@ class LoginWindow(QWidget):
                             if hasattr(self.dashboard, 'logout_requested'):
                                 self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
-                            print(f"Error loading SuperAdminDashboard: {e}")
+                            logger.error("Error loading SuperAdminDashboard: %s", e)
                             self.show_message("Error", "Failed to load super admin dashboard.", QMessageBox.Critical)
                             return
                     elif role == 'admin':
@@ -641,17 +652,29 @@ class LoginWindow(QWidget):
                             if hasattr(self.dashboard, 'logout_requested'):
                                 self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
-                            print(f"Error loading AdminDashboard: {e}")
+                            logger.error("Error loading AdminDashboard: %s", e)
                             self.show_message("Error", "Failed to load admin dashboard.", QMessageBox.Critical)
                             return
                     else:
                         try:
-                            self.dashboard = ClientDashboard(db_username, branch, corporation, db_manager)
+                            from api_config import API_MODE as _API_MODE
+                            if _API_MODE:
+                                from Client.api_db_manager import APIDbManager
+                                _client_db = APIDbManager()
+                                if not _client_db.connect():
+                                    self.show_message(
+                                        "API Connection Failed",
+                                        "Could not connect to the API server.\n"
+                                        "Please check ORS_API_URL and ORS_API_KEY settings.",
+                                        QMessageBox.Critical,
+                                    )
+                                    return
+                            else:
+                                _client_db = db_manager
+                            self.dashboard = ClientDashboard(db_username, branch, corporation, _client_db)
                             self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
-                            import traceback
-                            print(f"Error loading ClientDashboard: {e}")
-                            traceback.print_exc()
+                            logger.error("Error loading ClientDashboard: %s", e, exc_info=True)
                             self.show_message("Error", "Failed to load client dashboard.", QMessageBox.Critical)
                             return
                     
@@ -680,7 +703,7 @@ class LoginWindow(QWidget):
             self.show_message("Login Failed", "Invalid username or password.", QMessageBox.Warning)
 
         except Exception as e:
-            print(f"Database Error during authentication: {e}")
+            logger.error("Database Error during authentication: %s", e)
             self.show_message("Connection Error", "Failed to connect to the database.", QMessageBox.Critical)
 
     def show_message(self, title, message, icon):

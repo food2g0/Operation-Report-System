@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from date_range_widget import DateRangeWidget
 from decimal import Decimal, ROUND_HALF_UP
 import datetime
@@ -29,7 +29,7 @@ class ReportPage(QWidget):
         self.account_type = account_type
         # Set correct tables based on brand
         self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
-        self.payable_table = "payable_tbl_brand_a" if account_type == 1 else "payable_tbl"
+        self.payable_table = "payable_tbl_brand_a"  # both brands use the same table
         self.setWindowTitle("PEPP Reconciliation Report")
         self.setup_window_size()
 
@@ -289,44 +289,43 @@ class ReportPage(QWidget):
                 corp_params = (corp,)
 
             # Build query based on registration filter
+            # All palawan columns come from payable_tbl_brand_a (both brands).
+            # daily_reports is still used as the driving table so date/corp/branch context
+            # is anchored to actual submissions; palawan data is LEFT JOINed from payable_tbl_brand_a.
+            _pal_select = """
+                           SUM(COALESCE(p.sendout_capital, 0))        AS total_sendout_capital,
+                           SUM(COALESCE(p.sendout_commission, 0))     AS total_sendout_commission,
+                           SUM(COALESCE(p.sendout_sc, 0))             AS total_sendout_sc,
+                           SUM(COALESCE(p.payout_capital, 0))         AS total_payout_capital,
+                           SUM(COALESCE(p.payout_commission, 0))      AS total_payout_commission,
+                           SUM(COALESCE(p.payout_sc, 0))              AS total_payout_sc,
+                           SUM(COALESCE(p.international_commission, 0)) AS total_international_commission,
+                           SUM(COALESCE(p.skid, 0))                   AS total_skid,
+                           SUM(COALESCE(p.skir, 0))                   AS total_skir,
+                           SUM(COALESCE(p.cancellation, 0))           AS total_cancellation,
+                           SUM(COALESCE(p.inc, 0))                    AS total_inc"""
+            _pal_join = (f"LEFT JOIN payable_tbl_brand_a p "
+                         f"ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci "
+                         f"AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci "
+                         f"AND dr.date = p.date")
             if reg_filter == "registered":
                 result = db_manager.execute_query(f"""
-                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
-                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
-                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
-                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
-                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
-                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
-                           SUM(dr.palawan_international_commission) AS total_international_commission,
-                           SUM(dr.palawan_suki_discounts)         AS total_skid,
-                           SUM(dr.palawan_suki_rebates)           AS total_skir,
-                           SUM(dr.palawan_cancel)                 AS total_cancellation,
-                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    SELECT {_pal_select}
                     FROM {self.daily_table} dr
                     INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
                     INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
-                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    {_pal_join}
                     WHERE {corp_clause}
                       AND {date_clause}
                       AND b.is_registered = 1
                 """, corp_params + date_params)
             elif reg_filter == "not_registered":
                 result = db_manager.execute_query(f"""
-                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
-                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
-                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
-                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
-                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
-                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
-                           SUM(dr.palawan_international_commission) AS total_international_commission,
-                           SUM(dr.palawan_suki_discounts)         AS total_skid,
-                           SUM(dr.palawan_suki_rebates)           AS total_skir,
-                           SUM(dr.palawan_cancel)                 AS total_cancellation,
-                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    SELECT {_pal_select}
                     FROM {self.daily_table} dr
                     INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
                     INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
-                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    {_pal_join}
                     WHERE {corp_clause}
                       AND {date_clause}
                       AND b.is_registered = 0
@@ -334,38 +333,18 @@ class ReportPage(QWidget):
             elif is_global_reliance:
                 # Global Reliance with "All" registration filter - needs branches join for global_tag
                 result = db_manager.execute_query(f"""
-                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
-                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
-                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
-                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
-                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
-                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
-                           SUM(dr.palawan_international_commission) AS total_international_commission,
-                           SUM(dr.palawan_suki_discounts)         AS total_skid,
-                           SUM(dr.palawan_suki_rebates)           AS total_skir,
-                           SUM(dr.palawan_cancel)                 AS total_cancellation,
-                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    SELECT {_pal_select}
                     FROM {self.daily_table} dr
                     INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    {_pal_join}
                     WHERE {corp_clause}
                       AND {date_clause}
                 """, corp_params + date_params)
             else:
                 result = db_manager.execute_query(f"""
-                    SELECT SUM(dr.palawan_sendout_principal)      AS total_sendout_capital,
-                           SUM(dr.palawan_sendout_commission)     AS total_sendout_commission,
-                           SUM(dr.palawan_sendout_sc)             AS total_sendout_sc,
-                           SUM(dr.palawan_payout_principal)       AS total_payout_capital,
-                           SUM(dr.palawan_payout_commission)      AS total_payout_commission,
-                           SUM(dr.palawan_payout_sc)              AS total_payout_sc,
-                           SUM(dr.palawan_international_commission) AS total_international_commission,
-                           SUM(dr.palawan_suki_discounts)         AS total_skid,
-                           SUM(dr.palawan_suki_rebates)           AS total_skir,
-                           SUM(dr.palawan_cancel)                 AS total_cancellation,
-                           SUM(COALESCE(p.inc, 0))                AS total_inc
+                    SELECT {_pal_select}
                     FROM {self.daily_table} dr
-                    LEFT JOIN {self.payable_table} p ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci AND dr.date = p.date
+                    {_pal_join}
                     WHERE {corp_clause}
                       AND {date_clause}
                 """, corp_params + date_params)

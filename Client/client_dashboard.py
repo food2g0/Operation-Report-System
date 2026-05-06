@@ -1,7 +1,10 @@
 import datetime
 import json
+import logging
 import os
 import time
+
+logger = logging.getLogger(__name__)
 
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout,
@@ -1044,8 +1047,21 @@ class ClientDashboard(QWidget):
         lay.addWidget(self._build_header(username, branch, corporation))
         lay.addWidget(self._build_toolbar())
         lay.addWidget(self._build_tabs(), stretch=1)
+
         lay.addWidget(self._build_summary_strip())
         lay.addWidget(self._build_footer())
+
+        # Load global_tag for this branch
+        self.global_tag = ''
+        try:
+            _gt = self.db_manager.execute_query(
+                "SELECT COALESCE(global_tag, '') AS global_tag FROM branches WHERE name = %s LIMIT 1",
+                (self.branch,)
+            )
+            if _gt:
+                self.global_tag = str(_gt[0].get('global_tag') or '').strip()
+        except Exception:
+            pass
 
         self.on_date_changed()
         self._connect_shared_fields()
@@ -1106,7 +1122,7 @@ class ClientDashboard(QWidget):
                 plus_btn.clicked.connect(_open_dialog)
                 layout.insertWidget(0, plus_btn)
         except Exception as e:
-            print(f"_setup_pc_salary_button error: {e}")
+            logger.error("_setup_pc_salary_button error: %s", e)
 
         from PyQt5.QtCore import QTimer as _QT
         _QT.singleShot(300, self._load_draft)
@@ -1149,7 +1165,7 @@ class ClientDashboard(QWidget):
                 self._sync_pending_entries(pending)
                 
         except Exception as e:
-            print(f"Error checking pending entries: {e}")
+            logger.error("Error checking pending entries: %s", e)
 
     def _sync_pending_entries(self, pending_entries):
       
@@ -1266,14 +1282,12 @@ class ClientDashboard(QWidget):
                 result = self.db_manager.execute_query(query, vals)
                 if result is not None:
                     results.append(brand_full)
-                    
-                
                     self._save_palawan_to_payable(selected_date, brand_full, palawan_data)
             
             return len(results) > 0
             
         except Exception as e:
-            print(f"Error posting pending entry: {e}")
+            logger.error("Error posting pending entry: %s", e)
             return False
 
 
@@ -1631,9 +1645,9 @@ class ClientDashboard(QWidget):
 
         self.cash_flow_tab = self.cash_flow_tab_a
 
-        tw.addTab(self.cash_flow_tab_a,  "Brand A")
-        tw.addTab(self.cash_flow_tab_b,  "Brand B")
-        tw.addTab(self.palawan_tab,      "Palawan Details")
+        tw.addTab(self.cash_flow_tab_a, "Brand A")
+        tw.addTab(self.cash_flow_tab_b, "Brand B")
+        tw.addTab(self.palawan_tab,     "Palawan Details B")
 
 
         self.tab_widget = tw
@@ -1648,27 +1662,26 @@ class ClientDashboard(QWidget):
 
        
         if hasattr(self, 'bb_container_a') and hasattr(self, 'bb_container_b'):
-            if index == 0:  
+            if index == 0:   # Brand A
                 self.bb_container_a.show()
                 self.bb_container_b.hide()
                 self.bb_divider_b.hide()
-            elif index == 1: 
+            elif index == 1: # Brand B
                 self.bb_container_a.hide()
                 self.bb_container_b.show()
                 self.bb_divider_b.show()
-            else: 
+            else:            # Palawan Details B — show both
                 self.bb_container_a.show()
                 self.bb_container_b.show()
                 self.bb_divider_b.show()
 
- 
-        if index == 0:  
+        if index == 0:   # Brand A
             self.summary_container_a.show()
             self.summary_container_b.hide()
-        elif index == 1:  
+        elif index == 1: # Brand B
             self.summary_container_a.hide()
             self.summary_container_b.show()
-        else: 
+        else:            # Palawan Details B
             self.summary_container_a.show()
             self.summary_container_b.show()
 
@@ -2109,9 +2122,9 @@ class ClientDashboard(QWidget):
                         if val is not None:
                             return float(val), prev_str
                 except Exception as e:
-                    print(f"Query error for {prev_str}: {e}")
+                    logger.warning("Query error for %s: %s", prev_str, e)
         except Exception as e:
-            print(f"get_previous_day_ending_balance({brand}): {e}")
+            logger.error("get_previous_day_ending_balance(%s): %s", brand, e)
         return None, None
 
     def _get_offline_previous_balance(self, selected_date, brand):
@@ -2142,7 +2155,7 @@ class ClientDashboard(QWidget):
             return best_bal, best_date
             
         except Exception as e:
-            print(f"_get_offline_previous_balance error: {e}")
+            logger.error("_get_offline_previous_balance error: %s", e)
             return None, None
 
 
@@ -2178,7 +2191,7 @@ class ClientDashboard(QWidget):
                     self._table_columns_cache_time = now
                     return cols
         except Exception as e:
-            print(f"_get_table_columns({table_name}): {e}")
+            logger.error("_get_table_columns(%s): %s", table_name, e)
         return self._table_columns_cache.get(table_name, set())
 
     def _filter_vals_for_table(self, all_vals, table_name):
@@ -2191,18 +2204,37 @@ class ClientDashboard(QWidget):
     def check_existing_entry(self, selected_date, brand="Brand A"):
 
         try:
-            table_name = "daily_reports_brand_a" if brand == "Brand A" else "daily_reports"
-            q = f"""SELECT * FROM {table_name}
-                    WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1"""
-            result = self.db_manager.execute_query(
-                q, (selected_date, self.branch, self.corporation))
+            if brand == "Brand A":
+                table_name = "daily_reports_brand_a"
+                # Try with corporation first, then branch-only fallback
+                for q, params in [
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                     (selected_date, self.branch, self.corporation)),
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
+                     (selected_date, self.branch)),
+                ]:
+                    result = self.db_manager.execute_query(q, params)
+                    if result:
+                        break
+            else:
+                # Brand B: daily_reports is exclusively the Brand B table.
+                # Query by date+branch+corporation; no brand filter needed.
+                table_name = "daily_reports"
+                for q, params in [
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                     (selected_date, self.branch, self.corporation)),
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
+                     (selected_date, self.branch)),
+                ]:
+                    result = self.db_manager.execute_query(q, params)
+                    if result:
+                        break
             if result and len(result) > 0:
                 row = result[0]
-            
                 is_locked = row.get('is_locked', 1)
                 return "locked" if is_locked else "unlocked"
         except Exception as e:
-            print(f"check_existing_entry({brand}): {e}")
+            logger.error("check_existing_entry(%s): %s", brand, e)
         return None
 
 
@@ -2229,6 +2261,8 @@ class ClientDashboard(QWidget):
         for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b, self.palawan_tab):
             if hasattr(tab, 'clear_fields'):
                 tab.clear_fields()
+
+        self._restore_palawan_payable(sd)
 
         self.beginning_balance_auto_filled_a = False
         self.beginning_balance_auto_filled_b = False
@@ -2324,11 +2358,18 @@ class ClientDashboard(QWidget):
 
     def _restore_palawan_tab(self, date_str):
         """Load palawan data from both Brand A and Brand B tables.
-        Brand A is the canonical source; Brand B lotes values take precedence
-        when non-zero (they get updated there during re-submit with Brand A locked)."""
-        _LOTES_COLS = (
+        Brand A is the canonical source; Brand B values take precedence for
+        all palawan payable and lotes columns when non-zero (needed because
+        daily_reports_brand_a may not have the palawan payable columns)."""
+        _PALAWAN_COLS = (
+            'palawan_sendout_principal', 'palawan_sendout_sc',
+            'palawan_sendout_commission', 'palawan_sendout_regular_total',
             'palawan_sendout_lotes_total',
+            'palawan_payout_principal', 'palawan_payout_sc',
+            'palawan_payout_commission', 'palawan_payout_regular_total',
             'palawan_payout_lotes_total',
+            'palawan_international_principal', 'palawan_international_sc',
+            'palawan_international_commission', 'palawan_international_regular_total',
             'palawan_international_lotes_total',
         )
         try:
@@ -2341,6 +2382,12 @@ class ClientDashboard(QWidget):
                 "SELECT * FROM daily_reports "
                 "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
             )
+            if not result_b:
+                result_b = self.db_manager.execute_query(
+                    "SELECT * FROM daily_reports "
+                    "WHERE date=%s AND branch=%s LIMIT 1",
+                    (date_str, self.branch)
+                )
 
             if not result_a and not result_b:
                 return
@@ -2348,14 +2395,47 @@ class ClientDashboard(QWidget):
             data = dict(result_a[0]) if result_a else {}
             if result_b:
                 data_b = result_b[0]
-                for col in _LOTES_COLS:
+                for col in _PALAWAN_COLS:
                     b_val = data_b.get(col) or 0
-                    if float(b_val) != 0:
+                    try:
+                        b_float = float(b_val)
+                    except (TypeError, ValueError):
+                        b_float = 0.0
+                    if b_float != 0:
                         data[col] = b_val
 
             self.palawan_tab.load_data(data)
         except Exception as e:
-            print(f"[_restore_palawan_tab] {e}")
+            logger.error("[_restore_palawan_tab] %s", e)
+
+    def _restore_palawan_payable(self, date_str):
+        """Load Palawan Payable data from payable_tbl_brand_a for the selected date."""
+        try:
+            result = self.db_manager.execute_query(
+                "SELECT * FROM payable_tbl_brand_a "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                (date_str, self.branch, self.corporation)
+            )
+            if result:
+                row = dict(result[0])
+                # Remap payable_tbl_brand_a column names to the prefix keys expected by load_data
+                mapped = {
+                    "so_lotes":       row.get("sendout_lotes", 0),
+                    "so_principal":   row.get("sendout_capital", 0),
+                    "so_sc":          row.get("sendout_sc", 0),
+                    "so_commission":  row.get("sendout_commission", 0),
+                    "po_lotes":       row.get("payout_lotes", 0),
+                    "po_principal":   row.get("payout_capital", 0),
+                    "po_sc":          row.get("payout_sc", 0),
+                    "po_commission":  row.get("payout_commission", 0),
+                    "int_lotes":      row.get("international_lotes", 0),
+                    "int_principal":  row.get("international_capital", 0),
+                    "int_sc":         row.get("international_sc", 0),
+                    "int_commission": row.get("international_commission", 0),
+                }
+                self.palawan_tab.load_data(mapped)
+        except Exception as e:
+            logger.error("[_restore_palawan_payable] %s", e)
 
     def _set_status(self, text, color, bold=False):
         self._set_status_brand("A", text, color, bold)
@@ -2452,8 +2532,7 @@ class ClientDashboard(QWidget):
         for w in (self.beginning_balance_input_a, self.beginning_balance_input_b,
                   self.cash_count_input_a, self.cash_count_input_b):
             w.setEnabled(enabled)
-        for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b,
-                    self.palawan_tab):
+        for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b, self.palawan_tab):
             if hasattr(tab, 'set_enabled'):
                 tab.set_enabled(enabled)
 
@@ -2548,9 +2627,9 @@ class ClientDashboard(QWidget):
         empty_tabs = []
         try:
             if all(v == 0 or v == 0.0 for v in self.palawan_tab.get_data().values()):
-                empty_tabs.append("Palawan Details")
+                empty_tabs.append("Palawan Details B")
         except Exception:
-            empty_tabs.append("Palawan Details")
+            empty_tabs.append("Palawan Details B")
 
         if not empty_tabs:
             return True
@@ -2665,7 +2744,8 @@ class ClientDashboard(QWidget):
         return True
 
     def verify_database_save(self, date_str, brand_table,
-                              expected_debit=None, expected_credit=None, expected_ending=None):
+                              expected_debit=None, expected_credit=None, expected_ending=None,
+                              brand=None):
         """
         POST-SAVE VERIFICATION: Read data back from database and verify stored totals
         match the values that were calculated before saving.
@@ -2679,7 +2759,7 @@ class ClientDashboard(QWidget):
             result = self.db_manager.execute_query(query, (date_str, self.branch, self.corporation))
 
             if not result:
-                print(f"[WARNING] Could not verify {brand_table} save - record not found!")
+                logger.warning("Could not verify %s save - record not found!", brand_table)
                 return True
 
             saved_row = result[0]
@@ -2689,7 +2769,7 @@ class ClientDashboard(QWidget):
 
             if expected_debit is None or expected_credit is None or expected_ending is None:
                 # Fallback: nothing to compare against, just log what was stored
-                print(f"[OK] {brand_table} stored: Debit={stored_debit:.2f}, Credit={stored_credit:.2f}, Ending={stored_ending:.2f}")
+                logger.info("%s stored: Debit=%.2f, Credit=%.2f, Ending=%.2f", brand_table, stored_debit, stored_credit, stored_ending)
                 return True
 
             debit_match  = abs(stored_debit  - expected_debit)  < 0.01
@@ -2697,31 +2777,26 @@ class ClientDashboard(QWidget):
             ending_match = abs(stored_ending - expected_ending) < 0.01
 
             if not debit_match:
-                print(f"[ERROR] {brand_table} Debit Total mismatch!")
-                print(f"  Expected: {expected_debit:.2f}")
-                print(f"  Stored:   {stored_debit:.2f}")
-                print(f"  Difference: {stored_debit - expected_debit:+.2f}")
+                logger.error("%s Debit Total mismatch! Expected=%.2f Stored=%.2f Diff=%+.2f",
+                             brand_table, expected_debit, stored_debit, stored_debit - expected_debit)
                 return False
 
             if not credit_match:
-                print(f"[ERROR] {brand_table} Credit Total mismatch!")
-                print(f"  Expected: {expected_credit:.2f}")
-                print(f"  Stored:   {stored_credit:.2f}")
-                print(f"  Difference: {stored_credit - expected_credit:+.2f}")
+                logger.error("%s Credit Total mismatch! Expected=%.2f Stored=%.2f Diff=%+.2f",
+                             brand_table, expected_credit, stored_credit, stored_credit - expected_credit)
                 return False
 
             if not ending_match:
-                print(f"[ERROR] {brand_table} Ending Balance mismatch!")
-                print(f"  Expected: {expected_ending:.2f}")
-                print(f"  Stored:   {stored_ending:.2f}")
-                print(f"  Difference: {stored_ending - expected_ending:+.2f}")
+                logger.error("%s Ending Balance mismatch! Expected=%.2f Stored=%.2f Diff=%+.2f",
+                             brand_table, expected_ending, stored_ending, stored_ending - expected_ending)
                 return False
 
-            print(f"[OK] {brand_table} verified: Debit={stored_debit:.2f}, Credit={stored_credit:.2f}, Ending={stored_ending:.2f}")
+            logger.info("%s verified: Debit=%.2f, Credit=%.2f, Ending=%.2f",
+                        brand_table, stored_debit, stored_credit, stored_ending)
             return True
 
         except Exception as e:
-            print(f"[ERROR] Could not verify database save: {e}")
+            logger.error("Could not verify database save: %s", e)
             return True  # Don't fail hard, just log it
 
     def handle_post(self):
@@ -2870,21 +2945,40 @@ class ClientDashboard(QWidget):
                 else:
 
                     filtered = self._filter_vals_for_table(all_vals, table_name)
+                    # Include brand column for daily_reports so it doesn't default to 'Brand A'
+                    _brand_cols = ['brand'] if table_name == 'daily_reports' else []
+                    _brand_vals = [brand_full] if table_name == 'daily_reports' else []
                     cols = [
                         'date', 'username', 'branch', 'corporation',
                         'beginning_balance', 'debit_total', 'credit_total',
                         'ending_balance', 'cash_count', 'cash_result', 'variance_status',
                         'is_locked'
-                    ] + list(filtered.keys())
+                    ] + _brand_cols + list(filtered.keys())
                     vals = [
                         sd, self.user_email, self.branch, self.corporation,
                         beginning, beginning + deb, cre,
                         ending, cash_count, cash_result, variance_status,
-                        1 
-                    ] + list(filtered.values())
+                        1
+                    ] + _brand_vals + list(filtered.values())
 
                     ph    = ', '.join(['%s'] * len(cols))
-                    query = f"INSERT INTO {table_name} ({', '.join(cols)}) VALUES ({ph})"
+                    # Build ON DUPLICATE KEY UPDATE clause for all non-key columns.
+                    # Only updates when the existing row is unlocked (is_locked = 0),
+                    # so admin-locked records are never silently overwritten.
+                    _key_cols = {'date', 'branch', 'corporation'}
+                    _upd_pairs = [
+                        f"`{c}` = IF(is_locked = 0, VALUES(`{c}`), `{c}`)"
+                        for c in cols if c not in _key_cols
+                    ]
+                    _upd_clause = ', '.join(_upd_pairs)
+                    query = (
+                        f"INSERT INTO {table_name} ({', '.join(cols)}) VALUES ({ph})"
+                        f" ON DUPLICATE KEY UPDATE {_upd_clause}"
+                    )
+                    # Keep a copy so we can build a fallback UPDATE on duplicate key
+                    # (used by the error-1062 handler for databases without the UNIQUE constraint)
+                    _insert_cols = list(cols)
+                    _insert_vals = list(vals)
 
                 rows, last_err = None, None
                 for attempt in range(1, 5):
@@ -2893,15 +2987,51 @@ class ClientDashboard(QWidget):
                         rows = res
                         break
                     last_err = err
-                    is_dl = (hasattr(err, 'args') and isinstance(err.args, tuple)
-                             and len(err.args) > 0 and err.args[0] == 1213)
-                    try:
-                        self.db_manager.logger.error(f"DB attempt {attempt}: {err}")
-                    except Exception:
-                        pass
+                    _err_str = str(err)
+                    is_dl  = (
+                        (hasattr(err, 'args') and isinstance(err.args, tuple)
+                         and len(err.args) > 0 and err.args[0] == 1213)
+                        or '1213' in _err_str
+                    )
+                    is_dup = (
+                        (hasattr(err, 'args') and isinstance(err.args, tuple)
+                         and len(err.args) > 0 and err.args[0] == 1062)
+                        or '1062' in _err_str
+                    )
                     if is_dl and attempt < 4:
+                        try:
+                            self.db_manager.logger.error(f"DB attempt {attempt}: {err}")
+                        except Exception:
+                            pass
                         time.sleep(0.5 * attempt)
+                    elif is_dup and entry_status is None:
+                        # INSERT hit a duplicate key — the record already exists but
+                        # check_existing_entry missed it. Re-check lock status first.
+                        recheck = self.check_existing_entry(sd, brand_full)
+                        if recheck == "locked":
+                            # Locked by admin/another session — do NOT overwrite
+                            last_err = None
+                            rows = 0
+                            results.append((brand_full, "skipped", None))
+                            break
+                        # Unlocked (or still undetected) — fall back to UPDATE
+                        upd_pairs = [
+                            (c, v) for c, v in zip(_insert_cols, _insert_vals)
+                            if c not in ('date', 'branch', 'corporation', 'brand')
+                        ]
+                        set_clause_fb = ', '.join(f"`{c}` = %s" for c, _ in upd_pairs)
+                        query = (
+                            f"UPDATE {table_name} SET {set_clause_fb} "
+                            f"WHERE date = %s AND branch = %s AND corporation = %s"
+                        )
+                        vals = [v for _, v in upd_pairs] + [sd, self.branch, self.corporation]
+                        entry_status = "unlocked"  # treat as update from here
+                        # continue loop to retry with UPDATE
                     else:
+                        try:
+                            self.db_manager.logger.error(f"DB attempt {attempt}: {err}")
+                        except Exception:
+                            pass
                         break
 
                 if isinstance(rows, int) and rows > 0:
@@ -2911,9 +3041,10 @@ class ClientDashboard(QWidget):
                         expected_debit=beginning + deb,
                         expected_credit=cre,
                         expected_ending=ending,
+                        brand=brand_full,
                     )
                     if not is_valid:
-                        print(f"[CRITICAL] Database validation failed for {table_name}! Removing record from database.")
+                        logger.critical("Database validation failed for %s! Removing record from database.", table_name)
                         try:
                             if entry_status is None:
                                 # New record was just inserted — DELETE it entirely so no bad data remains
@@ -2921,16 +3052,16 @@ class ClientDashboard(QWidget):
                                     f"DELETE FROM {table_name} WHERE date = %s AND branch = %s AND corporation = %s",
                                     (sd, self.branch, self.corporation)
                                 )
-                                print(f"[INFO] Deleted invalid record from {table_name}")
+                                logger.info("Deleted invalid record from %s", table_name)
                             else:
                                 # Existing record was updated — revert to unlocked so user can fix and resubmit
                                 self.db_manager.execute_query(
                                     f"UPDATE {table_name} SET is_locked = 0 WHERE date = %s AND branch = %s AND corporation = %s",
                                     (sd, self.branch, self.corporation)
                                 )
-                                print(f"[INFO] Reverted {table_name} record to unlocked state")
+                                logger.info("Reverted %s record to unlocked state", table_name)
                         except Exception as revert_err:
-                            print(f"[ERROR] Could not revert record: {revert_err}")
+                            logger.error("Could not revert record: %s", revert_err)
                         results.append((brand_full, "validation_error",
                                       "Calculation error detected. Report was NOT saved to the database.\n"
                                       "Please check your values and try again."))
@@ -2981,7 +3112,7 @@ class ClientDashboard(QWidget):
                 self.loading_overlay.set_status("Saving Palawan details...", "Finalizing report")
                 QApplication.processEvents()
                 
-             
+                # Save Palawan Details to payable table for all brands (uses payable_tbl_brand_a)
                 pal = self.palawan_tab.get_data()
                 for brand_full in successes:
                     self._save_palawan_to_payable(sd, brand_full, pal)
@@ -3028,8 +3159,8 @@ class ClientDashboard(QWidget):
             
             
             pal = self.palawan_tab.get_data()
-            
             brand_data = {}
+            # SKID/SKIR/CANCEL/INC will be injected after brand_data is built
             for brand_full, cf_tab, bb_input, cc_input, table_name in [
                 ("Brand A", self.cash_flow_tab_a,
                  self.beginning_balance_input_a, self.cash_count_input_a,
@@ -3114,6 +3245,7 @@ class ClientDashboard(QWidget):
                     "all_values": all_vals
                 }
             
+            # Both brands use the same palawan data from payable_tbl_brand_a
             entry_data = {
                 "date": selected_date,
                 "username": self.user_email,
@@ -3155,55 +3287,61 @@ class ClientDashboard(QWidget):
             self._msg("Offline Save Error", f"Failed to save entry: {e}", QMessageBox.Critical)
 
     def _save_palawan_to_payable(self, selected_date, brand_full, palawan_data):
-
+        """Save Palawan details to payable_tbl_brand_a for both brands."""
         try:
+            payable_table = "payable_tbl_brand_a"
 
-            payable_table = "payable_tbl_brand_a" if brand_full == "Brand A" else "payable_tbl"
-            
-            sendout_capital = palawan_data.get('palawan_sendout_principal', 0) or 0
-            sendout_sc = palawan_data.get('palawan_sendout_sc', 0) or 0
-            sendout_commission = palawan_data.get('palawan_sendout_commission', 0) or 0
-            sendout_total = palawan_data.get('palawan_sendout_regular_total', 0) or 0
-            
-            payout_capital = palawan_data.get('palawan_payout_principal', 0) or 0
-            payout_sc = palawan_data.get('palawan_payout_sc', 0) or 0
-            payout_commission = palawan_data.get('palawan_payout_commission', 0) or 0
-            payout_total = palawan_data.get('palawan_payout_regular_total', 0) or 0
-            
-            int_capital = palawan_data.get('palawan_international_principal', 0) or 0
-            int_sc = palawan_data.get('palawan_international_sc', 0) or 0
-            int_commission = palawan_data.get('palawan_international_commission', 0) or 0
-            int_total = palawan_data.get('palawan_international_regular_total', 0) or 0
-            
-            skid = palawan_data.get('palawan_suki_discounts', 0) or 0
-            skir = palawan_data.get('palawan_suki_rebates', 0) or 0
+            # palawan_data comes from palawan_tab.get_data() → so_*/po_*/int_* keys
+            sendout_lotes      = int(palawan_data.get('so_lotes', 0) or 0)
+            sendout_capital    = palawan_data.get('so_principal', 0) or 0
+            sendout_sc         = palawan_data.get('so_sc', 0) or 0
+            sendout_commission = palawan_data.get('so_commission', 0) or 0
+            sendout_total      = palawan_data.get('so_total', 0) or 0
+
+            payout_lotes      = int(palawan_data.get('po_lotes', 0) or 0)
+            payout_capital    = palawan_data.get('po_principal', 0) or 0
+            payout_sc         = palawan_data.get('po_sc', 0) or 0
+            payout_commission = palawan_data.get('po_commission', 0) or 0
+            payout_total      = palawan_data.get('po_total', 0) or 0
+
+            int_lotes      = int(palawan_data.get('int_lotes', 0) or 0)
+            int_capital    = palawan_data.get('int_principal', 0) or 0
+            int_sc         = palawan_data.get('int_sc', 0) or 0
+            int_commission = palawan_data.get('int_commission', 0) or 0
+            int_total      = palawan_data.get('int_total', 0) or 0
+
+            skid         = palawan_data.get('palawan_suki_discounts', 0) or 0
+            skir         = palawan_data.get('palawan_suki_rebates', 0) or 0
             cancellation = palawan_data.get('palawan_cancel', 0) or 0
-            inc = palawan_data.get('palawan_pay_out_incentives', 0) or 0
-            
+            inc          = palawan_data.get('palawan_pay_out_incentives', 0) or 0
+
             query = f"""
                 INSERT INTO {payable_table} (
                     corporation, branch, date,
-                    sendout_capital, sendout_sc, sendout_commission, sendout_total,
-                    payout_capital, payout_sc, payout_commission, payout_total,
-                    international_capital, international_sc,
+                    sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
+                    payout_lotes, payout_capital, payout_sc, payout_commission, payout_total,
+                    international_lotes, international_capital, international_sc,
                     international_commission, international_total,
                     skid, skir, cancellation, inc
                 ) VALUES (
                     %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s, %s,
-                    %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     %s, %s, %s, %s
                 )
                 ON DUPLICATE KEY UPDATE
+                    sendout_lotes = VALUES(sendout_lotes),
                     sendout_capital = VALUES(sendout_capital),
                     sendout_sc = VALUES(sendout_sc),
                     sendout_commission = VALUES(sendout_commission),
                     sendout_total = VALUES(sendout_total),
+                    payout_lotes = VALUES(payout_lotes),
                     payout_capital = VALUES(payout_capital),
                     payout_sc = VALUES(payout_sc),
                     payout_commission = VALUES(payout_commission),
                     payout_total = VALUES(payout_total),
+                    international_lotes = VALUES(international_lotes),
                     international_capital = VALUES(international_capital),
                     international_sc = VALUES(international_sc),
                     international_commission = VALUES(international_commission),
@@ -3214,20 +3352,19 @@ class ClientDashboard(QWidget):
                     inc = VALUES(inc),
                     updated_at = CURRENT_TIMESTAMP
             """
-            
             params = (
                 self.corporation, self.branch, selected_date,
-                sendout_capital, sendout_sc, sendout_commission, sendout_total,
-                payout_capital, payout_sc, payout_commission, payout_total,
-                int_capital, int_sc, int_commission, int_total,
+                sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
+                payout_lotes, payout_capital, payout_sc, payout_commission, payout_total,
+                int_lotes, int_capital, int_sc, int_commission, int_total,
                 skid, skir, cancellation, inc
             )
-            
+
             self.db_manager.execute_query(query, params)
-            print(f"✅ Palawan details saved to {payable_table} for {brand_full}")
-            
+            logger.info("Palawan details saved to %s for %s", payable_table, brand_full)
+
         except Exception as e:
-            print(f"⚠️ Error saving Palawan to payable ({brand_full}): {e}")
+            logger.error("Error saving Palawan to payable (%s): %s", brand_full, e)
 
     def _post_to_service_tables(self, selected_date, all_vals: dict):
 
@@ -3244,25 +3381,30 @@ class ClientDashboard(QWidget):
                 if col_rows:
                     existing_cols = {r['COLUMN_NAME'] for r in col_rows}
                     field_names = [f for f in field_names if f in existing_cols]
+                    eff_base = [(c, v) for c, v in zip(base_cols, base_vals) if c in existing_cols]
+                else:
+                    eff_base = list(zip(base_cols, base_vals))
 
                 if not field_names:
-                    print(f"  ⚠️ {table}: no matching columns found, skipping")
+                    logger.debug("%s: no matching columns found, skipping", table)
                     return
 
                 row = {f: float(all_vals.get(f, 0) or 0) for f in field_names}
-                cols = base_cols + list(row.keys())
-                vals = base_vals + list(row.values())
+                eff_base_cols = [c for c, v in eff_base]
+                eff_base_vals = [v for c, v in eff_base]
+                cols = eff_base_cols + list(row.keys())
+                vals = eff_base_vals + list(row.values())
                 ph   = ', '.join(['%s'] * len(cols))
                 upd  = ', '.join(f"`{c}`=VALUES(`{c}`)" for c in row)
                 q    = (f"INSERT INTO `{table}` ({', '.join(f'`{c}`' for c in cols)}) "
                         f"VALUES ({ph})"
                         + (f" ON DUPLICATE KEY UPDATE {upd}" if upd else ""))
                 self.db_manager.execute_query(q, vals)
-                print(f"  ✅ {table}")
+                logger.debug("Wrote supplementary table: %s", table)
             except Exception as e:
-                print(f"  ⚠️ {table}: {e}")
+                logger.error("Error writing %s: %s", table, e)
 
-        print("Writing supplementary Brand A tables…")
+        logger.debug("Writing supplementary Brand A tables…")
 
 
         _insert("daily_transaction_tbl_brand_a", [
@@ -3281,8 +3423,28 @@ class ClientDashboard(QWidget):
             "osf_storage", "osf_storage_lotes",
             "osf_silver", "osf_silver_lotes",
             "osf_motor", "osf_motor_lotes",
-            "insurance_20",
-            "insurance_philam_60", "insurance_philam_90",
+            "insurance_sunlife_20", "insurance_sunlife_20_lotes",
+            "palawan_send_out", "palawan_send_out_lotes",
+            "palawan_sc", "palawan_sc_lotes",
+            "palawan_pay_out", "palawan_pay_out_lotes",
+            "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
+            "ecbills", "ecbills_lotes", "ecload", "ecload_lotes", "eccash", "eccash_lotes", "eccash_out", "eccash_out_lotes",
+            "gcash_in", "gcash_in_lotes",
+            "gcash_out", "gcash_out_lotes",
+            "transfast", "transfast_lotes",
+            "ria_out", "ria_out_lotes",
+            "i2i_remittance_in", "i2i_remittance_in_lotes",
+            "i2i_bills_payment", "i2i_bills_payment_lotes",
+            "i2i_instapay", "i2i_instapay_lotes",
+            "sendah_load_sc", "sendah_load_sc_lotes",
+            "sendah_bills_sc", "sendah_bills_sc_lotes",
+            "paymaya_in", "paymaya_in_lotes",
+            "smart_money_sc", "smart_money_sc_lotes",
+            "smart_money_po", "smart_money_po_lotes",
+            "gcash_padala_sendah", "gcash_padala_sendah_lotes",
+            "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
+            "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
+            "remitly", "remitly_lotes",
         ])
 
       
@@ -3290,38 +3452,59 @@ class ClientDashboard(QWidget):
             "palawan_send_out", "palawan_send_out_lotes",
             "palawan_sc", "palawan_sc_lotes",
             "palawan_pay_out", "palawan_pay_out_lotes",
+            "sendah_load_sc", "sendah_load_sc_lotes",
+            "smart_money_sc", "smart_money_sc_lotes",
+            "smart_money_po", "smart_money_po_lotes",
             "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
             "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
             "palawan_pay_bills_sc",
             "palawan_load_sc",
             "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
             "palawan_suki_card",
-            "palawan_pay_cash_out_sc",
-            "sendah_load_sc", "sendah_load_sc_lotes",
-            "sendah_bills_sc", "sendah_bills_sc_lotes",
-            "smart_money_sc", "smart_money_sc_lotes",
-            "smart_money_po", "smart_money_po_lotes",
             "gcash_in", "gcash_in_lotes",
             "gcash_out", "gcash_out_lotes",
             "gcash_padala_sendah", "gcash_padala_sendah_lotes",
             "abra_so_sc", "abra_po",
-            "bdo_sc", "bdo_po",
-            "ayanah_sc", "ayanah_out",
+            "gprs_in",
             "remitly", "remitly_lotes",
             "paymaya_in", "paymaya_in_lotes",
             "paymaya_out",
             "ria_in_sc", "ria_in_sc_lotes",
-            "ria_out",
+            "ria_out", "ria_out_lotes",
+            "bdo_sc", "bdo_po",
             "transfast", "transfast_lotes",
-            "moneygram", "moneygram_lotes",
+            "banko_in", "banko_out",
+            "sendah_bills_sc", "sendah_bills_sc_lotes",
+            "eccash_out",
             "i2i_remittance_in", "i2i_remittance_in_lotes",
-            "i2i_remittance_out",
             "i2i_bills_payment", "i2i_bills_payment_lotes",
             "i2i_bank_transfer", "i2i_pesonet",
             "i2i_instapay", "i2i_instapay_lotes",
-            "fixco",
+            "truemoney_out",
+            "i2i_remittance_out",
         ])
 
+
+        # Post to global_other_services_tbl if this branch has a global tag
+        if self.global_tag and self.global_tag.upper() not in ('', 'NO'):
+            # Map ria_out → ria so the global_other_services_tbl column gets populated
+            all_vals['ria'] = all_vals.get('ria_out', 0) or 0
+            # Map eccash_out → ec_pay_out for the global table column name
+            all_vals['ec_pay_out'] = all_vals.get('eccash_out', 0) or 0
+            _insert("global_other_services_tbl", [
+                "gcash_out", "gcash_out_lotes",
+                "moneygram", "moneygram_lotes",
+                "transfast", "transfast_lotes",
+                "ria", "ria_lotes",
+                "smart_money_out", "smart_money_out_lotes",
+                "gcash_padala", "gcash_padala_lotes",
+                "abra_out", "abra_out_lotes",
+                "remitly", "remitly_lotes",
+                "pal_pay_cash_out", "pal_pay_cash_out_lotes",
+                "mc_out", "mc_out_lotes",
+                "ec_pay_out",
+            ])
+            logger.debug("Wrote global_other_services_tbl (global_tag=%s)", self.global_tag)
 
         _insert("PL_tbl_brand_a", [
             "interest", "penalty", "stamp", "rescuardo_affidavit",
@@ -3331,14 +3514,14 @@ class ClientDashboard(QWidget):
             "silver_ai", "osf_silver", "res_storage_int_penalty",
             "motor_ai", "osf_motor", "penalty_motor",
             "miscellaneous_fee",
-            "palawan_suki_discounts", "palawan_suki_rebates",
-            "storage_rebates", "silver_rebates", "palawan_suki_card",
             "pc_transpo", "pc_salary",
             "pc_inc_motor", "pc_inc_emp", "pc_inc_suki_card",
             "pc_inc_insurance", "pc_inc_mc",
             "pc_supplies_xerox_maintenance",
             "pc_electric", "pc_water", "pc_internet",
             "pc_rental", "pc_permits_bir_payments", "pc_lbc_jrs_jnt",
+            "palawan_suki_discounts", "palawan_suki_rebates",
+            "storage_rebates", "silver_rebates", "palawan_suki_card",
         ])
 
 
@@ -3361,9 +3544,9 @@ class ClientDashboard(QWidget):
             """
             params = (selected_date, self.branch, self.corporation, self.user_email, cash_float_val)
             self.db_manager.execute_query(query, params)
-            print(f"✅ Cash Float saved: {cash_float_val:,.2f}")
+            logger.info("Cash Float saved: %.2f", cash_float_val)
         except Exception as e:
-            print(f"⚠️ Error saving Cash Float: {e}")
+            logger.error("Error saving Cash Float: %s", e)
 
 
     def validate_all_requirements(self):
@@ -3625,7 +3808,7 @@ class ClientDashboard(QWidget):
             }
             shared = shared - excluded_fields
             
-            print(f"Shared fields after exclusions: {shared}")
+            logger.debug("Shared fields after exclusions: %s", shared)
             
             self._shared_carry_map = []
 
@@ -3656,7 +3839,7 @@ class ClientDashboard(QWidget):
                     self._shared_carry_map.append(fl)
 
         except Exception as e:
-            print(f"_connect_shared_fields error (non-fatal): {e}")
+            logger.warning("_connect_shared_fields error (non-fatal): %s", e)
 
     def _connect_palawan_adjustments_to_brand_b(self):
 
@@ -3749,10 +3932,10 @@ class ClientDashboard(QWidget):
                     palawan_field.textChanged.connect(make_carry_fn(cashflow_field))
                     connected_count += 1
 
-            print(f"Connected {connected_count} Palawan fields to Brand B Cash Flow")
+            logger.debug("Connected %d Palawan fields to Brand B Cash Flow", connected_count)
 
         except Exception as e:
-            print(f"_connect_palawan_adjustments_to_brand_b error (non-fatal): {e}")
+            logger.warning("_connect_palawan_adjustments_to_brand_b error (non-fatal): %s", e)
 
     def _connect_brand_a_auto_calculations(self):
 
@@ -3784,12 +3967,9 @@ class ClientDashboard(QWidget):
                 field.setPlaceholderText("Auto-calculated")
 
             def _set(field, value):
-                print(f"[DEBUG _set] Setting field {field.objectName()} to {value}")
-                print(f"[DEBUG _set] Field before: '{field.text()}'")
                 field.blockSignals(True)
                 field.setText(f"{value:.2f}")
                 field.blockSignals(False)
-                print(f"[DEBUG _set] Field after: '{field.text()}'")
                 field.update()
                 field.repaint()
 
@@ -3809,9 +3989,7 @@ class ClientDashboard(QWidget):
             def recalc(*_):
                 nonlocal recalc_enabled
                 if not recalc_enabled:
-                    print("[DEBUG] recalc() blocked - UI not fully initialized yet")
                     return
-                print(f"[DEBUG] recalc() called!")
 
                 lotes_jew_new   = _v(c_lots, "Empeno JEW. (NEW)")
                 lotes_jew_renew = _v(c_lots, "Empeno JEW (RENEW)")
@@ -3834,22 +4012,10 @@ class ClientDashboard(QWidget):
                     _set(d_inp["O.s.f Silver"], silver * 0.0075)
 
                 motor = _v(c_inp, "Empeno Motor/Car")
-                print(f"[DEBUG] Motor value: {motor}")
-                print(f"[DEBUG] Available debit fields: {list(d_inp.keys())}")
-                
                 if "Motor A.I" in d_inp:
-                    motor_ai_val = motor * 0.10
-                    print(f"[DEBUG] Setting Motor A.I to {motor_ai_val}")
-                    _set(d_inp["Motor A.I"], motor_ai_val)
-                else:
-                    print("[DEBUG] Motor A.I not found in d_inp")
-                    
+                    _set(d_inp["Motor A.I"], motor * 0.10)
                 if "O.s.f Motor" in d_inp:
-                    osf_motor_val = motor * 0.0075
-                    print(f"[DEBUG] Setting O.s.f Motor to {osf_motor_val}")
-                    _set(d_inp["O.s.f Motor"], osf_motor_val)
-                else:
-                    print(f"[DEBUG] O.s.f Motor not found in d_inp. Available keys: {[k for k in d_inp.keys() if 'motor' in k.lower() or 'osf' in k.lower()]}")
+                    _set(d_inp["O.s.f Motor"], motor * 0.0075)
 
                 self.recalculate_all()
 
@@ -3861,38 +4027,22 @@ class ClientDashboard(QWidget):
                 (c_inp,  "Empeno silver"),
                 (c_inp,  "Empeno Motor/Car"),
             ]
-            print(f"[DEBUG] Available credit fields: {list(c_inp.keys())}")
-            motor_car_widget = None
             for widget_dict, key in sources:
                 w = widget_dict.get(key)
-                if key == "Empeno Motor/Car":
-                    motor_car_widget = w
-                    print(f"[DEBUG] Found Motor/Car widget: {w} (type: {type(w).__name__})")
                 if w:
-                    if key == "Empeno Motor/Car":
-                        # Use lambda to debug Motor/Car signal
-                        w.textChanged.connect(lambda text, key=key: (
-                            print(f"[DEBUG SIGNAL] {key} changed to: {text}"),
-                            recalc()
-                        ))
-                        print(f"[DEBUG] Connected {key} with signal debug")
-                    else:
-                        w.textChanged.connect(recalc)
-                        print(f"[DEBUG] Connecting {key}")
+                    w.textChanged.connect(recalc)
                 else:
-                    print(f"[DEBUG] WARNING: {key} not found in credit inputs!")
-            
-            print(f"[DEBUG] Motor/Car widget object: {motor_car_widget}")
+                    logger.debug("Auto-calc source field not found: %s", key)
             
             # Enable recalc now that all signals are connected
             recalc_enabled = True
             # Trigger one initial recalc to populate fields
             recalc()
 
-            print("Brand A auto-calculations connected.")
+            logger.debug("Brand A auto-calculations connected.")
 
         except Exception as e:
-            print(f"_connect_brand_a_auto_calculations error (non-fatal): {e}")
+            logger.warning("_connect_brand_a_auto_calculations error (non-fatal): %s", e)
 
     def _setup_empeno_jew_buttons(self):
 
@@ -3991,7 +4141,7 @@ class ClientDashboard(QWidget):
                         sc_b.blockSignals(False)
                         self.recalculate_all()
                 except Exception as e:
-                    print(f"Error calculating S.C. for Brand B: {e}")
+                    logger.error("Error calculating S.C. for Brand B: %s", e)
 
             def _make_open_dialog_a(field_label, target_field_a, target_field_b):
                 """Create dialog function for Brand A"""
@@ -4199,10 +4349,10 @@ class ClientDashboard(QWidget):
                 jewb_renew.textChanged.connect(_update_jew_ai_b)
                 jewb_renew.textChanged.connect(_calculate_sc_b)
 
-            print("Empeno JEW detail buttons set up for both Brand A and Brand B.")
+            logger.debug("Empeno JEW detail buttons set up for both Brand A and Brand B.")
 
         except Exception as e:
-            print(f"_setup_empeno_jew_buttons error (non-fatal): {e}")
+            logger.warning("_setup_empeno_jew_buttons error (non-fatal): %s", e)
 
     def _setup_empeno_motor_button(self):
   
@@ -4258,7 +4408,6 @@ class ClientDashboard(QWidget):
                         motor_ai_a.blockSignals(False)
                     
                     # Trigger auto-calculations for O.s.f Motor and other fields
-                    print(f"[DEBUG] Motor dialog closed, emitting signal for {val}")
                     field_a.textChanged.emit(val)
 
                     self.recalculate_all()
@@ -4292,10 +4441,10 @@ class ClientDashboard(QWidget):
                 motor_ai.setToolTip("Computed Total from Empeno Motor/Car breakdown")
                 motor_ai.setPlaceholderText("Auto-calculated")
 
-            print("Empeno Motor/Car detail button set up.")
+            logger.debug("Empeno Motor/Car detail button set up.")
 
         except Exception as e:
-            print(f"_setup_empeno_motor_button error (non-fatal): {e}")
+            logger.warning("_setup_empeno_motor_button error (non-fatal): %s", e)
 
     def _setup_ft_ho_button(self):
 
@@ -4374,10 +4523,10 @@ class ClientDashboard(QWidget):
                 plus_btn.clicked.connect(_make_open_dialog(brand_key, field, cf_tab))
                 layout.insertWidget(0, plus_btn)
 
-            print("Fund Transfer to HEAD OFFICE detail buttons set up (both brands).")
+            logger.debug("Fund Transfer to HEAD OFFICE detail buttons set up (both brands).")
 
         except Exception as e:
-            print(f"_setup_ft_ho_button error (non-fatal): {e}")
+            logger.warning("_setup_ft_ho_button error (non-fatal): %s", e)
 
     def _get_draft_path(self):
         base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -4570,7 +4719,7 @@ class ClientDashboard(QWidget):
             self.recalculate_all()
 
         except Exception as e:
-            print(f"_load_draft error (non-fatal): {e}")
+            logger.warning("_load_draft error (non-fatal): %s", e)
 
     def _delete_draft(self, date=None):
         try:
@@ -4631,7 +4780,7 @@ class ClientDashboard(QWidget):
                         submitted_dates[date_str]['brand_b'] = True
                         
         except Exception as e:
-            print(f"get_submitted_dates error: {e}")
+            logger.error("get_submitted_dates error: %s", e)
         
         return sorted(submitted_dates.values(), key=lambda x: x['date'], reverse=True)
 
@@ -4818,15 +4967,40 @@ class ClientDashboard(QWidget):
             cf_tab = self.cash_flow_tab_a if brand == "Brand A" else self.cash_flow_tab_b
             bb_input = self.beginning_balance_input_a if brand == "Brand A" else self.beginning_balance_input_b
             cc_input = self.cash_count_input_a if brand == "Brand A" else self.cash_count_input_b
-            
-            query = f"""
-                SELECT * FROM {table_name}
-                WHERE date=%s AND branch=%s AND corporation=%s
-                LIMIT 1
-            """
-            results = self.db_manager.execute_query(query, (date_str, self.branch, self.corporation))
+
+            # Clear stale widget state before populating from DB
+            if hasattr(cf_tab, 'clear_fields'):
+                cf_tab.clear_fields()
+
+            if brand == "Brand B":
+                # daily_reports is exclusively the Brand B table; no brand filter needed.
+                results = None
+                for q, params in [
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                     (date_str, self.branch, self.corporation)),
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
+                     (date_str, self.branch)),
+                ]:
+                    results = self.db_manager.execute_query(q, params)
+                    if results:
+                        break
+            else:
+                results = None
+                for q, params in [
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                     (date_str, self.branch, self.corporation)),
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
+                     (date_str, self.branch)),
+                ]:
+                    results = self.db_manager.execute_query(q, params)
+                    if results:
+                        break
             
             if not results or len(results) == 0:
+                logger.warning(
+                    "_load_brand_report_data: No row found for brand=%s branch=%s date=%s corp=%s",
+                    brand, self.branch, date_str, self.corporation
+                )
                 return
             
             data = results[0]
@@ -4834,7 +5008,6 @@ class ClientDashboard(QWidget):
             beginning_balance = data.get('beginning_balance', 0) or 0
             bb_input.setReadOnly(False)
             bb_input.setText(f"{float(beginning_balance):.2f}")
-            bb_input.setReadOnly(True)
             
             cash_count = data.get('cash_count', 0) or 0
             cc_input.setText(f"{float(cash_count):.2f}")
@@ -4863,7 +5036,10 @@ class ClientDashboard(QWidget):
                 lotes_widget = cf_tab.debit_lotes_inputs.get(label)
                 if lotes_widget and lotes_val:
                     lotes_widget.blockSignals(True)
-                    lotes_widget.setText(str(int(lotes_val)))
+                    try:
+                        lotes_widget.setText(str(int(float(lotes_val))))
+                    except (ValueError, TypeError):
+                        lotes_widget.setText(str(lotes_val))
                     lotes_widget.blockSignals(False)
             
             for label, widget in cf_tab.credit_inputs.items():
@@ -4879,18 +5055,17 @@ class ClientDashboard(QWidget):
                 lotes_widget = cf_tab.credit_lotes_inputs.get(label)
                 if lotes_widget and lotes_val:
                     lotes_widget.blockSignals(True)
-                    lotes_widget.setText(str(int(lotes_val)))
+                    try:
+                        lotes_widget.setText(str(int(float(lotes_val))))
+                    except (ValueError, TypeError):
+                        lotes_widget.setText(str(lotes_val))
                     lotes_widget.blockSignals(False)
             
-  
-            cf_tab.update_totals(
-                float(data.get('beginning_balance', 0)),
-                float(data.get('debit_total', 0)) - float(data.get('beginning_balance', 0)),
-                float(data.get('credit_total', 0))
-            )
+            # Force a full UI recalculation now that all fields are populated
+            self.recalculate_all()
             
         except Exception as e:
-            print(f"_load_brand_report_data error ({brand}): {e}")
+            logger.error("_load_brand_report_data error (%s): %s", brand, e)
 
 
     def _gather_nonzero_fields(self):

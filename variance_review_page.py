@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QSplitter, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QDate
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from date_range_widget import DateRangeWidget
 
 

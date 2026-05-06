@@ -6,18 +6,21 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QTimer
 from PyQt5.QtGui import QFont, QColor, QBrush, QTextDocument, QDoubleValidator, QPainter
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
-from db_connect_pooled import db_manager
+from api_db_manager import db_manager
 from date_range_widget import DateRangeWidget
+import logging
+
+logger = logging.getLogger(__name__)
 import datetime
 
 
 class ColoredHeaderView(QHeaderView):
-    """Custom header view with colored sections for each column group"""
+
     
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
         self.colors = {}
-        self.setFont(QFont("", 9, QFont.Bold))
+        self.setFont(QFont("Segoe UI", 11, QFont.Bold))
     
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
@@ -40,7 +43,7 @@ class ColoredHeaderView(QHeaderView):
         else:
             painter.setPen(QColor("#333"))
         
-        font = QFont("", 9, QFont.Bold)
+        font = QFont("Segoe UI", 11, QFont.Bold)
         painter.setFont(font)
         
         text = self.model().headerData(logicalIndex, self.orientation(), Qt.DisplayRole)
@@ -54,8 +57,8 @@ class PayablesPage(QWidget):
         self.account_type = account_type
         # Set correct table based on brand: Brand A -> daily_reports_brand_a, Brand B -> daily_reports
         self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
-        # Set correct payable table based on brand
-        self.payable_table = "payable_tbl_brand_a" if account_type == 1 else "payable_tbl"
+        # Both brands use payable_tbl_brand_a
+        self.payable_table = "payable_tbl_brand_a"
         self.setWindowTitle("Palawan Transactions - Detailed View")
 
         self._is_loading = False  # ← FLAG: prevents auto-save during table population
@@ -77,7 +80,7 @@ class PayablesPage(QWidget):
     # ─────────────────────────────────────────────────────────────────────────
     def verify_table_structure(self):
         """Ensures payable table has the UNIQUE constraint for ON DUPLICATE KEY UPDATE."""
-        constraint_name = "uq_corp_branch_date_a" if self.account_type == 1 else "uq_corp_branch_date"
+        constraint_name = "uq_corp_branch_date_a"
         try:
             result = db_manager.execute_query("""
                 SELECT COUNT(*) as cnt
@@ -94,11 +97,11 @@ class PayablesPage(QWidget):
                     ADD CONSTRAINT {constraint_name}
                     UNIQUE (corporation, branch, date)
                 """)
-                print(f"✅ Added unique constraint to {self.payable_table}")
+                logger.info("Added unique constraint to %s", self.payable_table)
             else:
-                print(f"✅ Unique constraint already present on {self.payable_table}")
+                logger.debug("Unique constraint already present on %s", self.payable_table)
         except Exception as e:
-            print(f"⚠️  verify_table_structure: {e}")
+            logger.error("verify_table_structure: %s", e)
 
     # ─────────────────────────────────────────────────────────────────────────
     def populate_table(self):
@@ -109,16 +112,6 @@ class PayablesPage(QWidget):
         reg_filter    = self.reg_filter_selector.currentData()
         os_filter     = self.os_filter_selector.currentData()  # None or OS name
         category_filter = self.category_filter_selector.currentData() if hasattr(self, 'category_filter_selector') else "all"
-
-        # 60% corporations list
-        SIXTY_PERCENT_CORPS = [
-            "Allexite Jewelry Pawnshop Inc.",
-            "Homeneeds Pawnshop Inc.",
-            "Kristal Clear Diamond and Gold Pawnshop Inc.",
-            "Safelock Pawnshop Inc.",
-            "Megaworld Domestic Pawnshop Inc.",
-            "San Ramon Platinum Pawnshop Inc."
-        ]
 
         # For Brand A admin, don't require corporation - only need OS or category filter
         if self.account_type == 1:
@@ -138,68 +131,129 @@ class PayablesPage(QWidget):
         self.table.blockSignals(True)
 
         try:
+            # For both brands: ALL palawan columns come from payable_tbl_brand_a.
+            # SKID/SKIR/CANCEL/INC are also stored in payable_tbl_brand_a.
             if is_range:
-                select_cols = f"""
-                    SELECT b.name as branch,
-                           SUM(COALESCE(dr.palawan_sendout_lotes_total, 0))         AS so_lotes,
-                           SUM(COALESCE(dr.palawan_sendout_principal, 0))           AS so_capital,
-                           SUM(COALESCE(dr.palawan_sendout_sc, 0))                  AS so_sc,
-                           SUM(COALESCE(dr.palawan_sendout_commission, 0))          AS so_commission,
-                           SUM(COALESCE(dr.palawan_sendout_regular_total, 0))       AS so_total,
-                           SUM(COALESCE(dr.palawan_payout_lotes_total, 0))          AS po_lotes,
-                           SUM(COALESCE(dr.palawan_payout_principal, 0))            AS po_capital,
-                           SUM(COALESCE(dr.palawan_payout_sc, 0))                   AS po_sc,
-                           SUM(COALESCE(dr.palawan_payout_commission, 0))           AS po_commission,
-                           SUM(COALESCE(dr.palawan_payout_regular_total, 0))        AS po_total,
-                           SUM(COALESCE(dr.palawan_international_lotes_total, 0))   AS int_lotes,
-                           SUM(COALESCE(dr.palawan_international_principal, 0))     AS int_capital,
-                           SUM(COALESCE(dr.palawan_international_sc, 0))            AS int_sc,
-                           SUM(COALESCE(dr.palawan_international_commission, 0))    AS int_commission,
-                           SUM(COALESCE(dr.palawan_international_regular_total, 0)) AS int_total,
-                           SUM(COALESCE(dr.palawan_suki_discounts, 0))              AS skid,
-                           SUM(COALESCE(dr.palawan_suki_rebates, 0))                AS skir,
-                           SUM(COALESCE(dr.palawan_cancel, 0))                      AS cancellation,
-                           SUM(COALESCE(dr.palawan_pay_out_incentives, 0))          AS po_incentives,
-                           c.name                                                   AS corp_name
-                    FROM branches b
-                    LEFT JOIN corporations c ON (b.corporation_id = c.id OR b.sub_corporation_id = c.id)
-                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
-                """
+                lotes_join = (
+                    "LEFT JOIN (SELECT branch, "
+                    "SUM(sendout_lotes) AS so_lotes, "
+                    "SUM(sendout_capital) AS so_capital, "
+                    "SUM(sendout_sc) AS so_sc, "
+                    "SUM(sendout_commission) AS so_commission, "
+                    "SUM(sendout_total) AS so_total, "
+                    "SUM(payout_lotes) AS po_lotes, "
+                    "SUM(payout_capital) AS po_capital, "
+                    "SUM(payout_sc) AS po_sc, "
+                    "SUM(payout_commission) AS po_commission, "
+                    "SUM(payout_total) AS po_total, "
+                    "SUM(international_lotes) AS int_lotes, "
+                    "SUM(international_capital) AS int_capital, "
+                    "SUM(international_sc) AS int_sc, "
+                    "SUM(international_commission) AS int_commission, "
+                    "SUM(international_total) AS int_total, "
+                    "SUM(skid) AS pt_skid, "
+                    "SUM(skir) AS pt_skir, "
+                    "SUM(cancellation) AS pt_cancellation, "
+                    "SUM(inc) AS pt_inc "
+                    "FROM payable_tbl_brand_a WHERE date BETWEEN %s AND %s GROUP BY branch) pt "
+                    "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci"
+                )
+                lotes_params = [date_start, date_end]
             else:
-                select_cols = f"""
+                lotes_join = (
+                    "LEFT JOIN (SELECT branch, "
+                    "MAX(sendout_lotes) AS so_lotes, "
+                    "MAX(sendout_capital) AS so_capital, "
+                    "MAX(sendout_sc) AS so_sc, "
+                    "MAX(sendout_commission) AS so_commission, "
+                    "MAX(sendout_total) AS so_total, "
+                    "MAX(payout_lotes) AS po_lotes, "
+                    "MAX(payout_capital) AS po_capital, "
+                    "MAX(payout_sc) AS po_sc, "
+                    "MAX(payout_commission) AS po_commission, "
+                    "MAX(payout_total) AS po_total, "
+                    "MAX(international_lotes) AS int_lotes, "
+                    "MAX(international_capital) AS int_capital, "
+                    "MAX(international_sc) AS int_sc, "
+                    "MAX(international_commission) AS int_commission, "
+                    "MAX(international_total) AS int_total, "
+                    "MAX(skid) AS pt_skid, "
+                    "MAX(skir) AS pt_skir, "
+                    "MAX(cancellation) AS pt_cancellation, "
+                    "MAX(inc) AS pt_inc "
+                    "FROM payable_tbl_brand_a WHERE date = %s GROUP BY branch) pt "
+                    "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci"
+                )
+                lotes_params = [date_start]
+            so_lotes_col    = "pt.so_lotes"
+            so_capital_col  = "pt.so_capital"
+            so_sc_col       = "pt.so_sc"
+            so_comm_col     = "pt.so_commission"
+            so_total_col    = "pt.so_total"
+            po_lotes_col    = "pt.po_lotes"
+            po_capital_col  = "pt.po_capital"
+            po_sc_col       = "pt.po_sc"
+            po_comm_col     = "pt.po_commission"
+            po_total_col    = "pt.po_total"
+            int_lotes_col   = "pt.int_lotes"
+            int_capital_col = "pt.int_capital"
+            int_sc_col      = "pt.int_sc"
+            int_comm_col    = "pt.int_commission"
+            int_total_col   = "pt.int_total"
+
+            # Both brands use pt.* columns from payable_tbl_brand_a subquery (1 row per branch),
+            # so MAX() avoids row-multiplication when joined with dr rows.
+            _agg = "MAX"
+            # SKID/SKIR/CANCEL/INC come from pt (payable_tbl_brand_a subquery) for both brands.
+            skid_col   = "MAX(COALESCE(pt.pt_skid, 0))"
+            skir_col   = "MAX(COALESCE(pt.pt_skir, 0))"
+            cancel_col = "MAX(COALESCE(pt.pt_cancellation, 0))"
+            inc_col    = "MAX(COALESCE(pt.pt_inc, 0))"
+
+            # ── Date filter goes into the LEFT JOIN ON clause (not WHERE) ──────
+            # Putting date in WHERE turns the LEFT JOIN into an INNER JOIN,
+            # hiding branches that have no data for the selected date.
+            if is_range:
+                dr_date_cond  = "AND dr.date >= %s AND dr.date <= %s"
+                dr_date_params = [date_start, date_end]
+            else:
+                dr_date_cond  = "AND dr.date = %s"
+                dr_date_params = [date_start]
+
+            select_cols = f"""
                     SELECT b.name as branch,
-                           COALESCE(dr.palawan_sendout_lotes_total, 0)         AS so_lotes,
-                           COALESCE(dr.palawan_sendout_principal, 0)           AS so_capital,
-                           COALESCE(dr.palawan_sendout_sc, 0)                  AS so_sc,
-                           COALESCE(dr.palawan_sendout_commission, 0)          AS so_commission,
-                           COALESCE(dr.palawan_sendout_regular_total, 0)       AS so_total,
-                           COALESCE(dr.palawan_payout_lotes_total, 0)          AS po_lotes,
-                           COALESCE(dr.palawan_payout_principal, 0)            AS po_capital,
-                           COALESCE(dr.palawan_payout_sc, 0)                   AS po_sc,
-                           COALESCE(dr.palawan_payout_commission, 0)           AS po_commission,
-                           COALESCE(dr.palawan_payout_regular_total, 0)        AS po_total,
-                           COALESCE(dr.palawan_international_lotes_total, 0)   AS int_lotes,
-                           COALESCE(dr.palawan_international_principal, 0)     AS int_capital,
-                           COALESCE(dr.palawan_international_sc, 0)            AS int_sc,
-                           COALESCE(dr.palawan_international_commission, 0)    AS int_commission,
-                           COALESCE(dr.palawan_international_regular_total, 0) AS int_total,
-                           COALESCE(dr.palawan_suki_discounts, 0)              AS skid,
-                           COALESCE(dr.palawan_suki_rebates, 0)                AS skir,
-                           COALESCE(dr.palawan_cancel, 0)                      AS cancellation,
-                           COALESCE(dr.palawan_pay_out_incentives, 0)          AS po_incentives,
-                           c.name                                              AS corp_name
+                           {_agg}(COALESCE({so_lotes_col}, 0))    AS so_lotes,
+                           {_agg}(COALESCE({so_capital_col}, 0))  AS so_capital,
+                           {_agg}(COALESCE({so_sc_col}, 0))       AS so_sc,
+                           {_agg}(COALESCE({so_comm_col}, 0))     AS so_commission,
+                           {_agg}(COALESCE({so_total_col}, 0))    AS so_total,
+                           {_agg}(COALESCE({po_lotes_col}, 0))    AS po_lotes,
+                           {_agg}(COALESCE({po_capital_col}, 0))  AS po_capital,
+                           {_agg}(COALESCE({po_sc_col}, 0))       AS po_sc,
+                           {_agg}(COALESCE({po_comm_col}, 0))     AS po_commission,
+                           {_agg}(COALESCE({po_total_col}, 0))    AS po_total,
+                           {_agg}(COALESCE({int_lotes_col}, 0))   AS int_lotes,
+                           {_agg}(COALESCE({int_capital_col}, 0)) AS int_capital,
+                           {_agg}(COALESCE({int_sc_col}, 0))      AS int_sc,
+                           {_agg}(COALESCE({int_comm_col}, 0))    AS int_commission,
+                           {_agg}(COALESCE({int_total_col}, 0))   AS int_total,
+                           {skid_col}   AS skid,
+                           {skir_col}   AS skir,
+                           {cancel_col} AS cancellation,
+                           {inc_col}    AS po_incentives,
+                           c.name                                          AS corp_name
                     FROM branches b
-                    LEFT JOIN corporations c ON (b.corporation_id = c.id OR b.sub_corporation_id = c.id)
-                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
+                    LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                    LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci {dr_date_cond}
+                    {lotes_join}
                 """
 
             # ── Build WHERE clauses dynamically ───────────────────────────────
-            if is_range:
-                where_parts = ["dr.date >= %s", "dr.date <= %s"]
-                params = [date_start, date_end]
-            else:
-                where_parts = ["dr.date = %s"]
-                params = [date_start]
+            # dr date is now in the JOIN, so WHERE starts with 1=1.
+            # Param order: dr_date_params first (JOIN appears before lotes subquery in SQL),
+            # then lotes_params (payable_tbl_brand_a subquery), then filter params.
+            where_parts = ["1=1"]
+            params = dr_date_params + list(lotes_params)
 
             if corp:
                 where_parts.append("(b.corporation_id = (SELECT id FROM corporations WHERE name = %s) OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))")
@@ -216,16 +270,14 @@ class PayablesPage(QWidget):
                 where_parts.append("b.os_name = %s")
                 params.append(os_filter)
 
-            # Category filter: 60% = specific corporations, 30% = Global tagging
+            # Category filter: 60% = all branches in the group, 30% = global-tagged only
+            # A branch with global_tag=GLOBAL appears in both 30% and 60%
             if category_filter == "60":
-                corps_to_filter = SIXTY_PERCENT_CORPS
-                placeholders = ", ".join(["%s"] * len(corps_to_filter))
-                where_parts.append(f"c.name IN ({placeholders})")
-                params.extend(corps_to_filter)
+                pass  # no extra filter — show all branches in the selected group
             elif category_filter == "30":
                 where_parts.append("b.global_tag = 'GLOBAL'")
 
-            group_by = " GROUP BY b.name, c.name" if is_range else ""
+            group_by = " GROUP BY b.name, c.name"
             daily_query = select_cols + " WHERE " + " AND ".join(where_parts) + group_by + " ORDER BY b.name"
 
             results = db_manager.execute_query(daily_query, tuple(params))
@@ -304,7 +356,7 @@ class PayablesPage(QWidget):
             self.add_group_headers_visual()
             QTimer.singleShot(200, self.adjust_responsive_widths)
 
-            # ── Auto-sync INC values to payable_tbl so report_page can read them ──
+            # ── Auto-sync INC values to payable_tbl_brand_a so report_page can read them ──
             if not is_range:
                 self._sync_inc_to_payable(date_start)
 
@@ -377,7 +429,7 @@ class PayablesPage(QWidget):
                         updated_at = CURRENT_TIMESTAMP
                 """, batch_params)
         except Exception as e:
-            print(f"INC auto-sync error: {e}")
+            logger.error("INC auto-sync error: %s", e)
 
     # ─────────────────────────────────────────────────────────────────────────
     def on_item_changed(self, item):
@@ -475,7 +527,7 @@ class PayablesPage(QWidget):
             ))
 
         except Exception as e:
-            print(f"Auto-save error for branch '{branch}': {e}")
+            logger.error("Auto-save error for branch '%s': %s", branch, e)
 
     # ─────────────────────────────────────────────────────────────────────────
     def save_to_database(self):
@@ -709,6 +761,7 @@ class PayablesPage(QWidget):
         table_scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         
         self.table = QTableWidget()
+        self.table.setFont(QFont("Segoe UI", 10, QFont.Bold))
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.table.setColumnCount(20)
         
@@ -778,7 +831,7 @@ class PayablesPage(QWidget):
             QTableWidget {
                 gridline-color:#d0d0d0; border:1px solid #c0c0c0;
                 background-color:white; alternate-background-color:#f8f9fa;
-                font-size:12px; selection-background-color:#e3f2fd;
+                font-size:12px; font-weight:bold; selection-background-color:#e3f2fd;
             }
             QTableWidget::item { border:1px solid #e0e0e0; padding:10px 6px; }
             QTableWidget::item:selected { background-color:#e3f2fd; color:black; }
@@ -841,6 +894,14 @@ class PayablesPage(QWidget):
         button_layout.addWidget(self.print_button)
         button_layout.addStretch()
 
+        # Brand A: add "Edit Palawan Payable" button
+        if self.account_type == 1:
+            self.edit_payable_btn = QPushButton("✏️ Edit Palawan Payable")
+            self.edit_payable_btn.clicked.connect(self._show_edit_palawan_payable_dialog)
+            self.edit_payable_btn.setStyleSheet(styled("#0F172A", "#1E293B", "#000000"))
+            button_layout.insertWidget(button_layout.count() - 1, self.edit_payable_btn)
+            button_layout.insertSpacing(button_layout.count() - 1, 15)
+
         self.main_layout.addWidget(button_frame, 0)  # stretch=0, fixed at bottom
 
     def load_corporations(self):
@@ -882,7 +943,7 @@ class PayablesPage(QWidget):
                 if idx >= 0:
                     self.os_filter_selector.setCurrentIndex(idx)
         except Exception as e:
-            print(f"Error loading OS options: {e}")
+            logger.error("Error loading OS options: %s", e)
         finally:
             self.os_filter_selector.blockSignals(False)
 
@@ -932,10 +993,10 @@ class PayablesPage(QWidget):
                 if item:
                     if is_last:
                         item.setBackground(QBrush(colors['tot']))
-                        item.setFont(QFont("", 0, QFont.Bold))
+                        item.setFont(QFont("Segoe UI", 10, QFont.Bold))
                     elif col == 5:
                         item.setBackground(QBrush(colors['so_total']))
-                        item.setFont(QFont("", 0, QFont.Bold))
+                        item.setFont(QFont("Segoe UI", 10, QFont.Bold))
                     else:
                         item.setBackground(QBrush(colors['so']))
             
@@ -945,10 +1006,10 @@ class PayablesPage(QWidget):
                 if item:
                     if is_last:
                         item.setBackground(QBrush(colors['tot']))
-                        item.setFont(QFont("", 0, QFont.Bold))
+                        item.setFont(QFont("Segoe UI", 10, QFont.Bold))
                     elif col == 10:
                         item.setBackground(QBrush(colors['po_total']))
-                        item.setFont(QFont("", 0, QFont.Bold))
+                        item.setFont(QFont("Segoe UI", 10, QFont.Bold))
                     else:
                         item.setBackground(QBrush(colors['po']))
             
@@ -958,10 +1019,10 @@ class PayablesPage(QWidget):
                 if item:
                     if is_last:
                         item.setBackground(QBrush(colors['tot']))
-                        item.setFont(QFont("", 0, QFont.Bold))
+                        item.setFont(QFont("Segoe UI", 10, QFont.Bold))
                     elif col == 15:
                         item.setBackground(QBrush(colors['int_total']))
-                        item.setFont(QFont("", 0, QFont.Bold))
+                        item.setFont(QFont("Segoe UI", 10, QFont.Bold))
                     else:
                         item.setBackground(QBrush(colors['int']))
             
@@ -970,15 +1031,15 @@ class PayablesPage(QWidget):
                 item = self.table.item(row, col)
                 if item:
                     item.setBackground(QBrush(colors['tot'] if is_last else colors['adj']))
-                    if is_last: 
-                        item.setFont(QFont("", 0, QFont.Bold))
-            
+                    if is_last:
+                        item.setFont(QFont("Segoe UI", 10, QFont.Bold))
+
             # Branch column
             if is_last:
                 item = self.table.item(row, 0)
                 if item:
                     item.setBackground(QBrush(colors['tot']))
-                    item.setFont(QFont("", 0, QFont.Bold))
+                    item.setFont(QFont("Segoe UI", 10, QFont.Bold))
 
     def calculate_adjustment_totals(self):
         if self.table.rowCount() == 0:
@@ -1199,6 +1260,187 @@ class PayablesPage(QWidget):
 
     def update_totals(self):
         self.calculate_adjustment_totals()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    def _show_edit_palawan_payable_dialog(self):
+        """Admin dialog to look up a branch+date and edit payable_tbl_brand_a record."""
+        from PyQt5.QtWidgets import (
+            QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+            QDateEdit, QComboBox, QGroupBox, QFormLayout, QPushButton,
+            QDialogButtonBox, QMessageBox
+        )
+        from PyQt5.QtGui import QIntValidator, QDoubleValidator
+        from PyQt5.QtCore import QDate
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Edit Palawan Payable — Brand A")
+        dlg.setMinimumWidth(700)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(10)
+
+        # ── Branch + date selectors ───────────────────────────────────────
+        top = QHBoxLayout()
+        top.addWidget(QLabel("Branch:"))
+        branch_cb = QComboBox()
+        branch_cb.setEditable(True)
+        branch_cb.setMinimumWidth(220)
+        try:
+            rows = db_manager.execute_query(
+                "SELECT DISTINCT branch FROM payable_tbl_brand_a ORDER BY branch"
+            )
+            for r in (rows or []):
+                branch_cb.addItem(r.get("branch", ""))
+        except Exception:
+            pass
+        top.addWidget(branch_cb)
+
+        top.addSpacing(20)
+        top.addWidget(QLabel("Date:"))
+        date_edit = QDateEdit(QDate.currentDate())
+        date_edit.setCalendarPopup(True)
+        date_edit.setDisplayFormat("yyyy-MM-dd")
+        top.addWidget(date_edit)
+
+        load_btn = QPushButton("Load")
+        load_btn.setFixedWidth(80)
+        top.addSpacing(10)
+        top.addWidget(load_btn)
+        top.addStretch()
+        layout.addLayout(top)
+
+        # ── Three section groups ──────────────────────────────────────────
+        def make_grp(title, color):
+            grp = QGroupBox(title)
+            grp.setStyleSheet(f"QGroupBox {{ border: 2px solid {color}; border-radius: 6px; "
+                              f"margin-top: 18px; }} QGroupBox::title {{ color: {color}; "
+                              f"font-weight: 700; subcontrol-origin: margin; left: 8px; }}")
+            form = QFormLayout()
+            form.setSpacing(6)
+            form.setContentsMargins(10, 16, 10, 10)
+            flds = {}
+            lotes_f = QLineEdit(); lotes_f.setValidator(QIntValidator(0, 999999)); lotes_f.setPlaceholderText("0")
+            form.addRow("Lotes:", lotes_f); flds["lotes"] = lotes_f
+            for key, lbl in [("principal", "Principal:"), ("sc", "SC:"), ("commission", "Commission:")]:
+                f = QLineEdit(); f.setValidator(QDoubleValidator(0.0, 1e12, 2)); f.setPlaceholderText("0.00")
+                form.addRow(lbl, f); flds[key] = f
+            total_f = QLineEdit("0.00"); total_f.setReadOnly(True)
+            total_f.setStyleSheet(f"font-weight: 700; color: {color};")
+            form.addRow("TOTAL:", total_f); flds["total"] = total_f
+            def recalc(flds=flds, tf=total_f):
+                t = sum(float(flds[k].text() or 0) for k in ("principal", "sc", "commission"))
+                tf.setText(f"{t:.2f}")
+            for k in ("principal", "sc", "commission"):
+                flds[k].textChanged.connect(recalc)
+            grp.setLayout(form)
+            return grp, flds
+
+        sections_row = QHBoxLayout()
+        so_grp,  so_flds  = make_grp("PALAWAN SEND-OUT",      "#0EA5E9")
+        po_grp,  po_flds  = make_grp("PALAWAN PAY-OUT",        "#10B981")
+        int_grp, int_flds = make_grp("PALAWAN INTERNATIONAL",  "#8B5CF6")
+        sections_row.addWidget(so_grp)
+        sections_row.addWidget(po_grp)
+        sections_row.addWidget(int_grp)
+        layout.addLayout(sections_row)
+
+        # ── Load data when button clicked ──────────────────────────────────
+        def _load():
+            branch = branch_cb.currentText().strip()
+            date_str = date_edit.date().toString("yyyy-MM-dd")
+            if not branch:
+                QMessageBox.warning(dlg, "Warning", "Please select a branch.")
+                return
+            try:
+                res = db_manager.execute_query(
+                    "SELECT * FROM payable_tbl_brand_a WHERE branch=%s AND date=%s LIMIT 1",
+                    (branch, date_str)
+                )
+                data = dict(res[0]) if res else {}
+                # Column name mapping: sendout/payout/international + _lotes/_capital/_sc/_commission/_total
+                _pfx = {"so": "sendout", "po": "payout", "int": "international"}
+                for short, long in _pfx.items():
+                    flds = {"so": so_flds, "po": po_flds, "int": int_flds}[short]
+                    flds["lotes"].setText(str(int(data.get(f"{long}_lotes") or 0)))
+                    for key, col in [("principal", "capital"), ("sc", "sc"), ("commission", "commission")]:
+                        v = float(data.get(f"{long}_{col}") or 0)
+                        flds[key].setText(f"{v:.2f}" if v else "")
+                    t = float(data.get(f"{long}_total") or 0)
+                    flds["total"].setText(f"{t:.2f}")
+            except Exception as e:
+                QMessageBox.critical(dlg, "Error", str(e))
+
+        load_btn.clicked.connect(_load)
+
+        # ── OK / Cancel ────────────────────────────────────────────────────
+        btns = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        btns.rejected.connect(dlg.reject)
+
+        def _save():
+            branch = branch_cb.currentText().strip()
+            date_str = date_edit.date().toString("yyyy-MM-dd")
+            if not branch:
+                QMessageBox.warning(dlg, "Warning", "Please select a branch.")
+                return
+            try:
+                corp_res = db_manager.execute_query(
+                    "SELECT c.name FROM branches b "
+                    "LEFT JOIN corporations c ON (b.corporation_id = c.id OR b.sub_corporation_id = c.id) "
+                    "WHERE b.name = %s LIMIT 1", (branch,)
+                )
+                corp = corp_res[0].get("name", "") if corp_res else ""
+
+                def _i(f): 
+                    try: return int(f.text().strip() or 0)
+                    except: return 0
+                def _d(f):
+                    try: return float(f.text().strip() or 0)
+                    except: return 0.0
+
+                db_manager.execute_query(
+                    """INSERT INTO payable_tbl_brand_a
+                       (corporation, branch, date,
+                        sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
+                        payout_lotes,  payout_capital,  payout_sc,  payout_commission,  payout_total,
+                        international_lotes, international_capital, international_sc,
+                        international_commission, international_total)
+                       VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s)
+                       ON DUPLICATE KEY UPDATE
+                        sendout_lotes=VALUES(sendout_lotes),
+                        sendout_capital=VALUES(sendout_capital),
+                        sendout_sc=VALUES(sendout_sc),
+                        sendout_commission=VALUES(sendout_commission),
+                        sendout_total=VALUES(sendout_total),
+                        payout_lotes=VALUES(payout_lotes),
+                        payout_capital=VALUES(payout_capital),
+                        payout_sc=VALUES(payout_sc),
+                        payout_commission=VALUES(payout_commission),
+                        payout_total=VALUES(payout_total),
+                        international_lotes=VALUES(international_lotes),
+                        international_capital=VALUES(international_capital),
+                        international_sc=VALUES(international_sc),
+                        international_commission=VALUES(international_commission),
+                        international_total=VALUES(international_total),
+                        updated_at=CURRENT_TIMESTAMP
+                    """,
+                    (
+                        corp, branch, date_str,
+                        _i(so_flds["lotes"]),  _d(so_flds["principal"]),
+                        _d(so_flds["sc"]),     _d(so_flds["commission"]),  _d(so_flds["total"]),
+                        _i(po_flds["lotes"]),  _d(po_flds["principal"]),
+                        _d(po_flds["sc"]),     _d(po_flds["commission"]),  _d(po_flds["total"]),
+                        _i(int_flds["lotes"]), _d(int_flds["principal"]),
+                        _d(int_flds["sc"]),    _d(int_flds["commission"]), _d(int_flds["total"]),
+                    )
+                )
+                QMessageBox.information(dlg, "Saved", f"Palawan Payable saved for {branch} on {date_str}.")
+                dlg.accept()
+                self.populate_table()
+            except Exception as e:
+                QMessageBox.critical(dlg, "Error", f"Save failed:\n{e}")
+
+        btns.accepted.connect(_save)
+        layout.addWidget(btns)
+        dlg.exec_()
 
 
 def get_optimal_font_size(widget_width):
