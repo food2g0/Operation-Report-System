@@ -63,6 +63,8 @@ id_ed25519
 *.db-journal
 *.db-wal
 *.db-shm
+offline_data/cached_credentials.json
+offline_data/cached_balances.json
 
 # OS
 .DS_Store
