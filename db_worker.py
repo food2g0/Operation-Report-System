@@ -26,7 +26,7 @@ class DBWorker(QRunnable):
         self.setAutoDelete(True)
         
         if db_manager is None:
-            from db_connect_pooled import db_manager as default_db
+            from api_db_manager import db_manager as default_db
             self.db_manager = default_db
         else:
             self.db_manager = db_manager
@@ -220,6 +220,109 @@ def run_func_async(
     overlay.show_overlay(loading_message)
 
     worker = DBWorkerWithCallback(func, *args, **kwargs)
+    parent._active_db_worker = worker
+
+    def _on_result(result):
+        overlay.hide_overlay()
+        parent._active_db_worker = None
+        if on_result:
+            on_result(result)
+
+    def _on_error(err):
+        overlay.hide_overlay()
+        parent._active_db_worker = None
+        if on_error:
+            on_error(err)
+
+    worker.signals.result.connect(_on_result)
+    worker.signals.error.connect(_on_error)
+    worker.signals.finished.connect(lambda: overlay.hide_overlay())
+
+    QThreadPool.globalInstance().start(worker)
+    return worker
+
+
+class BatchDBWorker(QRunnable):
+    """Execute multiple SQL queries in a single /api/batch round-trip.
+
+    Signals:
+        result  — emits list[dict], one entry per query:  {"result": ..., "error": str|None}
+        error   — emits str on network/unexpected failure
+        finished
+    """
+
+    def __init__(self, queries: list, db_manager=None):
+        """
+        queries: list of dicts with keys "sql", "params" (optional), "ttl" (optional).
+        """
+        super().__init__()
+        self.queries = queries
+        self.signals = WorkerSignals()
+        self._is_cancelled = False
+        self.setAutoDelete(True)
+
+        if db_manager is None:
+            from api_db_manager import db_manager as default_db
+            self.db_manager = default_db
+        else:
+            self.db_manager = db_manager
+
+    def cancel(self):
+        self._is_cancelled = True
+
+    @pyqtSlot()
+    def run(self):
+        if self._is_cancelled:
+            self.signals.finished.emit()
+            return
+        try:
+            # Use execute_batch if available (API mode), else fall back to
+            # sequential execute_query calls.
+            if hasattr(self.db_manager, "execute_batch"):
+                results = self.db_manager.execute_batch(self.queries)
+            else:
+                results = []
+                for q in self.queries:
+                    try:
+                        r = self.db_manager.execute_query(q["sql"], q.get("params"))
+                        results.append({"result": r, "error": None, "cached": False})
+                    except Exception as e:
+                        results.append({"result": None, "error": str(e), "cached": False})
+            if not self._is_cancelled:
+                self.signals.result.emit(results)
+        except Exception as e:
+            if not self._is_cancelled:
+                import traceback as _tb
+                _tb.print_exc()
+                self.signals.error.emit(str(e))
+        finally:
+            self.signals.finished.emit()
+
+
+def run_batch_async(
+    parent: QWidget,
+    queries: list,
+    on_result: Optional[Callable] = None,
+    on_error: Optional[Callable] = None,
+    loading_message: str = "Loading data…",
+    db_manager=None,
+):
+    """Run multiple SQL queries in a single background HTTP batch call.
+
+    queries: list of dicts — [{"sql": ..., "params": ..., "ttl": ...}, ...]
+    on_result(list[dict]): called with list of {"result", "error", "cached"} entries.
+    """
+    prev_worker = getattr(parent, '_active_db_worker', None)
+    if prev_worker is not None:
+        prev_worker.cancel()
+
+    overlay = getattr(parent, '_loading_overlay', None)
+    if overlay is None:
+        overlay = LoadingOverlay(parent)
+        parent._loading_overlay = overlay
+    overlay.show_overlay(loading_message)
+
+    worker = BatchDBWorker(queries, db_manager)
     parent._active_db_worker = worker
 
     def _on_result(result):

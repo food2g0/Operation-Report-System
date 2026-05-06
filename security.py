@@ -3,10 +3,13 @@ Security Module - Password Hashing, Rate Limiting, Session Management
 """
 
 import time
+import logging
 import bcrypt
 from collections import defaultdict
 from threading import Lock
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -42,7 +45,7 @@ def verify_password(password: str, hashed: str) -> bool:
             # This allows old users to login and their password will be updated
             return password == hashed
     except Exception as e:
-        print(f"Password verification error: {e}")
+        logger.error("Password verification error: %s", e)
         return False
 
 
