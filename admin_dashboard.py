@@ -11,6 +11,7 @@ from security import SessionManager
 import json
 import logging
 import os
+import re
 
 logger = logging.getLogger(__name__)
 import sys
@@ -55,6 +56,9 @@ class AdminDashboard(QWidget):
         self.db = db_manager
         self._update_checker_threads = []  
         
+        # Zoom functionality
+        self.zoom_level = 100
+        self.setFocusPolicy(Qt.StrongFocus)
 
         self.session = SessionManager(inactivity_timeout=1800)
         self._session_timer = QTimer(self)
@@ -142,9 +146,120 @@ class AdminDashboard(QWidget):
         self.build_ui()
         self.load_corporations()
         
+        # Capture base fonts after UI is built
+        self._capture_base_fonts()
+        
+        # Install event filter on application for zoom
+        QApplication.instance().installEventFilter(self)
 
         if AUTO_UPDATE_ENABLED and check_update_success:
             check_update_success(parent=self)
+    
+    def _capture_base_fonts(self):
+        """Capture base font sizes for zoom-target widgets only."""
+        for w in self._get_zoom_target_widgets():
+            font = w.font()
+            point_size = font.pointSize()
+            pixel_size = font.pixelSize()
+
+            base_stylesheet = w.styleSheet() or ""
+            w.setProperty('_base_stylesheet', base_stylesheet)
+            w.setProperty('_base_zoom_height', max(w.minimumHeight(), w.sizeHint().height()))
+            
+
+            if point_size < 0 and pixel_size < 0:
+                # Get from application default
+                app_font = QApplication.font()
+                point_size = app_font.pointSize()
+                if point_size < 0:
+                    point_size = 10  # Default fallback
+            
+            # Store whichever is valid
+            if point_size > 0:
+                w.setProperty('_base_point_size', point_size)
+            elif pixel_size > 0:
+                w.setProperty('_base_pixel_size', pixel_size)
+
+    def _get_zoom_target_widgets(self):
+        """Return only debit/credit amount inputs that should respond to zoom."""
+        targets = []
+        seen = set()
+        for inp in list(self.debit_inputs.values()) + list(self.credit_inputs.values()):
+            if inp is None:
+                continue
+            wid = id(inp)
+            if wid in seen:
+                continue
+            seen.add(wid)
+            targets.append(inp)
+        return targets
+
+    def _scale_stylesheet_font_sizes(self, stylesheet, zoom_factor):
+        """Scale font-size declarations in a stylesheet by zoom factor."""
+        if not stylesheet or "font-size" not in stylesheet:
+            return stylesheet
+
+        def _replace(match):
+            base_size = float(match.group(1))
+            scaled = max(1, min(500, int(round(base_size * zoom_factor))))
+            return f"font-size: {scaled}px"
+
+        return re.sub(
+            r"font-size\s*:\s*([0-9]*\.?[0-9]+)\s*px",
+            _replace,
+            stylesheet,
+            flags=re.IGNORECASE,
+        )
+
+    def _apply_zoom_to_all(self):
+        """Apply zoom only to debit/credit amount input widgets."""
+        zoom_factor = self.zoom_level / 100.0
+        for w in self._get_zoom_target_widgets():
+            font = w.font()
+            new_size = None
+            
+            # Try point size first
+            base_point = w.property('_base_point_size')
+            if base_point is not None:
+                try:
+                    base_point = int(base_point)
+                    if base_point > 0:
+                        new_size = max(1, min(500, int(base_point * zoom_factor)))
+                        font.setPointSize(new_size)
+                        w.setFont(font)
+                except (ValueError, TypeError, OverflowError):
+                    pass
+            
+            # Try pixel size
+            base_pixel = w.property('_base_pixel_size')
+            if base_pixel is not None:
+                try:
+                    base_pixel = int(base_pixel)
+                    if base_pixel > 0:
+                        new_size = max(1, min(500, int(base_pixel * zoom_factor)))
+                        font.setPixelSize(new_size)
+                        w.setFont(font)
+                except (ValueError, TypeError, OverflowError):
+                    pass
+
+            base_stylesheet = w.property('_base_stylesheet')
+            if isinstance(base_stylesheet, str):
+                scaled_stylesheet = self._scale_stylesheet_font_sizes(base_stylesheet, zoom_factor)
+                if new_size is not None and "font-size" not in scaled_stylesheet.lower():
+                    scaled_stylesheet = (scaled_stylesheet + f"\nfont-size: {new_size}px;").strip()
+                if scaled_stylesheet != w.styleSheet():
+                    w.setStyleSheet(scaled_stylesheet)
+
+            base_height = w.property('_base_zoom_height')
+            if base_height is not None:
+                try:
+                    scaled_height = max(20, min(500, int(int(base_height) * zoom_factor)))
+                    w.setMinimumHeight(scaled_height)
+                    w.updateGeometry()
+                except (ValueError, TypeError, OverflowError):
+                    pass
+
+        self.update()
 
     def _ensure_review_table(self):
 
@@ -742,10 +857,68 @@ class AdminDashboard(QWidget):
         self.session.update_activity()
         super().mousePressEvent(event)
     
+    def eventFilter(self, obj, event):
+        """Handle application-level events for zoom"""
+        from PyQt5.QtCore import QEvent
+        # Capture wheel events at app level
+        if event.type() == QEvent.Wheel:
+            # Check if Ctrl is pressed
+            if event.modifiers() & Qt.ControlModifier:
+                delta = event.angleDelta().y()
+                if delta > 0:
+                    self.zoom_in()
+                else:
+                    self.zoom_out()
+                return True  # Consume the event
+        # Check for Ctrl+0 key press
+        elif event.type() == QEvent.KeyPress:
+            if event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_0:
+                self.reset_zoom()
+                return True  # Consume the event
+        return super().eventFilter(obj, event)
+
+    def wheelEvent(self, event):
+        """Handle Ctrl + mouse wheel for zoom"""
+        if event.modifiers() & Qt.ControlModifier:
+            # Zoom in (scroll up) or zoom out (scroll down)
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.zoom_in()
+            else:
+                self.zoom_out()
+            event.accept()
+        else:
+            super().wheelEvent(event)
+    
     def keyPressEvent(self, event):
-   
-        self.session.update_activity()
-        super().keyPressEvent(event)
+        # Handle Ctrl+0 to reset zoom
+        if event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_0:
+            self.reset_zoom()
+            event.accept()
+        else:
+            self.session.update_activity()
+            super().keyPressEvent(event)
+    
+    def zoom_in(self):
+        """Increase zoom level by 20%"""
+        self.set_zoom_level(self.zoom_level + 20)
+    
+    def zoom_out(self):
+        """Decrease zoom level by 20%"""
+        self.set_zoom_level(self.zoom_level - 20)
+    
+    def reset_zoom(self):
+        """Reset zoom to 100%"""
+        self.set_zoom_level(100)
+    
+    def set_zoom_level(self, level):
+        """Set zoom level and apply to all widgets"""
+        # Clamp zoom level between 50% and 200%
+        level = max(50, min(200, level))
+        if level == self.zoom_level:
+            return  # No change
+        self.zoom_level = level
+        self._apply_zoom_to_all()
     
     def check_for_updates(self):
        
@@ -1593,13 +1766,22 @@ class AdminDashboard(QWidget):
         if self.account_type == 1:
             # Brand A: sendout/payout/international data lives in payable_tbl_brand_a
             # (daily_reports_brand_a does NOT have palawan_sendout_principal etc.)
+            corporation  = (data or {}).get('corporation') or self.corp_selector.currentText().strip()
             branch_name   = self.branch_selector.currentText()
             selected_date = self.date_picker.date().toString("yyyy-MM-dd")
             try:
-                result = self.db.execute_query(
-                    "SELECT * FROM payable_tbl_brand_a WHERE branch=%s AND date=%s LIMIT 1",
-                    (branch_name, selected_date)
-                )
+                result = []
+                if corporation:
+                    result = self.db.execute_query(
+                        "SELECT * FROM payable_tbl_brand_a WHERE corporation=%s AND branch=%s AND date=%s LIMIT 1",
+                        (corporation, branch_name, selected_date)
+                    )
+                if not result:
+                    # Compatibility fallback for legacy rows without corporation.
+                    result = self.db.execute_query(
+                        "SELECT * FROM payable_tbl_brand_a WHERE branch=%s AND date=%s LIMIT 1",
+                        (branch_name, selected_date)
+                    )
                 if result:
                     r = result[0]
                     payable_map = {
@@ -3995,6 +4177,7 @@ class AdminDashboard(QWidget):
             HDR_FONT   = Font(bold=True, size=9,  color="FFFFFF")
             TOTAL_FONT = Font(bold=True, size=10)
             BOLD_FONT  = Font(bold=True, size=10)
+            GLOBAL_FILL = _fill("FFFF99")  # Yellow for global-tagged branches
 
             # Group → header fill colour (hex, no #)
             GROUP_FILL_MAP = {
@@ -4093,9 +4276,16 @@ class AdminDashboard(QWidget):
                         continue
                     seen_keys.add(primary_key)
                     if len(all_cols) == 1:
-                        select_parts.append(
-                            f"SUM(COALESCE(dr.`{all_cols[0]}`, 0)) AS `{all_cols[0]}`"
-                        )
+                        if table == "payable_tbl_brand_a" and all_cols[0] == "inc":
+                            # INC should be a single branch value in report sheets; using MAX
+                            # avoids accidental doubling when duplicate payable rows exist.
+                            select_parts.append(
+                                f"MAX(COALESCE(dr.`{all_cols[0]}`, 0)) AS `{all_cols[0]}`"
+                            )
+                        else:
+                            select_parts.append(
+                                f"SUM(COALESCE(dr.`{all_cols[0]}`, 0)) AS `{all_cols[0]}`"
+                            )
                     else:
                         # Sum multiple columns into the first key
                         inner = " + ".join(f"COALESCE(dr.`{c}`, 0)" for c in all_cols)
@@ -4111,12 +4301,12 @@ class AdminDashboard(QWidget):
                         where_clause = "AND dr.corporation = %s AND b.global_tag = 'GLOBAL'"
                         sql_params   = (selected_date, filter_value)
                     elif category_filter == "60":
-                        # 60% = all branches in the group, no extra restriction
+                        # 60% = non-global-tagged branches only
                         cat_join = (
                             "INNER JOIN branches b ON b.name COLLATE utf8mb4_general_ci "
                             "= dr.branch COLLATE utf8mb4_general_ci"
                         )
-                        where_clause = "AND dr.corporation = %s"
+                        where_clause = "AND dr.corporation = %s AND (b.global_tag IS NULL OR UPPER(TRIM(b.global_tag)) <> 'GLOBAL')"
                         sql_params   = (selected_date, filter_value)
                     else:
                         where_clause = "AND dr.corporation = %s"
@@ -4128,8 +4318,8 @@ class AdminDashboard(QWidget):
                     if category_filter == "30":
                         where_clause = "AND b.global_tag = 'GLOBAL'"
                     elif category_filter == "60":
-                        # 60% = all branches in the group, no extra restriction
-                        where_clause = ""
+                        # 60% = non-global-tagged branches only
+                        where_clause = "AND (b.global_tag IS NULL OR UPPER(TRIM(b.global_tag)) <> 'GLOBAL')"
                     else:
                         # For global-tagged tables (e.g. global_other_services_tbl),
                         # restrict to branches with a global tag
@@ -4146,32 +4336,62 @@ class AdminDashboard(QWidget):
                         global_where = ""
                         if category_filter == "30":
                             global_where = "AND b.global_tag = 'GLOBAL'"
+                        # 60%: show all branches (including global-tagged), highlight in yellow
 
                         if filter_type == "os":
-                            sql = (
-                                f"SELECT b.name AS branch, {', '.join(select_parts)} "
-                                f"FROM branches b "
-                                f"LEFT JOIN `{table}` dr "
-                                f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                                f"  AND dr.date = %s "
-                                f"WHERE b.os_name = %s {global_where} "
-                                f"GROUP BY b.name ORDER BY b.name"
-                            )
+                            if table == "payable_tbl_brand_a":
+                                sql = (
+                                    f"SELECT b.name AS branch, MAX(b.global_tag) AS global_tag, {', '.join(select_parts)} "
+                                    f"FROM branches b "
+                                    f"LEFT JOIN `{table}` dr "
+                                    f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                                    f"  AND dr.date = %s "
+                                    f"WHERE b.os_name = %s {global_where} "
+                                    f"GROUP BY b.name ORDER BY b.name"
+                                )
+                            else:
+                                sql = (
+                                    f"SELECT b.name AS branch, MAX(b.global_tag) AS global_tag, {', '.join(select_parts)} "
+                                    f"FROM branches b "
+                                    f"INNER JOIN corporations c "
+                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                    f"LEFT JOIN `{table}` dr "
+                                    f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                                    f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
+                                    f"  AND dr.date = %s "
+                                    f"WHERE b.os_name = %s {global_where} "
+                                    f"GROUP BY b.name ORDER BY b.name"
+                                )
                             sql_params = (selected_date, filter_value)
                         else:
                             # corporation filter – join corps table to filter by name
-                            sql = (
-                                f"SELECT b.name AS branch, {', '.join(select_parts)} "
-                                f"FROM branches b "
-                                f"INNER JOIN corporations c "
-                                f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                f"  AND c.name = %s "
-                                f"LEFT JOIN `{table}` dr "
-                                f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                                f"  AND dr.date = %s "
-                                f"WHERE 1=1 {global_where} "
-                                f"GROUP BY b.name ORDER BY b.name"
-                            )
+                            if table == "payable_tbl_brand_a":
+                                sql = (
+                                    f"SELECT b.name AS branch, MAX(b.global_tag) AS global_tag, {', '.join(select_parts)} "
+                                    f"FROM branches b "
+                                    f"INNER JOIN corporations c "
+                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                    f"  AND c.name = %s "
+                                    f"LEFT JOIN `{table}` dr "
+                                    f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                                    f"  AND dr.date = %s "
+                                    f"WHERE 1=1 {global_where} "
+                                    f"GROUP BY b.name ORDER BY b.name"
+                                )
+                            else:
+                                sql = (
+                                    f"SELECT b.name AS branch, MAX(b.global_tag) AS global_tag, {', '.join(select_parts)} "
+                                    f"FROM branches b "
+                                    f"INNER JOIN corporations c "
+                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                    f"  AND c.name = %s "
+                                    f"LEFT JOIN `{table}` dr "
+                                    f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                                    f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
+                                    f"  AND dr.date = %s "
+                                    f"WHERE 1=1 {global_where} "
+                                    f"GROUP BY b.name ORDER BY b.name"
+                                )
                             sql_params = (filter_value, selected_date)
 
                     elif filter_type == "os":
@@ -4297,7 +4517,11 @@ class AdminDashboard(QWidget):
                 grand_totals = {primary_key: 0.0 for _, primary_key, _, _, _ in flat}
                 grand_lotes_total = 0
                 for ri, row_data in enumerate(results, HDR_ROW + 1):
-                    ws.cell(row=ri, column=1, value=row_data.get('branch', '')).border = border
+                    branch_cell = ws.cell(row=ri, column=1, value=row_data.get('branch', ''))
+                    branch_cell.border = border
+                    # Yellow fill for globally-tagged branches in 60% sheet
+                    if category_filter == "60" and (row_data.get('global_tag') or '').upper() == 'GLOBAL':
+                        branch_cell.fill = GLOBAL_FILL
                     row_amt = 0.0
                     row_lotes = 0
                     for ci, (_, primary_key, is_lotes, _, all_cols) in enumerate(flat, 2):
@@ -5243,9 +5467,9 @@ class AdminDashboard(QWidget):
             ]
             if self.account_type == 1:
                 # Brand A: split payable into 60% (specific corps) and 30% (Global) sheets
-                ws5a = wb.create_sheet(title="Payable 60%")
+                ws5a = wb.create_sheet(title="Palawan 60%")
                 _write_grouped_sheet(ws5a, _payable_groups_a, "payable_tbl_brand_a", category_filter="60", show_amt_total=False)
-                ws5b = wb.create_sheet(title="Payable 30%")
+                ws5b = wb.create_sheet(title="Palawan 30%")
                 _write_grouped_sheet(ws5b, _payable_groups_a, "payable_tbl_brand_a", category_filter="30", show_amt_total=False)
             else:
                 ws5 = wb.create_sheet(title="Payable")
@@ -5583,6 +5807,8 @@ class AdminDashboard(QWidget):
                                        SUM(COALESCE(p.inc, 0))                    AS total_inc
                                 FROM {payable_tbl} p
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                                INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                                          AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                                 WHERE b.os_name = %s AND p.date = %s AND b.is_registered = 1
                             """, (filter_value, selected_date))
                         elif is_global:
@@ -5600,6 +5826,8 @@ class AdminDashboard(QWidget):
                                        SUM(COALESCE(p.inc, 0))                    AS total_inc
                                 FROM {payable_tbl} p
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                                INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                                          AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                                 WHERE b.global_tag = 'GLOBAL' AND p.date = %s AND b.is_registered = 1
                             """, (selected_date,))
                         else:
@@ -5617,7 +5845,8 @@ class AdminDashboard(QWidget):
                                        SUM(COALESCE(p.inc, 0))                    AS total_inc
                                 FROM {payable_tbl} p
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                                INNER JOIN corporations c ON b.corporation_id = c.id AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
+                                INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                                          AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                                 WHERE p.corporation = %s AND p.date = %s AND b.is_registered = 1
                             """, (filter_value, selected_date))
                     except Exception as ex:
@@ -5790,14 +6019,23 @@ class AdminDashboard(QWidget):
             return
 
         try:
+            where_clauses = ["branch = %s", "date = %s"]
+            query_params = [branch_name, selected_date]
+
+            if filter_type == "corporation":
+                selected_corporation = self.corp_selector.currentText().strip()
+                if selected_corporation:
+                    where_clauses.append("corporation = %s")
+                    query_params.append(selected_corporation)
 
             query = f"""
                 SELECT *
                 FROM {self.daily_table}
-                WHERE branch = %s
-                  AND date = %s
+                WHERE {' AND '.join(where_clauses)}
+                ORDER BY id DESC
+                LIMIT 1
             """
-            result = self.db.execute_query(query, [branch_name, selected_date])
+            result = self.db.execute_query(query, query_params)
 
             if not result:
                 QMessageBox.information(self, "No Entry", f"No entry found for {selected_date}.")
@@ -6300,8 +6538,12 @@ class AdminDashboard(QWidget):
             for db_col, widget in getattr(self, 'palawan_inputs', {}).items():
                 if widget.isReadOnly():
                     continue  
+                raw_text = widget.text().strip()
+                if self.account_type == 1 and db_col in _PAYABLE_SECTION_COLS and raw_text == "":
+                    # Keep existing payable values when an admin leaves a field blank.
+                    continue
                 try:
-                    val = float(widget.text().strip() or 0)
+                    val = float(raw_text or 0)
                 except ValueError:
                     val = 0
                 if self.account_type == 1 and db_col in _PAYABLE_SECTION_COLS:
@@ -6312,14 +6554,24 @@ class AdminDashboard(QWidget):
             for section in ("sendout", "payout", "international"):
                 disp = getattr(self, 'palawan_total_displays', {}).get(section)
                 if disp:
+                    section_input_keys = (
+                        f"palawan_{section}_principal",
+                        f"palawan_{section}_sc",
+                        f"palawan_{section}_commission",
+                        f"palawan_{section}_lotes_total",
+                    )
+                    has_section_input = any(
+                        getattr(self, 'palawan_inputs', {}).get(k, QLineEdit()).text().strip() != ""
+                        for k in section_input_keys
+                    )
                     try:
                         total_val = float(disp.text() or 0)
                     except ValueError:
                         total_val = 0
                     col = f"palawan_{section}_regular_total"
-                    if self.account_type == 1:
+                    if self.account_type == 1 and has_section_input:
                         payable_a_vals[col] = total_val
-                    else:
+                    elif self.account_type != 1:
                         update_data[col] = total_val
 
             set_clauses = []
@@ -6364,7 +6616,19 @@ class AdminDashboard(QWidget):
                     'palawan_pay_out_incentives':          'inc',
                 }
                 entry_data   = getattr(self, '_current_entry_data', {}) or {}
-                corporation  = entry_data.get('corporation', '')
+                corporation  = (entry_data.get('corporation') or "").strip()
+                if not corporation and getattr(self, 'current_record_id', None):
+                    try:
+                        rec = self.db.execute_query(
+                            f"SELECT corporation FROM {self.daily_table} WHERE id=%s LIMIT 1",
+                            [self.current_record_id]
+                        )
+                        if rec and rec[0].get('corporation'):
+                            corporation = str(rec[0].get('corporation')).strip()
+                    except Exception as ce:
+                        logger.error("_save resolve corporation by id: %s", ce)
+                if not corporation:
+                    corporation = self.corp_selector.currentText().strip()
                 branch_name  = self.branch_selector.currentText()
                 p_cols        = {_col_map[k]: v for k, v in payable_a_vals.items() if k in _col_map}
                 if p_cols:
