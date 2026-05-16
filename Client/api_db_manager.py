@@ -1,16 +1,39 @@
+"""
+API-backed database manager — drop-in replacement for DatabaseManagerPooled.
 
+Routes all SQL queries through the ORS REST API (api_server.py) instead of
+connecting to MySQL directly.  Client machines need only HTTP access to the
+API server; no direct database credentials or MySQL driver required.
+
+Usage (automatic — controlled by api_config.API_MODE):
+    from Client.api_db_manager import APIDbManager
+    db = APIDbManager()
+    db.connect()          # obtains a JWT from /api/token
+    rows = db.execute_query("SELECT ...", params)
+    result, err = db.execute_query_with_exception("INSERT ...", params)
+"""
 
 import logging
-import threading
+import requests
 
 log = logging.getLogger("APIDbManager")
 
 
 class APIDbManager:
+    """Drop-in replacement for DatabaseManagerPooled that sends every
+    execute_query / execute_query_with_exception call to the API server.
 
+    The public interface matches DatabaseManagerPooled:
+        .execute_query(sql, params)              → rows or row-count
+        .execute_query_with_exception(sql, params) → (result, exception|None)
+        .test_connection()                       → bool
+        .connect()                               → bool
+        .logger                                  → logging.Logger
+    """
 
     def __init__(self, base_url: str = None, api_key: str = None, timeout: int = 30):
-        import requests as _requests
+        # Lazy-import api_config so the module can be imported even if
+        # api_config is not present (e.g. unit tests).
         try:
             from api_config import API_URL, API_KEY
             _default_url = API_URL
@@ -25,14 +48,14 @@ class APIDbManager:
         self.logger   = logging.getLogger("APIDbManager")
 
         self._token   = None
-        self._session = _requests.Session()
+        self._session = requests.Session()
+        # Keep the session alive across calls
         self._session.headers.update({"Content-Type": "application/json"})
 
     # ── Authentication ────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
         """Obtain a JWT token from /api/token (equivalent to DB connect)."""
-        import requests as _requests
         try:
             resp = self._session.post(
                 f"{self.base_url}/api/token",
@@ -72,17 +95,19 @@ class APIDbManager:
 
     @staticmethod
     def _normalise_params(params) -> list:
+        """Convert params tuple/list/None to a JSON-serialisable list."""
         if params is None:
             return []
         return list(params)
 
-    def _post_exec(self, endpoint: str, sql: str, params) -> object:
-        import requests as _requests
+    def _post_exec(self, endpoint: str, sql: str, params) -> dict:
+        """POST to /api/exec or /api/exec_safe and handle token refresh."""
         payload = {"sql": sql, "params": self._normalise_params(params)}
         resp = self._session.post(
             f"{self.base_url}{endpoint}", json=payload, timeout=self.timeout
         )
         if resp.status_code == 401:
+            # Token expired — refresh once and retry
             self.logger.warning("Token expired, refreshing…")
             self.connect()
             resp = self._session.post(
@@ -90,15 +115,15 @@ class APIDbManager:
             )
         return resp
 
-    # ── Public interface (mirrors DatabaseManagerPooled) ─────────────────────
+    # ── Public interface (mirrors DatabaseManagerPooled) ──────────────────────
 
     def execute_query(self, sql: str, params=None):
         """Execute SQL via the API.
 
-        Returns rows (list[dict]) for SELECT, or affected-row count (int)
-        for INSERT/UPDATE/DELETE.  Raises RuntimeError on SQL errors.
+        Returns rows (list[dict]) for SELECT statements,
+        or affected-row count (int) for INSERT/UPDATE/DELETE.
+        Raises RuntimeError on server-side SQL errors (same as direct DB manager).
         """
-        import requests as _requests
         self._ensure_token()
         try:
             resp = self._post_exec("/api/exec", sql, params)
@@ -106,7 +131,7 @@ class APIDbManager:
             if data.get("error"):
                 raise RuntimeError(data["error"])
             return data.get("result")
-        except _requests.RequestException as exc:
+        except requests.RequestException as exc:
             self.logger.error("execute_query network error: %s", exc)
             raise
 
@@ -114,10 +139,11 @@ class APIDbManager:
         """Execute SQL via the API.
 
         Returns (result, None) on success or (None, exception) on error.
-        Never raises.  Preserves MySQL error codes (e.g. 1062, 1213) in
-        exception.args[0] so retry logic in callers works correctly.
+        Never raises — mirrors DatabaseManagerPooled.execute_query_with_exception.
+        The exception carries the original MySQL error code in args[0] so that
+        deadlock (1213) and duplicate-key (1062) retry logic in client_dashboard
+        continues to work correctly.
         """
-        import requests as _requests
         self._ensure_token()
         try:
             resp = self._post_exec("/api/exec_safe", sql, params)
@@ -127,10 +153,11 @@ class APIDbManager:
             if exec_error:
                 err = RuntimeError(exec_error)
                 if error_code is not None:
+                    # Preserve the MySQL error code as args[0]
                     err.args = (error_code, exec_error)
                 return None, err
             return data.get("result"), None
-        except _requests.RequestException as exc:
+        except requests.RequestException as exc:
             self.logger.error(
                 "execute_query_with_exception network error: %s", exc
             )
@@ -139,20 +166,15 @@ class APIDbManager:
     def execute_batch(self, queries: list) -> list:
         """Execute multiple SQL statements in a single HTTP round-trip.
 
-        queries: list of dicts, each with keys:
-            "sql"    (str)           — required
-            "params" (list|None)     — optional
-            "ttl"    (int|None)      — optional per-query cache TTL override
+        queries: list of dicts with keys:
+            "sql"    (str)       — required
+            "params" (list|None) — optional
+            "ttl"    (int|None)  — optional per-query cache TTL override
 
-        Returns a list of dicts (same order as input):
+        Returns a list of dicts (same order):
             {"result": ..., "error": str|None, "cached": bool}
-
-        Falls back gracefully: if the batch endpoint is unavailable, returns
-        error entries for each query rather than raising.
         """
-        import requests as _requests
         self._ensure_token()
-        # Normalise params to lists for JSON serialisation
         payload_queries = [
             {
                 "sql":    q["sql"],
@@ -176,36 +198,6 @@ class APIDbManager:
                     timeout=self.timeout,
                 )
             return resp.json().get("results", [])
-        except _requests.RequestException as exc:
+        except requests.RequestException as exc:
             self.logger.error("execute_batch network error: %s", exc)
             return [{"result": None, "error": str(exc), "cached": False} for _ in queries]
-
-
-# ── Shared singleton ──────────────────────────────────────────────────────────
-# All admin pages that do `from api_db_manager import db_manager` share this
-# single instance → one JWT token, one persistent HTTP session.
-
-_shared_instance: "APIDbManager | None" = None
-_shared_lock = threading.Lock()
-
-
-def _get_shared_instance() -> "APIDbManager":
-    global _shared_instance
-    if _shared_instance is None:
-        with _shared_lock:
-            if _shared_instance is None:
-                _shared_instance = APIDbManager()
-    return _shared_instance
-
-
-# ── Module-level `db_manager` export ─────────────────────────────────────────
-try:
-    from api_config import API_MODE as _API_MODE
-except ImportError:
-    _API_MODE = False
-
-if _API_MODE:
-    db_manager = _get_shared_instance()
-else:
-    # Fall back to direct DB — zero behaviour change when API_MODE is off.
-    from db_connect_pooled import db_manager  # noqa: F401
