@@ -77,6 +77,26 @@ class PayablesPage(QWidget):
 
         self.installEventFilter(self)
 
+    def _execute_many_compat(self, sql, batch_params):
+        """Execute a parameterized statement for many rows across DB manager backends."""
+        if not batch_params:
+            return []
+
+        if hasattr(db_manager, "execute_many"):
+            return db_manager.execute_many(sql, batch_params)
+
+        if hasattr(db_manager, "execute_batch"):
+            queries = [{"sql": sql, "params": list(params)} for params in batch_params]
+            results = db_manager.execute_batch(queries) or []
+            first_error = next((r.get("error") for r in results if isinstance(r, dict) and r.get("error")), None)
+            if first_error:
+                raise RuntimeError(first_error)
+            return results
+
+        for params in batch_params:
+            db_manager.execute_query(sql, params)
+        return [{"result": 1, "error": None, "cached": False} for _ in batch_params]
+
     # ─────────────────────────────────────────────────────────────────────────
     def verify_table_structure(self):
         """Ensures payable table has the UNIQUE constraint for ON DUPLICATE KEY UPDATE."""
@@ -135,7 +155,7 @@ class PayablesPage(QWidget):
             # SKID/SKIR/CANCEL/INC are also stored in payable_tbl_brand_a.
             if is_range:
                 lotes_join = (
-                    "LEFT JOIN (SELECT branch, "
+                    "LEFT JOIN (SELECT corporation, branch, "
                     "SUM(sendout_lotes) AS so_lotes, "
                     "SUM(sendout_capital) AS so_capital, "
                     "SUM(sendout_sc) AS so_sc, "
@@ -155,13 +175,14 @@ class PayablesPage(QWidget):
                     "SUM(skir) AS pt_skir, "
                     "SUM(cancellation) AS pt_cancellation, "
                     "SUM(inc) AS pt_inc "
-                    "FROM payable_tbl_brand_a WHERE date BETWEEN %s AND %s GROUP BY branch) pt "
-                    "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci"
+                    "FROM payable_tbl_brand_a WHERE date BETWEEN %s AND %s GROUP BY corporation, branch) pt "
+                    "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci "
+                    "AND COALESCE(dr.corporation, c.name) COLLATE utf8mb4_general_ci = pt.corporation COLLATE utf8mb4_general_ci"
                 )
                 lotes_params = [date_start, date_end]
             else:
                 lotes_join = (
-                    "LEFT JOIN (SELECT branch, "
+                    "LEFT JOIN (SELECT corporation, branch, "
                     "MAX(sendout_lotes) AS so_lotes, "
                     "MAX(sendout_capital) AS so_capital, "
                     "MAX(sendout_sc) AS so_sc, "
@@ -181,8 +202,9 @@ class PayablesPage(QWidget):
                     "MAX(skir) AS pt_skir, "
                     "MAX(cancellation) AS pt_cancellation, "
                     "MAX(inc) AS pt_inc "
-                    "FROM payable_tbl_brand_a WHERE date = %s GROUP BY branch) pt "
-                    "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci"
+                    "FROM payable_tbl_brand_a WHERE date = %s GROUP BY corporation, branch) pt "
+                    "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci "
+                    "AND COALESCE(dr.corporation, c.name) COLLATE utf8mb4_general_ci = pt.corporation COLLATE utf8mb4_general_ci"
                 )
                 lotes_params = [date_start]
             so_lotes_col    = "pt.so_lotes"
@@ -204,11 +226,11 @@ class PayablesPage(QWidget):
             # Both brands use pt.* columns from payable_tbl_brand_a subquery (1 row per branch),
             # so MAX() avoids row-multiplication when joined with dr rows.
             _agg = "MAX"
-            # SKID/SKIR/CANCEL/INC come from pt (payable_tbl_brand_a subquery) for both brands.
-            skid_col   = "MAX(COALESCE(pt.pt_skid, 0))"
-            skir_col   = "MAX(COALESCE(pt.pt_skir, 0))"
-            cancel_col = "MAX(COALESCE(pt.pt_cancellation, 0))"
-            inc_col    = "MAX(COALESCE(pt.pt_inc, 0))"
+            # Prefer payable values, but fall back to daily-report values when payable is zero.
+            skid_col   = "MAX(COALESCE(NULLIF(pt.pt_skid, 0), dr.palawan_suki_discounts, 0))"
+            skir_col   = "MAX(COALESCE(NULLIF(pt.pt_skir, 0), dr.palawan_suki_rebates, 0))"
+            cancel_col = "MAX(COALESCE(NULLIF(pt.pt_cancellation, 0), dr.palawan_cancel, 0))"
+            inc_col    = "MAX(COALESCE(NULLIF(pt.pt_inc, 0), dr.palawan_pay_out_incentives, 0))"
 
             # ── Date filter goes into the LEFT JOIN ON clause (not WHERE) ──────
             # Putting date in WHERE turns the LEFT JOIN into an INNER JOIN,
@@ -241,7 +263,9 @@ class PayablesPage(QWidget):
                            {skir_col}   AS skir,
                            {cancel_col} AS cancellation,
                            {inc_col}    AS po_incentives,
-                           c.name                                          AS corp_name
+                              MAX(COALESCE(dr.corporation, c.name))            AS report_corp,
+                           c.name                                          AS corp_name,
+                           MAX(b.global_tag)                               AS global_tag
                     FROM branches b
                     LEFT JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci {dr_date_cond}
@@ -300,10 +324,16 @@ class PayablesPage(QWidget):
 
                 branch_name = row_data['branch'] if isinstance(row_data, dict) else row_data[0]
                 # Store the corporation this branch belongs to (for cross-corp OS filtering)
-                row_corp = row_data['corp_name'] if isinstance(row_data, dict) else ''
+                row_corp = (row_data['report_corp'] if isinstance(row_data, dict) else '') or (row_data['corp_name'] if isinstance(row_data, dict) else '')
+                is_global_branch = (row_data.get('global_tag') or '').upper() == 'GLOBAL' if isinstance(row_data, dict) else False
                 self.table.setItem(row_count, 0, QTableWidgetItem(branch_name))
                 # Stash corp in the branch item's data role so _sync can retrieve it
                 self.table.item(row_count, 0).setData(Qt.UserRole, row_corp)
+                # Stash global tag flag so export/print can use it
+                self.table.item(row_count, 0).setData(Qt.UserRole + 1, is_global_branch)
+                # Yellow background on branch column for globally-tagged branches
+                if is_global_branch:
+                    self.table.item(row_count, 0).setBackground(QBrush(QColor("#FFFF99")))
 
                 # Columns 1-15: daily report values (read-only)
                 if isinstance(row_data, dict):
@@ -409,7 +439,7 @@ class PayablesPage(QWidget):
 
             # Execute batch upsert if we have data
             if batch_params:
-                db_manager.execute_many(f"""
+                self._execute_many_compat(f"""
                     INSERT INTO {self.payable_table} (
                         corporation, branch, date,
                         sendout_capital, sendout_sc, sendout_commission, sendout_total,
@@ -605,7 +635,7 @@ class PayablesPage(QWidget):
 
             # Execute batch upsert
             if batch_params:
-                result = db_manager.execute_many(upsert, batch_params)
+                result = self._execute_many_compat(upsert, batch_params)
                 saved_count = len(batch_params) if result is not None else 0
                 error_count = 0 if result is not None else len(batch_params)
             else:
@@ -1118,6 +1148,7 @@ class PayablesPage(QWidget):
             adj_fill = PatternFill(start_color="6F42C1", end_color="6F42C1", fill_type="solid")  # Purple
             gray_fill = PatternFill(start_color="495057", end_color="495057", fill_type="solid")
             total_fill = PatternFill(start_color="E9ECEF", end_color="E9ECEF", fill_type="solid")
+            global_fill = PatternFill(start_color="FFFF99", end_color="FFFF99", fill_type="solid")  # Yellow for global-tagged branches
             
             # Title
             ws.merge_cells('A1:T1')
@@ -1162,6 +1193,9 @@ class PayablesPage(QWidget):
             for row in range(rows):
                 excel_row = header_row + 1 + row
                 is_total_row = (row == rows - 1)
+                # Check if this is a global-tagged branch row
+                branch_item_export = self.table.item(row, 0)
+                is_global_row = bool(branch_item_export and branch_item_export.data(Qt.UserRole + 1))
                 
                 for col in range(cols):
                     cell = ws.cell(row=excel_row, column=col+1)
@@ -1185,6 +1219,8 @@ class PayablesPage(QWidget):
                     if is_total_row:
                         cell.fill = total_fill
                         cell.font = Font(bold=True)
+                    elif is_global_row and col == 0:
+                        cell.fill = global_fill
             
             # Auto-adjust column widths
             from openpyxl.utils import get_column_letter
@@ -1213,6 +1249,7 @@ class PayablesPage(QWidget):
                 .totals-row{background-color:#e9ecef;font-weight:bold}
                 .so{background-color:#ffebee}.po{background-color:#e8f5e8}
                 .intl{background-color:#e3f2fd}.adj{background-color:#f3e5f5}
+                .global-branch{background-color:#ffff99}
             </style></head><body>"""
             html += "<h2>Detailed Palawan Transaction Report</h2>"
             date_start, date_end = self.date_range_widget.get_date_range()
@@ -1229,13 +1266,16 @@ class PayablesPage(QWidget):
             html += "</tr>"
             for r in range(self.table.rowCount()):
                 is_last = (r == self.table.rowCount() - 1)
+                branch_item_print = self.table.item(r, 0)
+                is_global_print = bool(branch_item_print and branch_item_print.data(Qt.UserRole + 1))
                 html += f'<tr class="{"totals-row" if is_last else ""}">'
                 for c in range(self.table.columnCount()):
                     item = self.table.item(r, c)
                     text = item.text() if item else ""
                     cls  = ""
                     if not is_last:
-                        if c == 5:          cls = "so"
+                        if c == 0 and is_global_print: cls = "global-branch"
+                        elif c == 5:          cls = "so"
                         elif c == 10:       cls = "po"
                         elif c == 15:       cls = "intl"
                         elif 16 <= c <= 19: cls = "adj"

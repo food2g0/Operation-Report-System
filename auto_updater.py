@@ -7,12 +7,16 @@ Supports both interactive and silent (automatic) updates.
 import os
 import sys
 import json
+import hashlib
 import requests
 import tempfile
 import subprocess
 import shutil
 import logging
 from pathlib import Path
+from urllib.parse import urlparse
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from packaging import version
 from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QProgressBar, QTextEdit, QMessageBox)
@@ -29,9 +33,123 @@ except ImportError:
 CHECK_UPDATE_ON_STARTUP = True
 UPDATE_CHECK_INTERVAL = 86400  # 24 hours in seconds
 
+# Update security controls
+ALLOWED_UPDATE_HOSTS = {
+    "github.com",
+    "api.github.com",
+    "objects.githubusercontent.com",
+    "github-releases.githubusercontent.com",
+}
+MIN_INSTALLER_SIZE_BYTES = 256 * 1024          # 256 KB
+MAX_INSTALLER_SIZE_BYTES = 1024 * 1024 * 1024 # 1 GB
+REQUIRE_CHECKSUM = os.environ.get("ORS_UPDATER_REQUIRE_CHECKSUM", "false").lower() == "true"
+
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("AutoUpdater")
+
+
+def _create_retry_session():
+    """Create a requests session with retries for transient network failures."""
+    session = requests.Session()
+    retries = Retry(
+        total=3,
+        backoff_factor=0.6,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def _is_trusted_download_url(url):
+    """Allow only expected GitHub release hosts for update payload downloads."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme.lower() != "https":
+            return False
+        host = (parsed.hostname or "").lower()
+        return host in ALLOWED_UPDATE_HOSTS
+    except Exception:
+        return False
+
+
+def _validate_downloaded_installer(installer_path):
+    """Basic installer integrity checks before launching it."""
+    if not installer_path or not os.path.exists(installer_path):
+        return (False, "Installer file not found")
+
+    size = os.path.getsize(installer_path)
+    if size < MIN_INSTALLER_SIZE_BYTES:
+        return (False, "Installer size is too small; download likely incomplete")
+    if size > MAX_INSTALLER_SIZE_BYTES:
+        return (False, "Installer size is unexpectedly large")
+
+    # Basic PE executable signature check for Windows payloads.
+    with open(installer_path, 'rb') as f:
+        magic = f.read(2)
+    if magic != b'MZ':
+        return (False, "Downloaded file is not a valid Windows executable")
+
+    return (True, "")
+
+
+def _sha256_file(file_path):
+    h = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        while True:
+            chunk = f.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _extract_checksum_from_text(checksum_text, target_filename):
+    """Parse sha256 sum output and extract hash for target file name."""
+    target_lower = target_filename.lower()
+    first_hash = None
+    for raw_line in checksum_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split()
+        if len(parts) < 1:
+            continue
+        candidate_hash = parts[0].strip().lower()
+        if len(candidate_hash) != 64 or any(c not in "0123456789abcdef" for c in candidate_hash):
+            continue
+        if first_hash is None:
+            first_hash = candidate_hash
+
+        if len(parts) >= 2:
+            candidate_name = parts[-1].lstrip("*\\").split("/")[-1].lower()
+            if candidate_name == target_lower:
+                return candidate_hash
+
+    return first_hash
+
+
+def _find_release_checksum(session, release_data, installer_filename):
+    """Find and fetch checksum from release assets if present."""
+    assets = release_data.get('assets', [])
+    for asset in assets:
+        name = (asset.get('name') or '').lower()
+        if name in ("sha256sums.txt", "sha256sum.txt", "checksums.txt") or name.endswith(".sha256"):
+            checksum_url = asset.get('browser_download_url')
+            if not checksum_url or not _is_trusted_download_url(checksum_url):
+                continue
+            try:
+                resp = session.get(checksum_url, timeout=20)
+                resp.raise_for_status()
+                checksum = _extract_checksum_from_text(resp.text, installer_filename)
+                if checksum:
+                    return checksum
+            except Exception as e:
+                logger.warning(f"Failed to read checksum asset {name}: {e}")
+    return None
 
 # Version tracking file path (to detect successful updates)
 def _get_version_file_path():
@@ -148,7 +266,8 @@ class UpdateChecker(QThread):
         try:
             # Get latest release from GitHub API
             api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-            response = requests.get(api_url, timeout=10)
+            session = _create_retry_session()
+            response = session.get(api_url, timeout=10)
             
             if response.status_code == 404:
                 self.error_occurred.emit("Repository not found. Please check GITHUB_REPO configuration.")
@@ -194,7 +313,7 @@ class UpdateChecker(QThread):
         # Look for .exe installer first
         for asset in assets:
             name = asset.get('name', '').lower()
-            if name.endswith('.exe') and 'setup' in name or 'installer' in name:
+            if name.endswith('.exe') and ('setup' in name or 'installer' in name):
                 return asset.get('browser_download_url')
         
         # Fall back to first .exe file
@@ -233,7 +352,8 @@ class SilentUpdater(QThread):
             logger.info("Silent updater: Checking for updates...")
             
             api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-            response = requests.get(api_url, timeout=10)
+            session = _create_retry_session()
+            response = session.get(api_url, timeout=10)
             
             if response.status_code != 200:
                 logger.warning(f"Update check failed: HTTP {response.status_code}")
@@ -258,6 +378,10 @@ class SilentUpdater(QThread):
             if not download_url:
                 logger.warning("No installer found in release assets")
                 return
+            if not _is_trusted_download_url(download_url):
+                logger.error(f"Blocked untrusted update host: {download_url}")
+                self.error_occurred.emit("Update source is not trusted")
+                return
             
             # Step 3: Download update
             self.status_changed.emit(f"Downloading v{latest_version}...")
@@ -266,14 +390,37 @@ class SilentUpdater(QThread):
             temp_dir = tempfile.gettempdir()
             filename = f"ORS_Update_v{latest_version}.exe"
             self.installer_path = os.path.join(temp_dir, filename)
+            partial_path = self.installer_path + ".part"
             
-            response = requests.get(download_url, stream=True, timeout=60)
+            response = session.get(download_url, stream=True, timeout=60)
             response.raise_for_status()
+            expected_size_header = response.headers.get('content-length')
             
-            with open(self.installer_path, 'wb') as f:
+            with open(partial_path, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
+            os.replace(partial_path, self.installer_path)
+
+            if expected_size_header and expected_size_header.isdigit():
+                expected_size = int(expected_size_header)
+                actual_size = os.path.getsize(self.installer_path)
+                if expected_size != actual_size:
+                    raise RuntimeError(
+                        f"Incomplete download: expected {expected_size} bytes, got {actual_size} bytes"
+                    )
+
+            expected_checksum = _find_release_checksum(session, release_data, filename)
+            if expected_checksum:
+                actual_checksum = _sha256_file(self.installer_path)
+                if actual_checksum.lower() != expected_checksum.lower():
+                    raise RuntimeError("Downloaded update failed checksum verification")
+            elif REQUIRE_CHECKSUM:
+                raise RuntimeError("Checksum is required but no checksum asset was found in release")
+
+            valid, reason = _validate_downloaded_installer(self.installer_path)
+            if not valid:
+                raise RuntimeError(reason)
             
             logger.info(f"Silent updater: Downloaded to {self.installer_path}")
             self.update_ready.emit(self.installer_path)

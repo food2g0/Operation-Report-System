@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import time
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -1023,6 +1024,10 @@ class ClientDashboard(QWidget):
         self.db_manager  = db_manager
         self.offline_mode = offline_mode
         self._update_checker_threads = []
+        
+        # Zoom functionality
+        self.zoom_level = 100
+        self.setFocusPolicy(Qt.StrongFocus)
 
         self.session = SessionManager(inactivity_timeout=1800)
         self._session_timer = QTimer(self)
@@ -1050,7 +1055,7 @@ class ClientDashboard(QWidget):
 
         lay.addWidget(self._build_summary_strip())
         lay.addWidget(self._build_footer())
-
+        
         # Load global_tag for this branch
         self.global_tag = ''
         try:
@@ -1071,6 +1076,13 @@ class ClientDashboard(QWidget):
         self._setup_empeno_motor_button()
         self._setup_ft_ho_button()
         self._setup_pc_salary_button()
+        
+        # Capture base fonts for zoom
+        self._capture_base_fonts()
+        
+        # Install event filter on application for zoom
+        QApplication.instance().installEventFilter(self)
+
     def _setup_pc_salary_button(self):
    
         try:
@@ -2072,9 +2084,178 @@ class ClientDashboard(QWidget):
         self.session.update_activity()
         super().mousePressEvent(event)
 
+    def eventFilter(self, obj, event):
+        """Handle application-level events for zoom"""
+        from PyQt5.QtCore import QEvent
+        # Capture wheel events at app level
+        if event.type() == QEvent.Wheel:
+            # Check if Ctrl is pressed
+            if event.modifiers() & Qt.ControlModifier:
+                delta = event.angleDelta().y()
+                if delta > 0:
+                    self.zoom_in()
+                else:
+                    self.zoom_out()
+                return True  # Consume the event
+        # Check for Ctrl+0 key press
+        elif event.type() == QEvent.KeyPress:
+            if event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_0:
+                self.reset_zoom()
+                return True  # Consume the event
+        return super().eventFilter(obj, event)
+
+    def wheelEvent(self, event):
+        """Handle Ctrl + mouse wheel for zoom"""
+        if event.modifiers() & Qt.ControlModifier:
+            # Zoom in (scroll up) or zoom out (scroll down)
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.zoom_in()
+            else:
+                self.zoom_out()
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
     def keyPressEvent(self, event):
-        self.session.update_activity()
-        super().keyPressEvent(event)
+        # Handle Ctrl+0 to reset zoom
+        if event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_0:
+            self.reset_zoom()
+            event.accept()
+        else:
+            self.session.update_activity()
+            super().keyPressEvent(event)
+
+    def zoom_in(self):
+        """Increase zoom level by 20%"""
+        self.set_zoom_level(self.zoom_level + 20)
+    
+    def zoom_out(self):
+        """Decrease zoom level by 20%"""
+        self.set_zoom_level(self.zoom_level - 20)
+    
+    def reset_zoom(self):
+        """Reset zoom to 100%"""
+        self.set_zoom_level(100)
+    
+    def set_zoom_level(self, level):
+        """Set zoom level and apply to all widgets"""
+        # Clamp zoom level between 50% and 200%
+        level = max(50, min(200, level))
+        if level == self.zoom_level:
+            return  # No change
+        self.zoom_level = level
+        self._apply_zoom_to_all()
+    
+    def _capture_base_fonts(self):
+        """Capture base font sizes for zoom-target widgets only."""
+        for w in self._get_zoom_target_widgets():
+            font = w.font()
+            point_size = font.pointSize()
+            pixel_size = font.pixelSize()
+
+            # Preserve original stylesheet so repeated zoom uses a stable base.
+            base_stylesheet = w.styleSheet() or ""
+            w.setProperty('_base_stylesheet', base_stylesheet)
+            w.setProperty('_base_zoom_height', max(w.minimumHeight(), w.sizeHint().height()))
+            
+            # Handle case where font size is inherited (pointSize == -1)
+            if point_size < 0 and pixel_size < 0:
+                # Get from application default
+                app_font = QApplication.font()
+                point_size = app_font.pointSize()
+                if point_size < 0:
+                    point_size = 10  # Default fallback
+            
+            # Store whichever is valid
+            if point_size > 0:
+                w.setProperty('_base_point_size', point_size)
+            elif pixel_size > 0:
+                w.setProperty('_base_pixel_size', pixel_size)
+
+    def _get_zoom_target_widgets(self):
+        """Return only debit/credit amount inputs from both cash-flow tabs."""
+        targets = []
+        seen = set()
+        for tab in (getattr(self, 'cash_flow_tab_a', None), getattr(self, 'cash_flow_tab_b', None)):
+            if tab is None:
+                continue
+            for inp in list(getattr(tab, 'debit_inputs', {}).values()) + list(getattr(tab, 'credit_inputs', {}).values()):
+                if inp is None:
+                    continue
+                wid = id(inp)
+                if wid in seen:
+                    continue
+                seen.add(wid)
+                targets.append(inp)
+        return targets
+
+    def _scale_stylesheet_font_sizes(self, stylesheet, zoom_factor):
+        """Scale font-size declarations in a stylesheet by zoom factor."""
+        if not stylesheet or "font-size" not in stylesheet:
+            return stylesheet
+
+        def _replace(match):
+            base_size = float(match.group(1))
+            scaled = max(1, min(500, int(round(base_size * zoom_factor))))
+            return f"font-size: {scaled}px"
+
+        return re.sub(
+            r"font-size\s*:\s*([0-9]*\.?[0-9]+)\s*px",
+            _replace,
+            stylesheet,
+            flags=re.IGNORECASE,
+        )
+
+    def _apply_zoom_to_all(self):
+        """Apply zoom only to debit/credit amount input widgets."""
+        zoom_factor = self.zoom_level / 100.0
+        for w in self._get_zoom_target_widgets():
+            font = w.font()
+            new_size = None
+            
+            # Try point size first
+            base_point = w.property('_base_point_size')
+            if base_point is not None:
+                try:
+                    base_point = int(base_point)
+                    if base_point > 0:
+                        new_size = max(1, min(500, int(base_point * zoom_factor)))
+                        font.setPointSize(new_size)
+                        w.setFont(font)
+                except (ValueError, TypeError, OverflowError):
+                    pass
+            
+            # Try pixel size
+            base_pixel = w.property('_base_pixel_size')
+            if base_pixel is not None:
+                try:
+                    base_pixel = int(base_pixel)
+                    if base_pixel > 0:
+                        new_size = max(1, min(500, int(base_pixel * zoom_factor)))
+                        font.setPixelSize(new_size)
+                        w.setFont(font)
+                except (ValueError, TypeError, OverflowError):
+                    pass
+
+            base_stylesheet = w.property('_base_stylesheet')
+            if isinstance(base_stylesheet, str):
+                scaled_stylesheet = self._scale_stylesheet_font_sizes(base_stylesheet, zoom_factor)
+                if new_size is not None and "font-size" not in scaled_stylesheet.lower():
+                    scaled_stylesheet = (scaled_stylesheet + f"\nfont-size: {new_size}px;").strip()
+                if scaled_stylesheet != w.styleSheet():
+                    w.setStyleSheet(scaled_stylesheet)
+
+            base_height = w.property('_base_zoom_height')
+            if base_height is not None:
+                try:
+                    scaled_height = max(20, min(500, int(int(base_height) * zoom_factor)))
+                    w.setMinimumHeight(scaled_height)
+                    w.updateGeometry()
+                except (ValueError, TypeError, OverflowError):
+                    pass
+
+        self.update()
 
     def check_for_updates(self):
         if AUTO_UPDATE_ENABLED:
@@ -3291,20 +3472,26 @@ class ClientDashboard(QWidget):
         try:
             payable_table = "payable_tbl_brand_a"
 
+            def _to_int(val):
+                try:
+                    return int(float(val or 0))
+                except (TypeError, ValueError):
+                    return 0
+
             # palawan_data comes from palawan_tab.get_data() → so_*/po_*/int_* keys
-            sendout_lotes      = int(palawan_data.get('so_lotes', 0) or 0)
+            sendout_lotes      = _to_int(palawan_data.get('so_lotes', 0))
             sendout_capital    = palawan_data.get('so_principal', 0) or 0
             sendout_sc         = palawan_data.get('so_sc', 0) or 0
             sendout_commission = palawan_data.get('so_commission', 0) or 0
             sendout_total      = palawan_data.get('so_total', 0) or 0
 
-            payout_lotes      = int(palawan_data.get('po_lotes', 0) or 0)
+            payout_lotes      = _to_int(palawan_data.get('po_lotes', 0))
             payout_capital    = palawan_data.get('po_principal', 0) or 0
             payout_sc         = palawan_data.get('po_sc', 0) or 0
             payout_commission = palawan_data.get('po_commission', 0) or 0
             payout_total      = palawan_data.get('po_total', 0) or 0
 
-            int_lotes      = int(palawan_data.get('int_lotes', 0) or 0)
+            int_lotes      = _to_int(palawan_data.get('int_lotes', 0))
             int_capital    = palawan_data.get('int_principal', 0) or 0
             int_sc         = palawan_data.get('int_sc', 0) or 0
             int_commission = palawan_data.get('int_commission', 0) or 0
@@ -3940,9 +4127,26 @@ class ClientDashboard(QWidget):
     def _connect_brand_a_auto_calculations(self):
 
         try:
+            from Client.cash_flow_tab import _load_field_config
+
             d_inp  = self.cash_flow_tab_a.debit_inputs
             c_inp  = self.cash_flow_tab_a.credit_inputs
             c_lots = self.cash_flow_tab_a.credit_lotes_inputs
+
+            cfg = _load_field_config(getattr(self, 'db_manager', None))
+            brand_cfg = cfg.get("Brand A", {}) if isinstance(cfg, dict) else {}
+
+            def _sanitize(name):
+                return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+
+            section_col_to_labels = {"debit": {}, "credit": {}}
+            for section in ("debit", "credit"):
+                for entry in brand_cfg.get(section, []):
+                    if not entry:
+                        continue
+                    label = entry[0]
+                    col = entry[2] if len(entry) >= 3 else _sanitize(label)
+                    section_col_to_labels[section].setdefault(col, []).append(label)
             
             # Flag to prevent recalc during signal connection
             recalc_enabled = False
@@ -3973,17 +4177,55 @@ class ClientDashboard(QWidget):
                 field.update()
                 field.repaint()
 
+            def _resolve_label(widget_dict, section, column, fallback_labels):
+                candidates = []
+                candidates.extend(section_col_to_labels.get(section, {}).get(column, []))
+                candidates.extend(fallback_labels)
+
+                seen = set()
+                ordered = []
+                for c in candidates:
+                    if c and c not in seen:
+                        ordered.append(c)
+                        seen.add(c)
+
+                for label in ordered:
+                    if label in widget_dict:
+                        return label
+
+                # Last resort: normalized label match for punctuation/case differences.
+                normalized_widget_labels = {
+                    re.sub(r"[^a-z0-9]+", "", lbl.lower()): lbl
+                    for lbl in widget_dict.keys()
+                }
+                for label in ordered:
+                    normalized = re.sub(r"[^a-z0-9]+", "", label.lower())
+                    resolved = normalized_widget_labels.get(normalized)
+                    if resolved:
+                        return resolved
+                return None
+
+            def _get_value(section, column, widget_dict, fallback_labels):
+                label = _resolve_label(widget_dict, section, column, fallback_labels)
+                return _v(widget_dict, label) if label else 0.0
+
+            def _set_value(section, column, widget_dict, fallback_labels, value):
+                label = _resolve_label(widget_dict, section, column, fallback_labels)
+                if label:
+                    _set(widget_dict[label], value)
+
             targets = [
-                ("S.C",          "(Lotes JEW NEW + Lotes JEW RENEW) × 5"),
-                ("O.s.f Sto.",   "(Empeno STO NEW + Empeno STO RENEW) × 0.75%"),
-                ("Sto. A.I",     "(Empeno STO NEW + Empeno STO RENEW) × 20%"),
-                ("Silver A.I",   "Empeno Silver × 20%"),
-                ("O.s.f Silver", "Empeno Silver × 0.75%"),
-                ("Motor A.I",    "Empeno Motor/Car × 10%"),
-                ("O.s.f Motor",  "Empeno Motor/Car × 0.75%"),
+                ("service_charge", ["S.C"], "(Lotes JEW NEW + Lotes JEW RENEW) × 5"),
+                ("osf_storage", ["O.s.f Sto.", "OSF STO"], "(Empeno STO NEW + Empeno STO RENEW) × 0.75%"),
+                ("storage_ai", ["Sto. A.I", "STO AI"], "(Empeno STO NEW + Empeno STO RENEW) × 20%"),
+                ("silver_ai", ["Silver A.I", "SILVER AI"], "Empeno Silver × 20%"),
+                ("osf_silver", ["O.s.f Silver", "OSF SILVER"], "Empeno Silver × 0.75%"),
+                ("motor_ai", ["Motor A.I", "MOTOR AI"], "Empeno Motor/Car × 10%"),
+                ("osf_motor", ["O.s.f Motor", "OSF MOTOR"], "Empeno Motor/Car × 0.75%"),
             ]
-            for label, tip in targets:
-                if label in d_inp:
+            for col, fallback_labels, tip in targets:
+                label = _resolve_label(d_inp, "debit", col, fallback_labels)
+                if label:
                     _set_readonly(d_inp[label], tip)
 
             def recalc(*_):
@@ -3991,48 +4233,42 @@ class ClientDashboard(QWidget):
                 if not recalc_enabled:
                     return
 
-                lotes_jew_new   = _v(c_lots, "Empeno JEW. (NEW)")
-                lotes_jew_renew = _v(c_lots, "Empeno JEW (RENEW)")
+                lotes_jew_new = _get_value("credit", "empeno_jew_new", c_lots, ["Empeno JEW. (NEW)"])
+                lotes_jew_renew = _get_value("credit", "empeno_jew_renew", c_lots, ["Empeno JEW (RENEW)"])
                 sc_value = (lotes_jew_new + lotes_jew_renew) * 5
-                if "S.C" in d_inp:
-                    _set(d_inp["S.C"], sc_value)
+                _set_value("debit", "service_charge", d_inp, ["S.C"], sc_value)
 
-                sto_new   = _v(c_inp, "Empeno STO. (NEW)")
-                sto_renew = _v(c_inp, "Fund Empeno STO. (RENEW)")
+                sto_new = _get_value("credit", "empeno_sto_new", c_inp, ["Empeno STO. (NEW)"])
+                sto_renew = _get_value("credit", "fund_empeno_sto_renew", c_inp, ["Fund Empeno STO. (RENEW)"])
                 sto_base  = sto_new + sto_renew
+                _set_value("debit", "osf_storage", d_inp, ["O.s.f Sto.", "OSF STO"], sto_base * 0.0075)
+                _set_value("debit", "storage_ai", d_inp, ["Sto. A.I", "STO AI"], sto_base * 0.20)
 
-                if "O.s.f Sto." in d_inp:
-                    _set(d_inp["O.s.f Sto."], sto_base * 0.0075)
-                if "Sto. A.I" in d_inp:
-                    _set(d_inp["Sto. A.I"], sto_base * 0.20)
-                silver = _v(c_inp, "Empeno silver")
-                if "Silver A.I" in d_inp:
-                    _set(d_inp["Silver A.I"], silver * 0.20)
-                if "O.s.f Silver" in d_inp:
-                    _set(d_inp["O.s.f Silver"], silver * 0.0075)
+                silver = _get_value("credit", "empeno_silver", c_inp, ["Empeno silver", "Empeno Silver"])
+                _set_value("debit", "silver_ai", d_inp, ["Silver A.I", "SILVER AI"], silver * 0.20)
+                _set_value("debit", "osf_silver", d_inp, ["O.s.f Silver", "OSF SILVER"], silver * 0.0075)
 
-                motor = _v(c_inp, "Empeno Motor/Car")
-                if "Motor A.I" in d_inp:
-                    _set(d_inp["Motor A.I"], motor * 0.10)
-                if "O.s.f Motor" in d_inp:
-                    _set(d_inp["O.s.f Motor"], motor * 0.0075)
+                motor = _get_value("credit", "empeno_motor_car", c_inp, ["Empeno Motor/Car"])
+                _set_value("debit", "motor_ai", d_inp, ["Motor A.I", "MOTOR AI"], motor * 0.10)
+                _set_value("debit", "osf_motor", d_inp, ["O.s.f Motor", "OSF MOTOR"], motor * 0.0075)
 
                 self.recalculate_all()
 
-            sources = [
-                (c_lots, "Empeno JEW. (NEW)"),
-                (c_lots, "Empeno JEW (RENEW)"),
-                (c_inp,  "Empeno STO. (NEW)"),
-                (c_inp,  "Fund Empeno STO. (RENEW)"),
-                (c_inp,  "Empeno silver"),
-                (c_inp,  "Empeno Motor/Car"),
+            source_specs = [
+                ("credit", "empeno_jew_new", c_lots, ["Empeno JEW. (NEW)"]),
+                ("credit", "empeno_jew_renew", c_lots, ["Empeno JEW (RENEW)"]),
+                ("credit", "empeno_sto_new", c_inp, ["Empeno STO. (NEW)"]),
+                ("credit", "fund_empeno_sto_renew", c_inp, ["Fund Empeno STO. (RENEW)"]),
+                ("credit", "empeno_silver", c_inp, ["Empeno silver", "Empeno Silver"]),
+                ("credit", "empeno_motor_car", c_inp, ["Empeno Motor/Car"]),
             ]
-            for widget_dict, key in sources:
-                w = widget_dict.get(key)
+            for section, col, widget_dict, fallback_labels in source_specs:
+                resolved_label = _resolve_label(widget_dict, section, col, fallback_labels)
+                w = widget_dict.get(resolved_label) if resolved_label else None
                 if w:
                     w.textChanged.connect(recalc)
                 else:
-                    logger.debug("Auto-calc source field not found: %s", key)
+                    logger.debug("Auto-calc source field not found: section=%s col=%s", section, col)
             
             # Enable recalc now that all signals are connected
             recalc_enabled = True

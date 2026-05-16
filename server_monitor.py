@@ -56,6 +56,7 @@ try:
     RICH = True
 except ImportError:
     RICH = False
+    Console = Live = Table = Panel = Columns = Text = box = None
     print("[WARN] Install rich for a nicer display:  pip install rich")
 
 try:

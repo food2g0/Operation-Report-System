@@ -38,7 +38,7 @@ class PingMonitor(QObject):
         self._hostname = self._get_hostname()
         self._db = None
         self._session_id = None  # PK of the current session row
-        self._ip_address = self._get_ip_address()
+        self._ip_address = None  # Lazy-loaded on first use
         self._activity_table_ok = False
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -49,6 +49,10 @@ class PingMonitor(QObject):
         self._username = username
         self._role = role
         self._session_id = None
+
+        # Lazy-load IP address on first login (not on import)
+        if self._ip_address is None:
+            self._ip_address = self._get_ip_address()
 
         self._ensure_table()
         self._session_id = self._create_session()

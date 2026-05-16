@@ -240,7 +240,7 @@ class PalawanPayableContainer(QWidget):
     def get_data(self) -> dict:
         """Return current field values as a dict for DB insertion."""
         def _int(f): 
-            try: return int(f.text().strip() or 0)
+            try: return int(float(f.text().strip() or 0))
             except ValueError: return 0
         def _dec(f):
             try: return float(f.text().strip() or 0)
@@ -269,7 +269,11 @@ class PalawanPayableContainer(QWidget):
         """Populate fields from a DB row dict."""
         def _set_int(f, val):
             f.blockSignals(True)
-            f.setText(str(int(val or 0)) if (val or 0) else "")
+            try:
+                n = int(float(val or 0))
+            except (TypeError, ValueError):
+                n = 0
+            f.setText(str(n) if n else "")
             f.blockSignals(False)
 
         def _set_dec(f, val):

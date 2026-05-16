@@ -300,7 +300,7 @@ class PalawanDetailsTab(QWidget):
         Returns same keys as PalawanPayableTab so _save_palawan_to_payable
         can use a single code path for both brands."""
         def _int(f):
-            try: return int(f.text().strip() or 0)
+            try: return int(float(f.text().strip() or 0))
             except ValueError: return 0
 
         def _dec(f):
@@ -357,7 +357,11 @@ class PalawanDetailsTab(QWidget):
         or old-format keys (palawan_sendout_*) from daily_reports tables."""
         def _set_int(f, val):
             f.blockSignals(True)
-            f.setText(str(int(val or 0)) if (val or 0) else "")
+            try:
+                n = int(float(val or 0))
+            except (TypeError, ValueError):
+                n = 0
+            f.setText(str(n) if n else "")
             f.blockSignals(False)
 
         def _set_dec(f, val):
