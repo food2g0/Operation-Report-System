@@ -9,8 +9,16 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtCore import Qt
-
+from PyQt5.QtWidgets import QApplication      # remove if unused
+from PyQt5.QtWidgets import QAbstractItemView
 from Client.ui_scaling import _sz
+
+
+class PopupCombo(QComboBox):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+    
 
 
 # db_manager is NOT created here — it is passed in from the dashboard (self.parent.db_manager)
@@ -98,54 +106,68 @@ def _sanitize_column(name: str) -> str:
 
 class MCCurrencyDialog(QDialog):
 
-    
-    CURRENCIES = [
-        "USD - US Dollar",
-        "EUR - Euro",
-        "JPY - Japanese Yen",
-        "KRW - Korean Won",
-        "CNY - Chinese Yuan",
-        "SGD - Singapore Dollar",
-        "AED - UAE Dirham",
-        "SAR - Saudi Riyal",
-        "AUD - Australian Dollar",
-        "CAD - Canadian Dollar",
-        "GBP - British Pound",
-        "HKD - Hong Kong Dollar",
-        "CHF - Swiss Franc",
-        "NOK - Norwegian Krone",
-        "SEK - Swedish Krona",
-        "THB - Thai Baht",
-        "MYR - Malaysian Ringgit",
-        "IDR - Indonesian Rupiah",
-        "VND - Vietnamese Dong",
-        "TWD - Taiwan Dollar"
-    ]
-    
     def __init__(self, parent, field_type, existing_entries=None):
         super().__init__(parent)
-        self.field_type = field_type 
+        self.field_type = field_type
         self.entries = existing_entries or []
         self.entry_widgets = []
-        
+        self._parent_overlay_was_visible = False
+        # REMOVED: self.popup_combo = PopupCombo()
+
         self.setWindowTitle(f"{field_type} - {'Selling' if field_type == 'MC In' else 'Buying'} Currency")
         self.setMinimumWidth(750)
         self.setMinimumHeight(400)
-        
+
+        try:
+            from currency_manager import get_all_currencies
+            self.currencies = get_all_currencies(active_only=True)
+            if not self.currencies:
+                raise Exception("empty")
+        except Exception:
+            self.currencies = [
+                "USD - US Dollar", "EUR - Euro", "JPY - Japanese Yen",
+                "KRW - Korean Won", "CNY - Chinese Yuan", "SGD - Singapore Dollar",
+                "AED - UAE Dirham", "SAR - Saudi Riyal", "AUD - Australian Dollar",
+                "CAD - Canadian Dollar", "GBP - British Pound", "HKD - Hong Kong Dollar",
+                "CHF - Swiss Franc", "NOK - Norwegian Krone", "SEK - Swedish Krona",
+                "THB - Thai Baht", "MYR - Malaysian Ringgit", "IDR - Indonesian Rupiah",
+                "VND - Vietnamese Dong", "TWD - Taiwan Dollar"
+            ]
+
         self.setup_ui()
-        self.load_existing_entries()
-    
+
+    def showEvent(self, event):
+        try:
+            p = self.parent()
+            if p and hasattr(p, 'loading_overlay') and p.loading_overlay.isVisible():
+                self._parent_overlay_was_visible = True
+                p.loading_overlay.hide()
+        except Exception:
+            pass
+        super().showEvent(event)
+
+    def closeEvent(self, event):
+        try:
+            p = self.parent()
+            if getattr(self, '_parent_overlay_was_visible', False) and p and hasattr(p, 'loading_overlay'):
+                p.loading_overlay.show()
+                try:
+                    p.loading_overlay.raise_()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        super().closeEvent(event)
+
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
-   
+
         header_text = "SELLING Currency (Money Coming In)" if self.field_type == "MC In" else "BUYING Currency (Money Going Out)"
         header_color = "#22C55E" if self.field_type == "MC In" else "#DC2626"
-        
+
         header = QLabel(f"💱 {header_text}")
         header.setStyleSheet(f"font-size: 14px; font-weight: 800; color: {header_color}; padding: 10px;")
         layout.addWidget(header)
-        
 
         instructions = QLabel(
             "Enter currency details: Pcs × Denomination × Rate = Total PHP\n"
@@ -153,58 +175,55 @@ class MCCurrencyDialog(QDialog):
         )
         instructions.setStyleSheet("font-size: 13px; color: #64748B; padding: 5px;")
         layout.addWidget(instructions)
-        
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setMinimumHeight(200)
-        
+        # REMOVED: setFrameShape, viewport stylesheet — these cause clipping
+
         self.entries_widget = QWidget()
         self.entries_layout = QVBoxLayout(self.entries_widget)
         scroll.setWidget(self.entries_widget)
         layout.addWidget(scroll)
-        
-    
-        if not self.entries:
+
+        if self.entries:
+            self.load_existing_entries()
+        else:
             self.add_entry()
-        
 
         btn_layout = QHBoxLayout()
-        
+
         add_btn = QPushButton("➕ Add Entry")
         add_btn.setStyleSheet("""
             QPushButton {
-                background-color: #22C55E;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: 600;
+                background-color: #22C55E; color: white; border: none;
+                padding: 8px 16px; border-radius: 6px; font-weight: 600;
             }
             QPushButton:hover { background-color: #16A34A; }
         """)
         add_btn.clicked.connect(self.add_entry)
-        
+
         remove_btn = QPushButton("➖ Remove Last")
         remove_btn.setStyleSheet("""
             QPushButton {
-                background-color: #FFFFFF;
-                color: #EF4444;
-                border: 2px solid #EF4444;
-                padding: 8px 16px;
-                border-radius: 6px;
-                font-weight: 600;
+                background-color: #FFFFFF; color: #EF4444;
+                border: 2px solid #EF4444; padding: 8px 16px;
+                border-radius: 6px; font-weight: 600;
             }
             QPushButton:hover { background-color: #FEF2F2; }
         """)
         remove_btn.clicked.connect(self.remove_entry)
-        
+
+        refresh_btn = QPushButton("🔄 Refresh Currencies")
+        refresh_btn.setStyleSheet("padding: 8px 12px;")
+        refresh_btn.clicked.connect(self._reload_currencies)
+
         btn_layout.addWidget(add_btn)
         btn_layout.addWidget(remove_btn)
+        btn_layout.addWidget(refresh_btn)
         btn_layout.addStretch()
         layout.addLayout(btn_layout)
-        
-        # Total display
+
         total_frame = QFrame()
         total_frame.setStyleSheet(f"""
             QFrame {{
@@ -215,80 +234,85 @@ class MCCurrencyDialog(QDialog):
             }}
         """)
         total_layout = QHBoxLayout(total_frame)
-        
         total_label = QLabel("TOTAL PHP:")
         total_label.setStyleSheet(f"font-weight: 700; color: {header_color};")
         self.total_display = QLabel("₱0.00")
         self.total_display.setStyleSheet(f"font-size: 18px; font-weight: 800; color: {header_color};")
-        
         total_layout.addWidget(total_label)
         total_layout.addWidget(self.total_display)
         total_layout.addStretch()
         layout.addWidget(total_frame)
-        
 
         dialog_btn_layout = QHBoxLayout()
-        
         cancel_btn = QPushButton("Cancel")
         cancel_btn.setStyleSheet("""
             QPushButton {
-                background-color: #F1F5F9;
-                color: #475569;
-                padding: 10px 24px;
-                border-radius: 6px;
-                font-weight: 600;
+                background-color: #F1F5F9; color: #475569;
+                padding: 10px 24px; border-radius: 6px; font-weight: 600;
             }
             QPushButton:hover { background-color: #E2E8F0; }
         """)
         cancel_btn.clicked.connect(self.reject)
-        
+
         ok_btn = QPushButton("Apply")
         ok_btn.setStyleSheet(f"""
             QPushButton {{
-                background-color: {header_color};
-                color: white;
-                padding: 10px 24px;
-                border-radius: 6px;
-                font-weight: 600;
+                background-color: {header_color}; color: white;
+                padding: 10px 24px; border-radius: 6px; font-weight: 600;
             }}
             QPushButton:hover {{ opacity: 0.9; }}
         """)
         ok_btn.clicked.connect(self.accept)
-        
+
         dialog_btn_layout.addStretch()
         dialog_btn_layout.addWidget(cancel_btn)
         dialog_btn_layout.addWidget(ok_btn)
         layout.addLayout(dialog_btn_layout)
-    
+
     def add_entry(self, currency_idx=0, quantity="", denomination="", rate=""):
         entry_frame = QFrame()
+        # KEY FIX: removed border-radius and replaced with a simpler style
+        # that does NOT trigger Qt's clipping of child popups
         entry_frame.setStyleSheet("""
             QFrame {
                 background-color: #F8FAFC;
                 border: 1px solid #E2E8F0;
-                border-radius: 8px;
                 padding: 8px;
                 margin: 2px 0;
             }
         """)
-        
+
         entry_layout = QHBoxLayout(entry_frame)
-        
 
         entry_num = len(self.entry_widgets) + 1
         num_label = QLabel(f"#{entry_num}")
         num_label.setStyleSheet("font-weight: 700; color: #3B82F6; min-width: 30px;")
         entry_layout.addWidget(num_label)
-        
-   
+
+        # Use plain QComboBox — no PopupCombo needed
         currency_combo = QComboBox()
-        currency_combo.addItems(self.CURRENCIES)
+        currency_combo.addItems(self.currencies)
         currency_combo.setCurrentIndex(currency_idx)
-        currency_combo.setMaxVisibleItems(20)
-        currency_combo.setStyleSheet("min-width: 160px; padding: 5px;")
+        currency_combo.setMaxVisibleItems(15)
+        currency_combo.setStyleSheet("""
+    QComboBox {
+        min-width: 160px;
+        padding: 5px;
+        background-color: white;
+        color: #1E293B;
+        border: 1px solid #CBD5E1;
+    }
+    QComboBox QAbstractItemView {
+        background-color: white;
+        color: #1E293B;
+        selection-background-color: #3B82F6;
+        selection-color: white;
+        border: 1px solid #CBD5E1;
+        outline: none;
+    }
+""")
         entry_layout.addWidget(QLabel("Currency:"))
         entry_layout.addWidget(currency_combo)
-        
 
         qty_input = QLineEdit()
         qty_input.setValidator(QIntValidator(0, 999999))
@@ -298,8 +322,7 @@ class MCCurrencyDialog(QDialog):
         qty_input.textChanged.connect(self.calculate_total)
         entry_layout.addWidget(QLabel("Pcs:"))
         entry_layout.addWidget(qty_input)
-        
-  
+
         denom_input = QLineEdit()
         denom_input.setValidator(QDoubleValidator(0.0, 999999.99, 2))
         denom_input.setPlaceholderText("Denom")
@@ -308,7 +331,6 @@ class MCCurrencyDialog(QDialog):
         denom_input.textChanged.connect(self.calculate_total)
         entry_layout.addWidget(QLabel("Denom:"))
         entry_layout.addWidget(denom_input)
-        
 
         rate_input = QLineEdit()
         rate_input.setValidator(QDoubleValidator(0.0, 999999.99, 2))
@@ -318,13 +340,12 @@ class MCCurrencyDialog(QDialog):
         rate_input.textChanged.connect(self.calculate_total)
         entry_layout.addWidget(QLabel("Rate:"))
         entry_layout.addWidget(rate_input)
-        
 
         subtotal_label = QLabel("₱0.00")
         subtotal_label.setStyleSheet("font-weight: 700; min-width: 100px;")
         entry_layout.addWidget(QLabel("Total:"))
         entry_layout.addWidget(subtotal_label)
-        
+
         self.entries_layout.addWidget(entry_frame)
         self.entry_widgets.append({
             'frame': entry_frame,
@@ -335,9 +356,30 @@ class MCCurrencyDialog(QDialog):
             'rate_input': rate_input,
             'subtotal_label': subtotal_label
         })
-        
+
         self.calculate_total()
-    
+
+    def _reload_currencies(self):
+        try:
+            from currency_manager import get_all_currencies
+            new = get_all_currencies(active_only=True) or []
+            if not new:
+                return
+            self.currencies = new
+            for entry in self.entry_widgets:
+                combo = entry.get('currency_combo')
+                if combo is None:
+                    continue
+                cur = combo.currentText()
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItems(self.currencies)
+                idx = combo.findText(cur)
+                combo.setCurrentIndex(idx if idx >= 0 else 0)
+                combo.blockSignals(False)
+        except Exception:
+            return
+
     def remove_entry(self):
         if len(self.entry_widgets) > 1:
             entry = self.entry_widgets.pop()
@@ -345,11 +387,11 @@ class MCCurrencyDialog(QDialog):
             entry['frame'].deleteLater()
             self.renumber_entries()
             self.calculate_total()
-    
+
     def renumber_entries(self):
         for i, entry in enumerate(self.entry_widgets):
             entry['num_label'].setText(f"#{i + 1}")
-    
+
     def calculate_total(self):
         total = 0.0
         for entry in self.entry_widgets:
@@ -357,17 +399,16 @@ class MCCurrencyDialog(QDialog):
                 qty = int(entry['qty_input'].text().strip()) if entry['qty_input'].text().strip() else 0
                 denom = float(entry['denom_input'].text().strip()) if entry['denom_input'].text().strip() else 0.0
                 rate = float(entry['rate_input'].text().strip()) if entry['rate_input'].text().strip() else 0.0
-
                 subtotal = qty * denom * rate
                 entry['subtotal_label'].setText(f"₱{subtotal:,.2f}")
                 total += subtotal
             except (ValueError, AttributeError):
                 entry['subtotal_label'].setText("₱0.00")
-        
+
         if hasattr(self, 'total_display'):
             self.total_display.setText(f"₱{total:,.2f}")
         return total
-    
+
     def load_existing_entries(self):
         for entry_data in self.entries:
             self.add_entry(
@@ -376,9 +417,8 @@ class MCCurrencyDialog(QDialog):
                 denomination=str(entry_data.get('denomination', '')),
                 rate=str(entry_data.get('rate', ''))
             )
-    
+
     def get_entries(self):
-       
         entries = []
         for entry in self.entry_widgets:
             qty_text = entry['qty_input'].text().strip()
@@ -387,20 +427,18 @@ class MCCurrencyDialog(QDialog):
             qty = int(qty_text) if qty_text else 0
             denom = float(denom_text) if denom_text else 0.0
             rate = float(rate_text) if rate_text else 0.0
-            total_php = qty * denom * rate
             entries.append({
                 'currency_index': entry['currency_combo'].currentIndex(),
                 'currency': entry['currency_combo'].currentText(),
                 'quantity': qty,
                 'denomination': denom,
                 'rate': rate,
-                'total_php': total_php
+                'total_php': qty * denom * rate
             })
         return entries
-    
+
     def get_total(self):
         return self.calculate_total()
-
 
 class CashFlowTab(QWidget):
     def __init__(self, parent, brand_name="Brand A"):

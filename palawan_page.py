@@ -39,18 +39,15 @@ class PalawanPage(QWidget):
         # Corporation selector
         self.corp_label = QLabel("Select Corporation:")
         self.corp_selector = QComboBox()
-        self.corp_selector.currentTextChanged.connect(self.populate_table)
 
         # OS selector (hidden by default)
         self.os_label = QLabel("Select Group:")
         self.os_selector = QComboBox()
-        self.os_selector.currentTextChanged.connect(self.populate_table)
         self.os_label.setVisible(False)
         self.os_selector.setVisible(False)
 
         # Date selector
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         self.date_selector = self.date_range_widget  # backward-compat
 
         # Registration status filter
@@ -58,7 +55,15 @@ class PalawanPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Not Registered", "not_registered")
         self.reg_filter_selector.addItem("All Branches", "all")
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
+
+        # Load Report button
+        self.load_btn = QPushButton("Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#2980b9;color:white;padding:6px 18px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#2471a3;}"
+        )
+        self.load_btn.clicked.connect(self.populate_table)
 
         # Add selectors to layout
         self.layout.addWidget(self.corp_label)
@@ -69,6 +74,7 @@ class PalawanPage(QWidget):
         self.layout.addWidget(self.date_range_widget)
         self.layout.addWidget(QLabel("Branch Status:"))
         self.layout.addWidget(self.reg_filter_selector)
+        self.layout.addWidget(self.load_btn)
 
         # Table
         self.table = QTableWidget()

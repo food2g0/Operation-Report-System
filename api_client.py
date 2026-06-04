@@ -8,6 +8,8 @@ import logging
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,18 @@ class APIClient:
         self.username = None
         self.role = None
         self.session = requests.Session()
+        self.last_error = None
+        retry = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "PUT", "DELETE"],
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
     
     # ─────────────────────────────────────────────────────────────────────────
     # AUTHENTICATION
@@ -108,17 +122,33 @@ class APIClient:
             if response.status_code == 401:
                 logger.warning("Unauthorized - token may have expired")
                 self.token = None
+                self.last_error = "Session expired. Please log in again."
                 return None
             
             if response.status_code in [200, 201]:
+                self.last_error = None
                 return response.json()
             else:
                 logger.error(f"API error {response.status_code}: {response.text}")
+                if response.status_code == 429:
+                    self.last_error = "Server is busy (rate limited). Please retry shortly."
+                elif response.status_code >= 500:
+                    self.last_error = "Server error occurred. Please try again in a moment."
+                else:
+                    self.last_error = f"Request failed (HTTP {response.status_code})."
                 return None
         
         except Exception as e:
             logger.error(f"Response handling error: {e}")
+            self.last_error = "Received an invalid response from server."
             return None
+
+    def _network_error_message(self, e: requests.RequestException) -> str:
+        if isinstance(e, requests.Timeout):
+            return "Request timed out. Internet may be slow."
+        if isinstance(e, requests.ConnectionError):
+            return "Unable to reach server. Check your internet connection."
+        return "Network request failed. Please try again."
     
     def _get(self, endpoint: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Make GET request"""
@@ -131,6 +161,7 @@ class APIClient:
             return self._handle_response(response)
         except requests.RequestException as e:
             logger.error(f"GET request failed: {e}")
+            self.last_error = self._network_error_message(e)
             return None
     
     def _post(self, endpoint: str, data: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
@@ -144,6 +175,7 @@ class APIClient:
             return self._handle_response(response)
         except requests.RequestException as e:
             logger.error(f"POST request failed: {e}")
+            self.last_error = self._network_error_message(e)
             return None
     
     def _put(self, endpoint: str, data: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
@@ -157,6 +189,7 @@ class APIClient:
             return self._handle_response(response)
         except requests.RequestException as e:
             logger.error(f"PUT request failed: {e}")
+            self.last_error = self._network_error_message(e)
             return None
     
     def _delete(self, endpoint: str) -> Optional[Dict[str, Any]]:
@@ -169,6 +202,7 @@ class APIClient:
             return self._handle_response(response)
         except requests.RequestException as e:
             logger.error(f"DELETE request failed: {e}")
+            self.last_error = self._network_error_message(e)
             return None
     
     # ─────────────────────────────────────────────────────────────────────────
@@ -368,9 +402,10 @@ class APIClient:
         try:
             response = self.session.get(
                 f"{self.base_url}/api/v1/health",
-                timeout=self.timeout
+                timeout=(3, self.timeout)
             )
             return response.status_code == 200
         except requests.RequestException as e:
             logger.error(f"Health check failed: {e}")
+            self.last_error = self._network_error_message(e)
             return False

@@ -32,6 +32,7 @@ from global_other_services_page import GlobalOtherServicesPage
 from ft_ho_page import FTHOPage
 from depo_br_page import DepoBRPage
 from review_summary_page import ReviewSummaryPage
+from maintenance_mode_ui import MaintenanceNotificationBar
 
 
 try:
@@ -47,12 +48,14 @@ except ImportError:
 class AdminDashboard(QWidget):
     logout_requested = pyqtSignal()
     
-    def __init__(self, account_type=2):
+    def __init__(self, account_type=2, os_group=""):
         super().__init__()
- 
+
         self.account_type = account_type
+        self.os_group = os_group or ""   # assigned group; "" = no restriction
         brand_label = "Brand A" if account_type == 1 else "Brand B"
-        self.setWindowTitle(f"Admin Dashboard ({brand_label}) - Cash Management System")
+        group_label = f" — {self.os_group}" if self.os_group else ""
+        self.setWindowTitle(f"Admin Dashboard ({brand_label}){group_label} - Cash Management System")
         self.db = db_manager
         self._update_checker_threads = []  
         
@@ -64,6 +67,9 @@ class AdminDashboard(QWidget):
         self._session_timer = QTimer(self)
         self._session_timer.timeout.connect(self._check_session_timeout)
         self._session_timer.start(60000)  
+
+        # Initialize maintenance mode UI
+        self.maintenance_bar = MaintenanceNotificationBar(self)
 
         self.debit_inputs = {}
         self.credit_inputs = {}
@@ -140,14 +146,18 @@ class AdminDashboard(QWidget):
 
 
         self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
-        
-        self._ensure_review_table()
+
         self.setup_styles()
         self.build_ui()
-        self.load_corporations()
-        
-        # Capture base fonts after UI is built
+
+        # Capture base fonts after UI is built (no DB needed)
         self._capture_base_fonts()
+
+        # Defer all DB-touching startup work until after the window is shown.
+        # QTimer.singleShot(0) fires on the very next event-loop tick — the
+        # window is painted first, then these run, so users see the UI immediately.
+        QTimer.singleShot(0,   self.load_corporations)     # populates corp/group selectors
+        QTimer.singleShot(200, self._ensure_review_table)  # DDL check; not time-critical
         
         # Install event filter on application for zoom
         QApplication.instance().installEventFilter(self)
@@ -506,83 +516,105 @@ class AdminDashboard(QWidget):
             QDateEdit {
                 border: 1px solid #bdc3c7;
                 border-radius: 4px;
-                padding: 5px 8px;
+                padding: 5px 28px 5px 8px;
                 background-color: white;
                 font-size: 11px;
                 min-height: 25px;
-                min-width: 120px;
+                min-width: 130px;
             }
 
             QDateEdit:focus {
                 border: 2px solid #3498db;
             }
 
-            /* Calendar Popup */
+            QDateEdit::drop-down {
+                subcontrol-origin: border;
+                subcontrol-position: center right;
+                width: 28px;
+                border-left: 1px solid #bdc3c7;
+                background-color: #ecf0f1;
+                border-top-right-radius: 4px;
+                border-bottom-right-radius: 4px;
+            }
+
+            QDateEdit::drop-down:hover {
+                background-color: #d5dbdb;
+            }
+
+            QDateEdit::down-arrow {
+                width: 10px;
+                height: 10px;
+            }
+
+            /* Calendar Popup — Standardized */
             QCalendarWidget {
-                background-color: white;
+                min-width: 340px;
+                min-height: 280px;
+                background: white;
+                border: 1px solid #dee2e6;
+                border-radius: 6px;
             }
 
             QCalendarWidget QWidget#qt_calendar_navigationbar {
-                background-color: #3498db;
-                min-height: 36px;
+                background-color: #343a40;
+                min-height: 42px;
+                padding: 4px 6px;
+                border-radius: 4px 4px 0 0;
             }
 
             QCalendarWidget QToolButton {
-                color: white;
-                font-size: 13px;
+                color: #ecf0f1;
+                font-size: 14px;
                 font-weight: bold;
                 background-color: transparent;
-                padding: 4px 8px;
+                padding: 6px 10px;
                 border-radius: 4px;
+                margin: 2px;
             }
 
             QCalendarWidget QToolButton:hover {
-                background-color: #2980b9;
+                background-color: #007bff;
+                color: white;
             }
 
-            QCalendarWidget QToolButton::menu-indicator {
-                image: none;
-                width: 0px;
+            QCalendarWidget QToolButton:pressed {
+                background-color: #0056b3;
+                color: white;
             }
 
             QCalendarWidget QSpinBox {
-                color: white;
-                background-color: #3498db;
+                color: #2c3e50;
+                background-color: #ecf0f1;
                 font-size: 13px;
                 font-weight: bold;
-                border: none;
-                selection-background-color: #2980b9;
+                border: 1px solid #bdc3c7;
+                border-radius: 4px;
+                padding: 4px 8px;
+                selection-background-color: #007bff;
                 selection-color: white;
-            }
-
-            QCalendarWidget QSpinBox::up-button,
-            QCalendarWidget QSpinBox::down-button {
-                subcontrol-origin: border;
-                width: 16px;
-                height: 12px;
-            }
-
-            QCalendarWidget QMenu {
-                background-color: white;
-                color: #2c3e50;
-                font-size: 12px;
-            }
-
-            QCalendarWidget QMenu::item:selected {
-                background-color: #3498db;
-                color: white;
             }
 
             QCalendarWidget QAbstractItemView {
-                background-color: white;
-                color: #2c3e50;
-                selection-background-color: #3498db;
+                background: white;
+                selection-background-color: #007bff;
                 selection-color: white;
-                font-size: 11px;
+                font-size: 12px;
+                alternate-background-color: #f8f9fa;
             }
 
-            QCalendarWidget QAbstractItemView:enabled {
-                color: #2c3e50;
+            QCalendarWidget QAbstractItemView::item {
+                padding: 6px;
+                border-radius: 4px;
+            }
+
+            QCalendarWidget QAbstractItemView::item:alternate {
+                background-color: #f8f9fa;
+            }
+
+            QCalendarWidget QAbstractItemView::item:selected {
+                background-color: #007bff;
+                color: white;
+                font-weight: bold;
             }
 
             QCalendarWidget QAbstractItemView:disabled {
@@ -626,12 +658,26 @@ class AdminDashboard(QWidget):
                 border-bottom: 3px solid #3498db;
             }
         """)
+        # Inject calendar PNG icon into the QDateEdit dropdown button.
+        # Appending overrides the earlier ::down-arrow rule via CSS cascade.
+        _cal = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'assets', 'calendar.png'
+        ).replace('\\', '/')
+        self.setStyleSheet(self.styleSheet() + f"""
+            QDateEdit::down-arrow {{
+                image: url({_cal});
+                width: 14px;
+                height: 14px;
+            }}
+        """)
 
     def build_ui(self):
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(10, 8, 10, 8)
         main_layout.setSpacing(6)
 
+        # Add maintenance notification bar
+        main_layout.addWidget(self.maintenance_bar)
 
         header_frame = QFrame()
         header_frame.setStyleSheet("""
@@ -695,8 +741,21 @@ class AdminDashboard(QWidget):
         """)
         logout_button.clicked.connect(self.handle_logout)
         
+        ver_lbl = QLabel(f"v{__version__}")
+        ver_lbl.setStyleSheet("""
+            QLabel {
+                color: rgba(255,255,255,0.6);
+                font-size: 11px;
+                font-weight: 600;
+                padding: 0 8px;
+                background: transparent;
+            }
+        """)
+        ver_lbl.setToolTip(f"Operation Report System v{__version__}")
+
         header_layout.addWidget(title_label)
         header_layout.addStretch()
+        header_layout.addWidget(ver_lbl)
         if AUTO_UPDATE_ENABLED:
             header_layout.addWidget(update_button)
         header_layout.addWidget(logout_button)
@@ -1021,9 +1080,30 @@ class AdminDashboard(QWidget):
         date_label = QLabel("Date:")
         date_label.setProperty("class", "header")
         self.date_picker = QDateEdit()
-        self.date_picker.setDisplayFormat("yyyy-MM-dd")
+        self.date_picker.setDisplayFormat("dd MMM yyyy")
         self.date_picker.setCalendarPopup(True)
         self.date_picker.setDate(QDate.currentDate())
+        # Apply standardized calendar styling to match other tabs
+        _cal_style = (
+            "QDateEdit{border:1px solid #bdc3c7;border-radius:4px;padding:5px 28px 5px 8px;"
+            "background-color:white;font-size:11px;min-height:25px;min-width:130px;}"
+            "QDateEdit:focus{border:2px solid #3498db;}"
+            "QDateEdit::drop-down{subcontrol-origin:border;subcontrol-position:center right;"
+            "width:28px;border-left:1px solid #bdc3c7;background-color:#ecf0f1;border-top-right-radius:4px;border-bottom-right-radius:4px;}"
+            "QDateEdit::drop-down:hover{background-color:#d5dbdb;}"
+            "QDateEdit::down-arrow{width:10px;height:10px;}"
+            "QCalendarWidget{min-width:340px;min-height:280px;background:white;border:1px solid #dee2e6;border-radius:6px;}"
+            "QCalendarWidget QWidget#qt_calendar_navigationbar{background-color:#343a40;min-height:42px;padding:4px 6px;border-radius:4px 4px 0 0;}"
+            "QCalendarWidget QToolButton{color:#ecf0f1;font-size:14px;font-weight:bold;background-color:transparent;padding:6px 10px;border-radius:4px;margin:2px;}"
+            "QCalendarWidget QToolButton:hover{background-color:#007bff;color:white;}"
+            "QCalendarWidget QToolButton:pressed{background-color:#0056b3;color:white;}"
+            "QCalendarWidget QSpinBox{color:#2c3e50;background-color:#ecf0f1;font-size:13px;font-weight:bold;border:1px solid #bdc3c7;border-radius:4px;padding:4px 8px;selection-background-color:#007bff;selection-color:white;}"
+            "QCalendarWidget QAbstractItemView{background:white;selection-background-color:#007bff;selection-color:white;font-size:12px;alternate-background-color:#f8f9fa;}"
+            "QCalendarWidget QAbstractItemView::item{padding:6px;border-radius:4px;}"
+            "QCalendarWidget QAbstractItemView::item:alternate{background-color:#f8f9fa;}"
+            "QCalendarWidget QAbstractItemView::item:selected{background-color:#007bff;color:white;font-weight:bold;}"
+        )
+        self.date_picker.setStyleSheet(_cal_style)
 
         self.load_button = QPushButton("Load Entry")
         self.load_button.setObjectName("loadButton")
@@ -1782,6 +1862,43 @@ class AdminDashboard(QWidget):
                         "SELECT * FROM payable_tbl_brand_a WHERE branch=%s AND date=%s LIMIT 1",
                         (branch_name, selected_date)
                     )
+                if not result:
+                    # New-structure fallback: branch posted to daily_reports_brand_a only.
+                    # Map daily_reports fields to the payable_tbl schema best-effort.
+                    try:
+                        dr = self.db.execute_query(
+                            "SELECT * FROM daily_reports_brand_a WHERE branch=%s AND date=%s LIMIT 1",
+                            (branch_name, selected_date)
+                        )
+                        if dr:
+                            d = dr[0]
+                            so     = float(d.get('palawan_send_out', 0) or 0)
+                            so_sc  = float(d.get('palawan_sc', 0) or 0)
+                            po     = float(d.get('palawan_pay_out', 0) or 0)
+                            po_inc = float(d.get('palawan_pay_out_incentives', 0) or 0)
+                            result = [{
+                                'sendout_capital':             so,
+                                'sendout_sc':                  so_sc,
+                                'sendout_commission':          0,
+                                'sendout_lotes':               int(d.get('palawan_send_out_lotes', 0) or 0),
+                                'sendout_total':               so + so_sc,
+                                'payout_capital':              po,
+                                'payout_sc':                   0,
+                                'payout_commission':           0,
+                                'payout_lotes':                int(d.get('palawan_pay_out_lotes', 0) or 0),
+                                'payout_total':                po + po_inc,
+                                'international_capital':       0,
+                                'international_sc':            0,
+                                'international_commission':    0,
+                                'international_lotes':         0,
+                                'international_total':         0,
+                                'skid':        float(d.get('palawan_suki_discounts', 0) or 0),
+                                'skir':        float(d.get('palawan_suki_rebates', 0) or 0),
+                                'cancellation':float(d.get('palawan_cancel', 0) or 0),
+                                'inc':         po_inc,
+                            }]
+                    except Exception as _fe:
+                        logger.error("_load_palawan_details new-structure fallback: %s", _fe)
                 if result:
                     r = result[0]
                     payable_map = {
@@ -2413,7 +2530,6 @@ class AdminDashboard(QWidget):
             self.client_list_display.setText(f"Error loading clients: {e}")
 
     def load_corporations(self):
-     
         try:
             self.corp_selector.clear()
             # Query all corporations from corporations table
@@ -2424,29 +2540,35 @@ class AdminDashboard(QWidget):
                         self.corp_selector.addItem(row['corporation'])
             # Also load OS options
             self.load_os_options()
+
         except Exception as e:
             logger.error("Error loading corporations: %s", e)
             QMessageBox.critical(self, "Database Error", f"Failed to load corporations: {e}")
 
     def load_os_options(self):
-
         try:
             self.os_selector.clear()
-            result = self.db.execute_query("""
-                SELECT DISTINCT os_name FROM branches 
-                WHERE os_name IS NOT NULL AND os_name != '' 
-                ORDER BY os_name
-            """)
-            if result:
-                for row in result:
-                    os_name = row['os_name'] if isinstance(row, dict) else row[0]
-                    if os_name:
-                        self.os_selector.addItem(os_name)
+            if self.os_group:
+                # Restricted admin: only show their assigned group
+                self.os_selector.addItem(self.os_group)
+                self.os_selector.setCurrentIndex(0)
+                self.os_selector.setEnabled(False)
+            else:
+                self.os_selector.setEnabled(True)
+                result = self.db.execute_query("""
+                    SELECT DISTINCT os_name FROM branches
+                    WHERE os_name IS NOT NULL AND os_name != ''
+                    ORDER BY os_name
+                """)
+                if result:
+                    for row in result:
+                        os_name = row['os_name'] if isinstance(row, dict) else row[0]
+                        if os_name:
+                            self.os_selector.addItem(os_name)
         except Exception as e:
             logger.error("Error loading OS options: %s", e)
 
     def on_filter_type_changed(self):
-
         filter_type = self.filter_type_selector.currentData()
         if filter_type == "corporation":
             self.corp_label.setVisible(True)
@@ -2641,15 +2763,15 @@ class AdminDashboard(QWidget):
                 return
 
    
-            both_tables = ["daily_reports_brand_a", "daily_reports"]
-            total_rows = 0
+            main_tables = ["daily_reports_brand_a", "daily_reports"]
+            supp_tables = ["payable_tbl_brand_a", "cash_float_tbl"]
+            found = False
 
-            for table in both_tables:
-
+            for table in main_tables:
                 try:
                     col_check = self.db.execute_query(
-                        f"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                        f"WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'is_locked'",
+                        "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND COLUMN_NAME = 'is_locked'",
                         [table]
                     )
                     if not col_check:
@@ -2660,17 +2782,28 @@ class AdminDashboard(QWidget):
                 except Exception:
                     pass
 
-                # daily_reports is exclusively the Brand B table; no brand filter needed.
-                reset_query = f"""
-                    UPDATE {table}
-                    SET is_locked = 0
-                    WHERE branch = %s AND date = %s
-                """
-                rows = self.db.execute_query(reset_query, [branch_name, selected_date])
-                if rows is not None and rows > 0:
-                    total_rows += rows
+                check = self.db.execute_query(
+                    f"SELECT COUNT(*) AS cnt FROM {table} WHERE branch = %s AND date = %s",
+                    [branch_name, selected_date]
+                )
+                if check and check[0].get('cnt', 0) > 0:
+                    found = True
+                    self.db.execute_query(
+                        f"UPDATE {table} SET is_locked = 0 WHERE branch = %s AND date = %s",
+                        [branch_name, selected_date]
+                    )
 
-            if total_rows > 0:
+            # Clear stale old-structure data so re-submissions start fresh
+            for table in supp_tables:
+                try:
+                    self.db.execute_query(
+                        f"DELETE FROM {table} WHERE branch = %s AND date = %s",
+                        [branch_name, selected_date]
+                    )
+                except Exception:
+                    pass
+
+            if found:
                 QMessageBox.information(
                     self,
                     "Entry Reset",
@@ -2929,7 +3062,7 @@ class AdminDashboard(QWidget):
         # Date selector
         date_label = QLabel("Date:")
         self.report_date_picker = QDateEdit()
-        self.report_date_picker.setDisplayFormat("yyyy-MM-dd")
+        self.report_date_picker.setDisplayFormat("dd MMM yyyy")
         self.report_date_picker.setCalendarPopup(True)
         self.report_date_picker.setDate(QDate.currentDate())
         selection_layout.addWidget(date_label)
@@ -3298,14 +3431,14 @@ class AdminDashboard(QWidget):
         
         date_layout.addWidget(QLabel("From:"))
         self.range_start_date = QDateEdit()
-        self.range_start_date.setDisplayFormat("yyyy-MM-dd")
+        self.range_start_date.setDisplayFormat("dd MMM yyyy")
         self.range_start_date.setCalendarPopup(True)
         self.range_start_date.setDate(QDate.currentDate().addDays(-7))
         date_layout.addWidget(self.range_start_date)
         
         date_layout.addWidget(QLabel("To:"))
         self.range_end_date = QDateEdit()
-        self.range_end_date.setDisplayFormat("yyyy-MM-dd")
+        self.range_end_date.setDisplayFormat("dd MMM yyyy")
         self.range_end_date.setCalendarPopup(True)
         self.range_end_date.setDate(QDate.currentDate())
         date_layout.addWidget(self.range_end_date)
@@ -4076,7 +4209,7 @@ class AdminDashboard(QWidget):
         date_lay.setSpacing(8)
         date_lay.addWidget(QLabel("Date:"))
         self._fbr_date = QDateEdit()
-        self._fbr_date.setDisplayFormat("yyyy-MM-dd")
+        self._fbr_date.setDisplayFormat("dd MMM yyyy")
         self._fbr_date.setCalendarPopup(True)
         self._fbr_date.setDate(QDate.currentDate())
         self._fbr_date.setMinimumWidth(150)
@@ -4395,17 +4528,21 @@ class AdminDashboard(QWidget):
                             sql_params = (filter_value, selected_date)
 
                     elif filter_type == "os":
-                        os_join = (
-                            "INNER JOIN branches b "
-                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                            f"AND b.os_name = %s"
-                        )
-                        sql_params = (filter_value, selected_date)
+                        if reg_filter == "registered":
+                            reg_clause_gs = "AND b.is_registered = 1"
+                        elif reg_filter == "not_registered":
+                            reg_clause_gs = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                        else:
+                            reg_clause_gs = ""
+                        sql_params = (selected_date, filter_value)
                         sql = (
-                            f"SELECT dr.branch, {', '.join(select_parts)} "
-                            f"FROM `{table}` dr {os_join} {cat_join} "
-                            f"WHERE dr.date = %s {where_clause} "
-                            f"GROUP BY dr.branch ORDER BY dr.branch"
+                            f"SELECT b.name AS branch, {', '.join(select_parts)} "
+                            f"FROM branches b "
+                            f"LEFT JOIN `{table}` dr "
+                            f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                            f"  AND dr.date = %s "
+                            f"WHERE b.os_name = %s {reg_clause_gs} "
+                            f"GROUP BY b.name ORDER BY b.name"
                         )
                     elif use_branch_join:
                         branch_join = (
@@ -4718,15 +4855,22 @@ class AdminDashboard(QWidget):
 
                 try:
                     if filter_type == "os":
+                        if reg_filter == "registered":
+                            reg_clause_dcc = "AND b.is_registered = 1"
+                        elif reg_filter == "not_registered":
+                            reg_clause_dcc = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                        else:
+                            reg_clause_dcc = ""
+                        dcc_sel_clause = sel_clause.replace("dr.branch", "b.name AS branch", 1)
                         sql = (
-                            f"SELECT {sel_clause} FROM `{self.daily_table}` dr "
-                            "INNER JOIN branches b "
+                            f"SELECT {dcc_sel_clause} FROM branches b "
+                            f"LEFT JOIN `{self.daily_table}` dr "
                             "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                            "AND b.os_name = %s "
-                            "WHERE dr.date = %s "
-                            "GROUP BY dr.branch ORDER BY dr.branch"
+                            "AND dr.date = %s "
+                            f"WHERE b.os_name = %s {reg_clause_dcc} "
+                            "GROUP BY b.name ORDER BY b.name"
                         )
-                        rows = db_manager.execute_query(sql, (filter_value, selected_date)) or []
+                        rows = db_manager.execute_query(sql, (selected_date, filter_value)) or []
                     else:
                         sql = (
                             f"SELECT {sel_clause} FROM `{self.daily_table}` dr "
@@ -5153,9 +5297,6 @@ class AdminDashboard(QWidget):
             ws2 = wb.create_sheet(title="Palawan")
             _write_palawan_sheet(ws2)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 3 – MC
-            # ════════════════════════════════════════════════════════════════
             ws3 = wb.create_sheet(title="MC")
             mc_groups = [
                 ("MC IN (SELLING)", [
@@ -5169,15 +5310,8 @@ class AdminDashboard(QWidget):
             ]
             _write_grouped_sheet(ws3, mc_groups, self.daily_table, show_amt_total=False)
 
-            # ════════════════════════════════════════════════════════════════
-            # Sheet 4 – Fund Transfer  (matches standalone Fund Transfer export)
-            # ════════════════════════════════════════════════════════════════
             def _write_ft_sheet(ws):
-                """Write Fund Transfer sheet with the same layout as the standalone
-                Fund Transfer export: area header rows, branch rows, area totals,
-                extra-space row, spacer, grand total."""
-
-                # ── Styles ───────────────────────────────────────────────────
+  
                 title_font_ft    = Font(bold=True, size=16)
                 subtitle_font_ft = Font(bold=True, size=12)
                 date_font_ft     = Font(size=11)
@@ -5274,16 +5408,24 @@ class AdminDashboard(QWidget):
 
                 try:
                     if filter_type == "os":
+                        if reg_filter == "registered":
+                            reg_clause_ft = "AND b.is_registered = 1"
+                        elif reg_filter == "not_registered":
+                            reg_clause_ft = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                        else:
+                            reg_clause_ft = ""
+                        sel_ft_os = sel_ft.replace("dr.branch AS branch", "b.name AS branch", 1)
+                        grp_os    = grp.replace("dr.branch", "b.name")
                         sql_ft = (
-                            f"SELECT {sel_ft} FROM `{self.daily_table}` dr "
-                            "INNER JOIN branches b "
+                            f"SELECT {sel_ft_os} FROM branches b "
+                            f"LEFT JOIN `{self.daily_table}` dr "
                             "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                            "AND b.os_name = %s "
+                            "AND dr.date = %s "
                             f"{join_c} {join_cf} "
-                            f"WHERE dr.date = %s {grp}"
+                            f"WHERE b.os_name = %s {reg_clause_ft} {grp_os}"
                         )
                         ft_rows = db_manager.execute_query(
-                            sql_ft, (filter_value, selected_date)) or []
+                            sql_ft, (selected_date, filter_value)) or []
                     else:
                         sql_ft = (
                             f"SELECT {sel_ft} FROM `{self.daily_table}` dr "
@@ -5481,13 +5623,13 @@ class AdminDashboard(QWidget):
             if self.account_type == 1:
                 # ── Brand A: Daily Transaction, Other Services, P&L, New Sanla, New Renew, GOS, FT HO ──
                 ws6 = wb.create_sheet(title="Daily Transaction")
-                _write_grouped_sheet(ws6, DT_COLUMN_GROUPS, "daily_transaction_tbl_brand_a", show_amt_total=False)
+                _write_grouped_sheet(ws6, DT_COLUMN_GROUPS, "daily_reports_brand_a", show_amt_total=False)
 
                 ws7 = wb.create_sheet(title="Other Services")
-                _write_grouped_sheet(ws7, OTHER_SERVICES_COLUMN_GROUPS, "other_services_tbl_brand_a", show_amt_total=False)
+                _write_grouped_sheet(ws7, OTHER_SERVICES_COLUMN_GROUPS, "daily_reports_brand_a", show_amt_total=False)
 
                 ws8 = wb.create_sheet(title="P&L")
-                _write_grouped_sheet(ws8, PL_COLUMN_GROUPS, "PL_tbl_brand_a", show_amt_total=False)
+                _write_grouped_sheet(ws8, PL_COLUMN_GROUPS, "daily_reports_brand_a", show_amt_total=False)
 
                 ws9 = wb.create_sheet(title="New Sanla")
                 sanla_groups = [
@@ -5533,7 +5675,7 @@ class AdminDashboard(QWidget):
                     ("MC OUT",           [("Lotes", ["mc_out_lotes"],           True),  ("Capital", ["mc_out"],           False)]),
                     ("EC PAY OUT",       [("Capital", ["ec_pay_out"],                       False)]),
                 ]
-                _write_grouped_sheet(ws11, gos_groups, "global_other_services_tbl", use_branch_join=True, show_amt_total=False)
+                _write_grouped_sheet(ws11, gos_groups, "daily_reports_brand_a", use_branch_join=True, show_amt_total=False)
 
                 ws12 = wb.create_sheet(title="FT HO")
                 ft_ho_groups = [
@@ -5791,6 +5933,13 @@ class AdminDashboard(QWidget):
                     is_global   = 'GLOBAL RELIANCE' in corp_upper
                     payable_tbl = "payable_tbl_brand_a"
 
+                    if reg_filter == "registered":
+                        reg_clause_payable = "AND b.is_registered = 1"
+                    elif reg_filter == "not_registered":
+                        reg_clause_payable = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                    else:
+                        reg_clause_payable = ""
+
                     try:
                         if filter_type == "os":
                             result = db_manager.execute_query(f"""
@@ -5809,7 +5958,7 @@ class AdminDashboard(QWidget):
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
                                 INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
                                                           AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
-                                WHERE b.os_name = %s AND p.date = %s AND b.is_registered = 1
+                                WHERE b.os_name = %s AND p.date = %s {reg_clause_payable}
                             """, (filter_value, selected_date))
                         elif is_global:
                             result = db_manager.execute_query(f"""
@@ -5828,7 +5977,7 @@ class AdminDashboard(QWidget):
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
                                 INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
                                                           AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
-                                WHERE b.global_tag = 'GLOBAL' AND p.date = %s AND b.is_registered = 1
+                                WHERE b.global_tag = 'GLOBAL' AND p.date = %s {reg_clause_payable}
                             """, (selected_date,))
                         else:
                             result = db_manager.execute_query(f"""
@@ -5847,7 +5996,7 @@ class AdminDashboard(QWidget):
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
                                 INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
                                                           AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
-                                WHERE p.corporation = %s AND p.date = %s AND b.is_registered = 1
+                                WHERE p.corporation = %s AND p.date = %s {reg_clause_payable}
                             """, (filter_value, selected_date))
                     except Exception as ex:
                         ws['A1'] = f"Error loading data: {ex}"
@@ -6672,8 +6821,9 @@ class AdminDashboard(QWidget):
                         "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #c8e6c9; color: #2e7d32;"
                     )
                 
-                # Also sync supplementary tables so they stay consistent
-                self._update_supplementary_tables(selected_date, update_data)
+                # NOTE: Supplementary tables are no longer used. All data is now in the canonical tables:
+                # daily_reports_brand_a (Brand A) and daily_reports (Brand B)
+                # _update_supplementary_tables(selected_date, update_data)
 
                 QMessageBox.information(
                     self,
@@ -6692,175 +6842,16 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to save entry: {e}")
 
     def _update_supplementary_tables(self, selected_date, all_vals: dict):
-        """Mirror the changed field values into the supplementary tables that the
-        client populates on submit, keeping them in sync when the admin edits an entry."""
-
-        entry = self._current_entry_data or {}
-        branch      = entry.get('branch', self.branch_selector.currentText())
-        corporation = entry.get('corporation', '')
-        username    = entry.get('username', '')
-
-        base_cols = ['date', 'branch', 'corporation', 'username']
-        base_vals = [selected_date, branch, corporation, username]
-
-        def _upsert(table, field_names):
-            try:
-                col_rows = self.db.execute_query(
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
-                    (table,)
-                )
-                if col_rows:
-                    existing_cols = {r['COLUMN_NAME'] for r in col_rows}
-                    field_names = [f for f in field_names if f in existing_cols]
-                    eff_base = [(c, v) for c, v in zip(base_cols, base_vals) if c in existing_cols]
-                else:
-                    eff_base = list(zip(base_cols, base_vals))
-
-                if not field_names:
-                    return
-
-                row = {f: float(all_vals.get(f, 0) or 0) for f in field_names}
-                eff_base_cols = [c for c, v in eff_base]
-                eff_base_vals = [v for c, v in eff_base]
-                cols = eff_base_cols + list(row.keys())
-                vals = eff_base_vals + list(row.values())
-                ph  = ', '.join(['%s'] * len(cols))
-                upd = ', '.join(f"`{c}`=VALUES(`{c}`)" for c in row)
-                q = (
-                    f"INSERT INTO `{table}` ({', '.join(f'`{c}`' for c in cols)}) "
-                    f"VALUES ({ph})"
-                    + (f" ON DUPLICATE KEY UPDATE {upd}" if upd else "")
-                )
-                self.db.execute_query(q, vals)
-                logger.debug("Admin sync → %s", table)
-            except Exception as e:
-                logger.error("Admin _update_supplementary_tables %s: %s", table, e)
-
-        # Brand A only tables
-        if self.account_type == 1:
-            _upsert("daily_transaction_tbl_brand_a", [
-                "empeno_jew_new", "empeno_jew_new_lotes",
-                "empeno_jew_renew", "empeno_jew_renew_lotes",
-                "empeno_sto_new", "empeno_sto_new_lotes",
-                "fund_empeno_sto_renew", "fund_empeno_sto_renew_lotes",
-                "empeno_motor_car", "empeno_motor_car_lotes",
-                "mc_out", "mc_out_lotes",
-                "empeno_silver", "empeno_silver_lotes",
-                "rescate_jewelry", "rescate_jewelry_lotes",
-                "cr_storage", "cr_storage_lotes",
-                "rescate_silver", "rescate_silver_lotes",
-                "res_storage", "res_storage_lotes",
-                "res_motor", "res_motor_lotes",
-                "osf_storage", "osf_storage_lotes",
-                "osf_silver", "osf_silver_lotes",
-                "osf_motor", "osf_motor_lotes",
-                "insurance_sunlife_20", "insurance_sunlife_20_lotes",
-                "palawan_send_out", "palawan_send_out_lotes",
-                "palawan_sc", "palawan_sc_lotes",
-                "palawan_pay_out", "palawan_pay_out_lotes",
-                "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
-                "ecbills", "ecbills_lotes", "ecload", "ecload_lotes", "eccash", "eccash_lotes", "eccash_out", "eccash_out_lotes",
-                "gcash_in", "gcash_in_lotes",
-                "gcash_out", "gcash_out_lotes",
-                "transfast", "transfast_lotes",
-                "ria_out", "ria_out_lotes",
-                "i2i_remittance_in", "i2i_remittance_in_lotes",
-                "i2i_bills_payment", "i2i_bills_payment_lotes",
-                "i2i_instapay", "i2i_instapay_lotes",
-                "sendah_load_sc", "sendah_load_sc_lotes",
-                "sendah_bills_sc", "sendah_bills_sc_lotes",
-                "paymaya_in", "paymaya_in_lotes",
-                "smart_money_sc", "smart_money_sc_lotes",
-                "smart_money_po", "smart_money_po_lotes",
-                "gcash_padala_sendah", "gcash_padala_sendah_lotes",
-                "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
-                "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
-                "remitly", "remitly_lotes",
-            ])
-
-            _upsert("other_services_tbl_brand_a", [
-                "palawan_send_out", "palawan_send_out_lotes",
-                "palawan_sc", "palawan_sc_lotes",
-                "palawan_pay_out", "palawan_pay_out_lotes",
-                "sendah_load_sc", "sendah_load_sc_lotes",
-                "smart_money_sc", "smart_money_sc_lotes",
-                "smart_money_po", "smart_money_po_lotes",
-                "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
-                "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
-                "palawan_pay_bills_sc",
-                "palawan_load_sc",
-                "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
-                "palawan_suki_card",
-                "gcash_in", "gcash_in_lotes",
-                "gcash_out", "gcash_out_lotes",
-                "gcash_padala_sendah", "gcash_padala_sendah_lotes",
-                "abra_so_sc", "abra_po",
-                "gprs_in",
-                "remitly", "remitly_lotes",
-                "paymaya_in", "paymaya_in_lotes",
-                "paymaya_out",
-                "ria_in_sc", "ria_in_sc_lotes",
-                "ria_out", "ria_out_lotes",
-                "bdo_sc", "bdo_po",
-                "transfast", "transfast_lotes",
-                "banko_in", "banko_out",
-                "sendah_bills_sc", "sendah_bills_sc_lotes",
-                "eccash_out",
-                "i2i_remittance_in", "i2i_remittance_in_lotes",
-                "i2i_bills_payment", "i2i_bills_payment_lotes",
-                "i2i_bank_transfer", "i2i_pesonet",
-                "i2i_instapay", "i2i_instapay_lotes",
-                "truemoney_out",
-                "i2i_remittance_out",
-            ])
-
-            _upsert("PL_tbl_brand_a", [
-                "interest", "penalty", "stamp", "rescuardo_affidavit",
-                "jew_ai", "service_charge",
-                "habol_renew_tubos", "habol_rt_interest_stamp",
-                "storage_ai", "osf_storage", "cr_storage_int_penalty",
-                "silver_ai", "osf_silver", "res_storage_int_penalty",
-                "motor_ai", "osf_motor", "penalty_motor",
-                "miscellaneous_fee",
-                "pc_transpo", "pc_salary",
-                "pc_inc_motor", "pc_inc_emp", "pc_inc_suki_card",
-                "pc_inc_insurance", "pc_inc_mc",
-                "pc_supplies_xerox_maintenance",
-                "pc_electric", "pc_water", "pc_internet",
-                "pc_rental", "pc_permits_bir_payments", "pc_lbc_jrs_jnt",
-                "palawan_suki_discounts", "palawan_suki_rebates",
-                "storage_rebates", "silver_rebates", "palawan_suki_card",
-            ])
-
-            # global_other_services_tbl — only for branches with a global tag
-            global_tag = entry.get('global_tag', '')
-            if not global_tag:
-                try:
-                    gt_rows = self.db.execute_query(
-                        "SELECT global_tag FROM branches WHERE name = %s LIMIT 1",
-                        (branch,)
-                    )
-                    global_tag = (gt_rows[0]['global_tag'] or '') if gt_rows else ''
-                except Exception:
-                    global_tag = ''
-
-            if global_tag and global_tag.upper() not in ('', 'NO'):
-                all_vals['ria'] = all_vals.get('ria_out', 0) or 0
-                all_vals['ec_pay_out'] = all_vals.get('eccash_out', 0) or 0
-                _upsert("global_other_services_tbl", [
-                    "gcash_out", "gcash_out_lotes",
-                    "moneygram", "moneygram_lotes",
-                    "transfast", "transfast_lotes",
-                    "ria", "ria_lotes",
-                    "smart_money_out", "smart_money_out_lotes",
-                    "gcash_padala", "gcash_padala_lotes",
-                    "abra_out", "abra_out_lotes",
-                    "remitly", "remitly_lotes",
-                    "pal_pay_cash_out", "pal_pay_cash_out_lotes",
-                    "mc_out", "mc_out_lotes",
-                    "ec_pay_out",
-                ])
+        """DEPRECATED: Supplementary tables are no longer used.
+        
+        All data is now stored in canonical tables:
+        - daily_reports_brand_a (Brand A)
+        - daily_reports (Brand B)
+        
+        This method is kept for backward compatibility but does nothing.
+        """
+        logger.info("_update_supplementary_tables() called but skipped - data is in canonical tables only")
+        pass
 
     def closeEvent(self, event):
        

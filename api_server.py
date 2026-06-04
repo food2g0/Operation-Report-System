@@ -192,6 +192,7 @@ _KNOWN_PATHS = frozenset({
     "/api/token", "/api/exec", "/api/exec_safe", "/api/batch",
     "/api/health", "/api/stats", "/api/config", "/api/cache/clear",
     "/api/enqueue",
+    "/docs", "/openapi.json", "/redoc",
 })
 
 # ── Permanent IP blocklist ────────────────────────────────────────────────────
@@ -473,7 +474,13 @@ class _TrackingMiddleware(BaseHTTPMiddleware):
 
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
-app = FastAPI(title="Operation Report System API", docs_url=None, redoc_url=None)
+_ENABLE_API_DOCS = os.environ.get("ORS_API_DOCS", "false").lower() == "true"
+app = FastAPI(
+    title="Operation Report System API",
+    docs_url="/docs" if _ENABLE_API_DOCS else None,
+    redoc_url=None,
+    openapi_url="/openapi.json" if _ENABLE_API_DOCS else None,
+)
 app.add_middleware(_TrackingMiddleware)
 
 

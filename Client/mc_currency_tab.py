@@ -6,6 +6,23 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtCore import Qt
 import json
+import logging
+
+logger = logging.getLogger("MCCurrencyTab")
+
+# Load currencies from centralized manager when possible
+try:
+    from currency_manager import get_all_currencies
+except Exception:
+    # Fallback: local default loader
+    def get_all_currencies(active_only=True):
+        return [
+            "USD - US Dollar", "EUR - Euro", "JPY - Japanese Yen", "KRW - Korean Won",
+            "CNY - Chinese Yuan", "SGD - Singapore Dollar", "AED - UAE Dirham", "SAR - Saudi Riyal",
+            "AUD - Australian Dollar", "CAD - Canadian Dollar", "GBP - British Pound", "HKD - Hong Kong Dollar",
+            "CHF - Swiss Franc", "NOK - Norwegian Krone", "SEK - Swedish Krona", "THB - Thai Baht",
+            "MYR - Malaysian Ringgit", "IDR - Indonesian Rupiah", "VND - Vietnamese Dong", "TWD - Taiwan Dollar"
+        ]
 
 
 class MCCurrencyTab(QWidget):
@@ -117,6 +134,14 @@ class MCCurrencyTab(QWidget):
 
         buttons_layout.addWidget(add_btn)
         buttons_layout.addWidget(remove_btn)
+        
+        # Refresh currencies button (reload from central DB)
+        refresh_currencies_btn = QPushButton("🔄 Refresh Currencies")
+        refresh_currencies_btn.setStyleSheet(
+            "QPushButton { background-color: #3498db; color: white; border: none; padding: 8px 12px; border-radius: 6px; font-weight: bold; }"
+        )
+        refresh_currencies_btn.clicked.connect(self._reload_currencies)
+        buttons_layout.addWidget(refresh_currencies_btn)
         buttons_layout.addStretch()
 
         mc_layout.addWidget(buttons_frame)
@@ -152,30 +177,20 @@ class MCCurrencyTab(QWidget):
         num_label = QLabel(f"#{entry_num}")
         num_label.setStyleSheet("font-weight: 800; font-size: 13px; color: #3B82F6; min-width: 32px;")
 
-        # Currency dropdown
+        # Currency dropdown (populate from central list)
         currency_combo = QComboBox()
-        currency_combo.addItems([
-            "USD - US Dollar",
-            "EUR - Euro",
-            "JPY - Japanese Yen",
-            "KRW - Korean Won",
-            "CNY - Chinese Yuan",
-            "SGD - Singapore Dollar",
-            "AED - UAE Dirham",
-            "SAR - Saudi Riyal",
-            "AUD - Australian Dollar",
-            "CAD - Canadian Dollar",
-            "GBP - British Pound",
-            "HKD - Hong Kong Dollar",
-            "CHF - Swiss Franc",
-            "NOK - Norwegian Krone",
-            "SEK - Swedish Krona",
-            "THB - Thai Baht",
-            "MYR - Malaysian Ringgit",
-            "IDR - Indonesian Rupiah",
-            "VND - Vietnamese Dong",
-            "TWD - Taiwan Dollar"
-        ])
+        try:
+            currencies = getattr(self, '_currencies', None)
+            if currencies is None:
+                currencies = get_all_currencies()
+                self._currencies = currencies
+        except Exception as e:
+            logger.warning(f"Could not load currencies via manager: {e}. Using defaults.")
+            currencies = get_all_currencies()
+            self._currencies = currencies
+        currency_combo.addItems(currencies)
+        # Allow users to type custom currency names
+        currency_combo.setEditable(True)
         currency_combo.setStyleSheet("min-width: 180px; padding: 6px;")
         currency_combo.currentTextChanged.connect(self.calculate_totals)
 
@@ -270,6 +285,33 @@ class MCCurrencyTab(QWidget):
 
         if hasattr(self, 'grand_total_display') and self.grand_total_display is not None:
             self.calculate_totals()
+
+    def _reload_currencies(self):
+        """Reload currencies from the centralized manager and update all combo boxes."""
+        try:
+            currencies = get_all_currencies()
+            if not currencies:
+                return
+            self._currencies = currencies
+            # Update existing combos while preserving current text where possible
+            for entry in self.currency_entries:
+                combo = entry.get('currency_combo')
+                if combo is None:
+                    continue
+                current = combo.currentText()
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItems(currencies)
+                # If previous text exists and not in new list, set as editable text
+                if current:
+                    idx = combo.findText(current)
+                    if idx >= 0:
+                        combo.setCurrentIndex(idx)
+                    else:
+                        combo.setEditText(current)
+                combo.blockSignals(False)
+        except Exception as e:
+            logger.error(f"Failed to reload currencies: {e}")
 
     def remove_currency_entry(self):
         """Remove the last currency entry"""

@@ -669,7 +669,6 @@ class DailyTransactionPage(QWidget):
    
         self.corp_label = self._bold_label("Corporation:")
         self.corp_selector = self._combo(220)
-        self.corp_selector.currentTextChanged.connect(self.populate_table)
         self.corp_label.setVisible(False)
         self.corp_selector.setVisible(False)
         row.addWidget(self.corp_label)
@@ -678,13 +677,11 @@ class DailyTransactionPage(QWidget):
 
         row.addWidget(self._bold_label("Group:"))
         self.group_selector = self._combo(220)
-        self.group_selector.currentTextChanged.connect(self.populate_table)
         row.addWidget(self.group_selector)
 
 
         row.addSpacing(20)
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         row.addWidget(self.date_range_widget)
 
         self.date_selector = self.date_range_widget
@@ -696,7 +693,6 @@ class DailyTransactionPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Not Registered", "not_registered")
         self.reg_filter_selector.addItem("All Branches", "all")
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
         row.addWidget(self.reg_filter_selector)
 
         self.os_filter_selector = self._combo(180)
@@ -710,6 +706,16 @@ class DailyTransactionPage(QWidget):
             self.view_selector.addItem(view_name, view_name)
         self.view_selector.currentIndexChanged.connect(self._on_view_changed)
         row.addWidget(self.view_selector)
+
+        row.addSpacing(20)
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self.populate_table)
+        row.addWidget(self.load_btn)
 
         row.addStretch()
         parent.addWidget(frame, 0)

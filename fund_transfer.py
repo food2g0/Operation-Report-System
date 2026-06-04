@@ -31,18 +31,14 @@ class FundTransferPage(QWidget):
 
         self.corp_label = QLabel("Corporation:")
         self.corp_selector = QComboBox()
-        self.corp_selector.currentTextChanged.connect(self.populate_table)
-
         self.os_label = QLabel("Group:")
         self.os_selector = QComboBox()
-        self.os_selector.currentTextChanged.connect(self.populate_table)
         self.os_label.setVisible(False)
         self.os_selector.setVisible(False)
 
         self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
 
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         self.date_selector = self.date_range_widget  # backward-compat
 
         self.reg_filter_label = QLabel("Status:")
@@ -50,7 +46,14 @@ class FundTransferPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Not Registered", "not_registered")
         self.reg_filter_selector.addItem("All Branches", "all")
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
+
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self.populate_table)
 
         filter_row = QHBoxLayout()
         filter_row.setSpacing(8)
@@ -64,6 +67,8 @@ class FundTransferPage(QWidget):
         filter_row.addWidget(self.date_range_widget)
         filter_row.addWidget(self.reg_filter_label)
         filter_row.addWidget(self.reg_filter_selector)
+        filter_row.addWidget(self.load_btn)
+        filter_row.addStretch()
         self.layout.addLayout(filter_row)
 
         self.report_type_label.setVisible(False)

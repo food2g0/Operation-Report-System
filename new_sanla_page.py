@@ -89,13 +89,11 @@ class NewSanlaPage(QWidget):
 
         row.addWidget(self._bold_label("Group:"))
         self.group_selector = self._combo(220)
-        self.group_selector.currentTextChanged.connect(self.populate_table)
         row.addWidget(self.group_selector)
 
         row.addSpacing(20)
         row.addWidget(self._bold_label("Date:"))
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         self.date_selector = self.date_range_widget  # backward-compat
         row.addWidget(self.date_range_widget)
 
@@ -105,7 +103,6 @@ class NewSanlaPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Not Registered", "not_registered")
         self.reg_filter_selector.addItem("All Branches", "all")
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
         row.addWidget(self.reg_filter_selector)
 
         # Keep os_filter_selector for backward compat but hidden
@@ -115,6 +112,16 @@ class NewSanlaPage(QWidget):
         # Keep corp_selector for backward compat but hidden
         self.corp_selector = self._combo(220)
         self.corp_selector.setVisible(False)
+
+        row.addSpacing(15)
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self.populate_table)
+        row.addWidget(self.load_btn)
 
         row.addStretch()
         parent.addWidget(frame, 0)

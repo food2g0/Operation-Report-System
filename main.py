@@ -2,15 +2,19 @@ import sys
 import traceback
 import ctypes
 
-# Load .env before any other imports so env vars are available to api_config, etc.
+try:
+    from version import __version__ as APP_VERSION
+except ImportError:
+    APP_VERSION = "1.0.2"
+
+
 try:
     from dotenv import load_dotenv as _load_dotenv
     _load_dotenv(override=False)
 except ImportError:
     pass
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QLabel
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QApplication, QMessageBox
 from app_logging import setup_logging, get_logger
 setup_logging()
 from Client.client_dashboard import ClientDashboard
@@ -76,179 +80,40 @@ def exception_hook(exctype, value, tb):
 def main():
     # Check for single instance BEFORE creating QApplication
     if not acquire_single_instance_lock():
-        # Another instance is running - show message and exit
-        # Need temporary app just to show message
         temp_app = QApplication(sys.argv)
-        QMessageBox.warning(None, "Already Running", 
+        QMessageBox.warning(None, "Already Running",
             "Operation Report System is already running.\n\nCheck the taskbar for the existing window.")
         sys.exit(0)
-    
-    # Set exception hook before creating QApplication
+
     sys.excepthook = exception_hook
-    
+
     app = QApplication(sys.argv)
-    
-    # ─────────────────────────────────────────────────────────────────────────
-    # Professional Splash Screen
-    # ─────────────────────────────────────────────────────────────────────────
-    from PyQt5.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame, QProgressBar
-    from PyQt5.QtGui import QPainter, QColor, QPen
-    import os
-    
-    # Create splash widget
-    splash_widget = QWidget()
-    splash_widget.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.SplashScreen)
-    splash_widget.setAttribute(Qt.WA_TranslucentBackground)
-    splash_widget.setFixedSize(480, 280)
-    
-    # Center on screen
-    screen = app.primaryScreen().geometry()
-    splash_widget.move(
-        (screen.width() - 480) // 2,
-        (screen.height() - 280) // 2
-    )
-    
-    # Main container with shadow effect
-    container = QFrame(splash_widget)
-    container.setGeometry(10, 10, 460, 260)
-    container.setStyleSheet("""
-        QFrame {
-            background-color: #ffffff;
-            border-radius: 12px;
-            border: 1px solid #e0e0e0;
-        }
-    """)
-    
-    # Header bar
-    header = QFrame(container)
-    header.setGeometry(0, 0, 460, 8)
-    header.setStyleSheet("""
-        QFrame {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #667eea, stop:1 #764ba2);
-            border-top-left-radius: 12px;
-            border-top-right-radius: 12px;
-            border: none;
-        }
-    """)
-    
-    # Logo/Icon area
-    logo_label = QLabel("ORS", container)
-    logo_label.setGeometry(180, 35, 100, 50)
-    logo_label.setAlignment(Qt.AlignCenter)
-    logo_label.setStyleSheet("""
-        QLabel {
-            color: #667eea;
-            font-size: 36px;
-            font-weight: bold;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: transparent;
-        }
-    """)
-    
-    # App name
-    title_label = QLabel("Operation Report System", container)
-    title_label.setGeometry(0, 90, 460, 28)
-    title_label.setAlignment(Qt.AlignCenter)
-    title_label.setStyleSheet("""
-        QLabel {
-            color: #333333;
-            font-size: 18px;
-            font-weight: 600;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: transparent;
-        }
-    """)
-    
-    # Version
-    version_label = QLabel("v2.0", container)
-    version_label.setGeometry(0, 118, 460, 18)
-    version_label.setAlignment(Qt.AlignCenter)
-    version_label.setStyleSheet("""
-        QLabel {
-            color: #999999;
-            font-size: 11px;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: transparent;
-        }
-    """)
-    
-    # Loading status
-    status_label = QLabel("Initializing application...", container)
-    status_label.setGeometry(0, 155, 460, 20)
-    status_label.setAlignment(Qt.AlignCenter)
-    status_label.setStyleSheet("""
-        QLabel {
-            color: #666666;
-            font-size: 11px;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: transparent;
-        }
-    """)
-    
-    # Progress bar
-    progress = QProgressBar(container)
-    progress.setGeometry(60, 180, 340, 4)
-    progress.setRange(0, 0)  # Indeterminate
-    progress.setTextVisible(False)
-    progress.setStyleSheet("""
-        QProgressBar {
-            background-color: #f0f0f0;
-            border: none;
-            border-radius: 2px;
-        }
-        QProgressBar::chunk {
-            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                stop:0 #667eea, stop:1 #764ba2);
-            border-radius: 2px;
-        }
-    """)
-    
-    # Footer separator
-    footer_line = QFrame(container)
-    footer_line.setGeometry(30, 210, 400, 1)
-    footer_line.setStyleSheet("QFrame { background-color: #eeeeee; }")
-    
-    # Developer credit
-    credit_label = QLabel("Developed by Paolo Somido", container)
-    credit_label.setGeometry(0, 225, 460, 20)
-    credit_label.setAlignment(Qt.AlignCenter)
-    credit_label.setStyleSheet("""
-        QLabel {
-            color: #aaaaaa;
-            font-size: 10px;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            background: transparent;
-        }
-    """)
-    
-    splash_widget.show()
-    app.processEvents()  # Ensure splash shows immediately
-    
-    try:
-        status_label.setText("Checking database connection...")
-        app.processEvents()
-        
-        login_window = LoginWindow(app)
-        
-        # Check if we're in offline mode and update splash accordingly
-        from offline_manager import offline_manager
-        if offline_manager.is_offline:
-            status_label.setText("Starting in offline mode...")
-        else:
-            status_label.setText("Ready")
-        app.processEvents()
-        
-        splash_widget.close()
-        login_window.show()
-        
-        # Cleanup on exit
-        result = app.exec_()
-        release_single_instance_lock()
-        sys.exit(result)
-    except Exception as e:
-        release_single_instance_lock()
-        exception_hook(type(e), e, e.__traceback__)
+
+    # ── Game-style update launcher ────────────────────────────────────────────
+    from update_launcher import UpdateLauncherWindow
+
+    launcher = UpdateLauncherWindow(app_version=APP_VERSION)
+    login_window_holder = [None]
+
+    def _on_launch_ready():
+        try:
+            lw = LoginWindow(app)
+            login_window_holder[0] = lw
+            lw.show()
+
+            # Show "Updated successfully" popup if this is a post-update first run
+            from auto_updater import check_update_success
+            check_update_success(parent=lw)
+        except Exception as exc:
+            release_single_instance_lock()
+            exception_hook(type(exc), exc, exc.__traceback__)
+
+    launcher.launch_ready.connect(_on_launch_ready)
+    launcher.start()
+
+    result = app.exec_()
+    release_single_instance_lock()
+    sys.exit(result)
 
 # In your main.py or login manager file
 class LoginManager:

@@ -11,16 +11,14 @@ import hashlib
 import requests
 import tempfile
 import subprocess
-import shutil
 import logging
-from pathlib import Path
 from urllib.parse import urlparse
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from packaging import version
-from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt5.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QPushButton, QProgressBar, QTextEdit, QMessageBox)
-from PyQt5.QtCore import QThread, pyqtSignal, Qt
+from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtGui import QFont
 
 # Import version from version.py (single source of truth)
@@ -153,99 +151,143 @@ def _find_release_checksum(session, release_data, installer_filename):
 
 # Version tracking file path (to detect successful updates)
 def _get_version_file_path():
-    """Get the path to the version tracking file"""
-    if sys.platform == 'win32':
-        app_data = os.environ.get('APPDATA', os.path.expanduser('~'))
-        return os.path.join(app_data, 'OperationReportSystem', 'last_version.json')
-    else:
-        return os.path.join(os.path.expanduser('~'), '.ors_last_version.json')
+    """Return path to the update-state file.
+
+    Always stored in %APPDATA%\\OperationReportSystem\\ so both the old version
+    (writing it before the installer runs) and the new version (reading it on
+    first launch) resolve the exact same path.
+
+    Storing next to the exe in Program Files would fail silently because
+    Program Files requires admin rights — the write would be blocked and the
+    "Updated successfully" popup would never appear.
+    """
+    appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+    base = os.path.join(appdata, 'OperationReportSystem')
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, 'ors_update_state.json')
 
 
 def _save_pre_update_version():
-    """Save the current version before updating (called before installer runs)"""
+    """Save current version + updating flag before launching the installer."""
     try:
         version_file = _get_version_file_path()
-        os.makedirs(os.path.dirname(version_file), exist_ok=True)
-        data = {
-            'pre_update_version': CURRENT_VERSION,
-            'updating': True
-        }
         with open(version_file, 'w') as f:
-            json.dump(data, f)
-        logger.info(f"Saved pre-update version: {CURRENT_VERSION}")
+            json.dump({'pre_update_version': CURRENT_VERSION, 'updating': True}, f)
+        logger.info(f"Saved pre-update version: {CURRENT_VERSION} → {version_file}")
     except Exception as e:
         logger.error(f"Failed to save pre-update version: {e}")
 
 
 def check_update_success(parent=None):
-    """
-    Check if the app was just updated and show a success message.
-    Call this on app startup.
-    
-    Args:
-        parent: Parent widget for the message box
-    
+    """Check if the app just finished an update and show a success popup.
+
     Returns:
-        Tuple (was_updated: bool, from_version: str or None)
+        (was_updated: bool, from_version: str | None)
     """
     try:
         version_file = _get_version_file_path()
-        
+
         if not os.path.exists(version_file):
-            # First run or no update tracking - save current version
-            os.makedirs(os.path.dirname(version_file), exist_ok=True)
-            data = {'last_version': CURRENT_VERSION, 'updating': False}
+            # First launch ever — write baseline so next update is detected.
             with open(version_file, 'w') as f:
-                json.dump(data, f)
+                json.dump({'last_version': CURRENT_VERSION, 'updating': False}, f)
             return (False, None)
-        
+
         with open(version_file, 'r') as f:
             data = json.load(f)
-        
-        pre_update_version = data.get('pre_update_version')
-        was_updating = data.get('updating', False)
-        last_version = data.get('last_version')
-        
-        # Check if we just completed an update
-        if was_updating and pre_update_version:
-            # Compare versions - if current is newer, update was successful
-            if version.parse(CURRENT_VERSION) > version.parse(pre_update_version):
-                logger.info(f"Update successful: {pre_update_version} -> {CURRENT_VERSION}")
-                
-                # Clear the updating flag and save new version
-                data = {'last_version': CURRENT_VERSION, 'updating': False}
+
+        pre_ver   = data.get('pre_update_version', '')
+        updating  = data.get('updating', False)
+
+        if updating and pre_ver:
+            # Simple string-tuple comparison avoids packaging import issues
+            def _vtuple(v):
+                try:
+                    return tuple(int(x) for x in str(v).split('.'))
+                except Exception:
+                    return (0,)
+
+            if _vtuple(CURRENT_VERSION) > _vtuple(pre_ver):
+                logger.info(f"Update confirmed: {pre_ver} → {CURRENT_VERSION}")
+                # Clear the flag
                 with open(version_file, 'w') as f:
-                    json.dump(data, f)
-                
-                # Show success message
+                    json.dump({'last_version': CURRENT_VERSION, 'updating': False}, f)
+
                 if parent is not None:
+                    from PyQt5.QtWidgets import QMessageBox
                     QMessageBox.information(
                         parent,
-                        "Update Successful",
-                        f"The application has been updated successfully!\n\n"
-                        f"Previous version: {pre_update_version}\n"
-                        f"Current version: {CURRENT_VERSION}\n\n"
-                        f"Thank you for updating!"
+                        "✅  Update Successful",
+                        f"Operation Report System has been updated!\n\n"
+                        f"  Previous version:  v{pre_ver}\n"
+                        f"  Current version:   v{CURRENT_VERSION}\n\n"
+                        f"Thank you for keeping the app up to date."
                     )
-                
-                return (True, pre_update_version)
-            else:
-                # Update was cancelled or failed - reset flag
-                data = {'last_version': CURRENT_VERSION, 'updating': False}
-                with open(version_file, 'w') as f:
-                    json.dump(data, f)
-        
-        # Update last_version if it changed (manual install, etc.)
-        if last_version and version.parse(CURRENT_VERSION) != version.parse(last_version):
-            data = {'last_version': CURRENT_VERSION, 'updating': False}
-            with open(version_file, 'w') as f:
-                json.dump(data, f)
-        
+                return (True, pre_ver)
+
+        # Not updating — keep the file current
+        with open(version_file, 'w') as f:
+            json.dump({'last_version': CURRENT_VERSION, 'updating': False}, f)
         return (False, None)
-        
+
     except Exception as e:
-        logger.error(f"Error checking update success: {e}")
+        logger.error(f"check_update_success error: {e}")
         return (False, None)
+
+
+def check_version_compliance(timeout=8):
+    """
+    Verify this app version exactly matches the latest GitHub release tag.
+
+    Returns:
+        dict with keys:
+            compliant (bool): True when current == latest
+            current_version (str)
+            latest_version (str|None)
+            message (str): non-empty when non-compliant or check failed
+            check_failed (bool): True when latest version could not be retrieved
+    """
+    result = {
+        "compliant": True,
+        "current_version": CURRENT_VERSION,
+        "latest_version": None,
+        "message": "",
+        "check_failed": False,
+    }
+
+    try:
+        api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+        session = _create_retry_session()
+        response = session.get(api_url, timeout=timeout)
+
+        if response.status_code != 200:
+            result["check_failed"] = True
+            result["compliant"] = True
+            result["message"] = f"Version check unavailable (HTTP {response.status_code})."
+            return result
+
+        release_data = response.json()
+        latest_version = (release_data.get('tag_name') or '').lstrip('v').strip()
+        if not latest_version:
+            result["check_failed"] = True
+            result["compliant"] = True
+            result["message"] = "Version check unavailable (invalid release tag)."
+            return result
+
+        result["latest_version"] = latest_version
+        if version.parse(CURRENT_VERSION) != version.parse(latest_version):
+            result["compliant"] = False
+            result["message"] = (
+                f"Version mismatch detected. Current: {CURRENT_VERSION}, Latest: {latest_version}."
+            )
+        return result
+
+    except Exception as e:
+        logger.warning(f"Version compliance check failed: {e}")
+        result["check_failed"] = True
+        result["compliant"] = True
+        result["message"] = f"Version check unavailable: {e}"
+        return result
 
 
 class UpdateChecker(QThread):
@@ -496,9 +538,6 @@ class SilentUpdater(QThread):
                 import time
                 time.sleep(1)
                 self.request_exit.emit()  # Signal main thread to exit safely
-            else:
-                # Non-Windows: just mark as ready
-                self.update_ready.emit(self.installer_path)
                 
         except Exception as e:
             logger.error(f"Silent install failed: {e}")
@@ -743,10 +782,7 @@ class UpdateDialog(QDialog):
             _save_pre_update_version()
             
             # Launch the installer
-            if sys.platform == 'win32':
-                os.startfile(self.installer_path)
-            else:
-                subprocess.Popen([self.installer_path])
+            os.startfile(self.installer_path)
             
             # Close the application
             QMessageBox.information(

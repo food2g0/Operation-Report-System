@@ -48,7 +48,7 @@ GROUP_COLORS = {
     "EC PAY OUT":       QColor("#e67e22"),
 }
 
-TABLE_NAME = "global_other_services_tbl"
+TABLE_NAME = "daily_reports_brand_a"  # Global Other Services data now comes from canonical Brand A table
 
 
 def _build_columns(groups=None):
@@ -153,40 +153,12 @@ class GlobalOtherServicesPage(QWidget):
 
     # ── Ensure DB table ───────────────────────────────────────────────────
     def _ensure_table(self):
-        try:
-            db_manager.execute_query(f"""
-                CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
-                    id INT AUTO_INCREMENT PRIMARY KEY,
-                    branch VARCHAR(255) NOT NULL,
-                    corporation VARCHAR(255) NOT NULL,
-                    date DATE NOT NULL,
-                    gcash_out_lotes INT DEFAULT 0,
-                    gcash_out DECIMAL(15,2) DEFAULT 0.00,
-                    moneygram_lotes INT DEFAULT 0,
-                    moneygram DECIMAL(15,2) DEFAULT 0.00,
-                    transfast_lotes INT DEFAULT 0,
-                    transfast DECIMAL(15,2) DEFAULT 0.00,
-                    ria_lotes INT DEFAULT 0,
-                    ria DECIMAL(15,2) DEFAULT 0.00,
-                    smart_money_out_lotes INT DEFAULT 0,
-                    smart_money_out DECIMAL(15,2) DEFAULT 0.00,
-                    gcash_padala_lotes INT DEFAULT 0,
-                    gcash_padala DECIMAL(15,2) DEFAULT 0.00,
-                    abra_out_lotes INT DEFAULT 0,
-                    abra_out DECIMAL(15,2) DEFAULT 0.00,
-                    remitly_lotes INT DEFAULT 0,
-                    remitly DECIMAL(15,2) DEFAULT 0.00,
-                    pal_pay_cash_out_lotes INT DEFAULT 0,
-                    pal_pay_cash_out DECIMAL(15,2) DEFAULT 0.00,
-                    mc_out_lotes INT DEFAULT 0,
-                    mc_out DECIMAL(15,2) DEFAULT 0.00,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                    UNIQUE KEY uq_branch_date (branch, date)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-            """)
-        except Exception as e:
-            print(f"Global Other Services table setup: {e}")
+        """DEPRECATED: Global other services data now comes from daily_reports_brand_a (canonical table).
+        
+        This method is kept for backward compatibility but does nothing.
+        """
+        # No longer need to create global_other_services_tbl - all data is in daily_reports_brand_a
+        pass
 
     # ── Report header ─────────────────────────────────────────────────────
     def _build_report_header(self, parent):
@@ -241,12 +213,10 @@ class GlobalOtherServicesPage(QWidget):
 
         row.addWidget(self._bold("Group:"))
         self.group_selector = self._combo(220)
-        self.group_selector.currentTextChanged.connect(self.populate_table)
         row.addWidget(self.group_selector)
 
         row.addSpacing(20)
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         row.addWidget(self.date_range_widget)
 
         row.addSpacing(20)
@@ -255,7 +225,6 @@ class GlobalOtherServicesPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Not Registered", "not_registered")
         self.reg_filter_selector.addItem("All Branches", "all")
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
         row.addWidget(self.reg_filter_selector)
 
         # Keep corp_selector and os_filter_selector for backward compat but hidden
@@ -264,6 +233,16 @@ class GlobalOtherServicesPage(QWidget):
         self.os_filter_selector = self._combo(180)
         self.os_filter_selector.addItem("All (by Corporation)", None)
         self.os_filter_selector.setVisible(False)
+
+        row.addSpacing(15)
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self.populate_table)
+        row.addWidget(self.load_btn)
 
         row.addStretch()
         parent.addWidget(frame, 0)
@@ -453,6 +432,25 @@ class GlobalOtherServicesPage(QWidget):
         finally:
             self.os_filter_selector.blockSignals(False)
 
+    # ── Column existence cache ────────────────────────────────────────────
+    _col_cache: dict = {}
+
+    def _get_table_cols(self, tbl):
+        if tbl not in self.__class__._col_cache:
+            try:
+                rows = db_manager.execute_query(
+                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                    (tbl,)
+                )
+                self.__class__._col_cache[tbl] = {
+                    (r['COLUMN_NAME'] if isinstance(r, dict) else r[0])
+                    for r in rows
+                } if rows else set()
+            except Exception:
+                self.__class__._col_cache[tbl] = set()
+        return self.__class__._col_cache[tbl]
+
     # ── Populate ──────────────────────────────────────────────────────────
     def populate_table(self):
         self._is_loading = True
@@ -482,13 +480,32 @@ class GlobalOtherServicesPage(QWidget):
             for _, db_cols, _ in subs:
                 needed.update(db_cols)
 
-        # Build SELECT
+        # Resolve which table actually has these columns.
+        # New structure: daily_reports_brand_a; old structure: global_other_services_tbl.
+        primary_cols = self._get_table_cols(TABLE_NAME)
+        fallback_tbl = "global_other_services_tbl"
+        fallback_cols = self._get_table_cols(fallback_tbl)
+
+        # Prefer primary table; use fallback for columns not present there.
+        # If primary has none of the needed columns, use fallback entirely.
+        primary_available = needed & primary_cols if primary_cols else set()
+        if not primary_available and fallback_cols:
+            actual_table = fallback_tbl
+            available_cols = needed & fallback_cols if fallback_cols else needed
+        else:
+            actual_table = TABLE_NAME
+            available_cols = primary_available if primary_cols else needed
+
+        # Build SELECT — 0 literal for any column not in the resolved table
         parts = ["b.name AS branch"]
         for c in sorted(needed):
-            if is_range:
-                parts.append(f"SUM(COALESCE(dr.`{c}`, 0)) AS `{c}`")
+            if c in available_cols:
+                if is_range:
+                    parts.append(f"SUM(COALESCE(dr.`{c}`, 0)) AS `{c}`")
+                else:
+                    parts.append(f"COALESCE(dr.`{c}`, 0) AS `{c}`")
             else:
-                parts.append(f"COALESCE(dr.`{c}`, 0) AS `{c}`")
+                parts.append(f"0 AS `{c}`")
 
         # Date condition in JOIN ON so branches without entries still appear
         if is_range:
@@ -518,8 +535,9 @@ class GlobalOtherServicesPage(QWidget):
         sql = (
             f"SELECT {', '.join(parts)} "
             f"FROM branches b "
-            f"LEFT JOIN {TABLE_NAME} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-            f"{join_date_cond} "
+            f"LEFT JOIN `{actual_table}` dr "
+            f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+            f"  {join_date_cond} "
             f"{where_clause} "
             f"{group_by} "
             f"ORDER BY b.name"
@@ -542,7 +560,8 @@ class GlobalOtherServicesPage(QWidget):
         )
 
     def _on_populate_error(self, err):
-        QMessageBox.critical(self, "Query Error", err)
+        QMessageBox.critical(self, "Query Error",
+            f"Failed to load Global Other Services data.\n\nDetail: {err}")
         self._is_loading = False
 
     def _on_populate_result(self, rows):

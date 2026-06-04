@@ -2,6 +2,9 @@
 
 import logging
 import threading
+import time
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 log = logging.getLogger("APIDbManager")
 
@@ -26,6 +29,17 @@ class APIDbManager:
 
         self._token   = None
         self._session = _requests.Session()
+        retry = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
         self._session.headers.update({"Content-Type": "application/json"})
 
     # ── Authentication ────────────────────────────────────────────────────────
@@ -37,7 +51,7 @@ class APIDbManager:
             resp = self._session.post(
                 f"{self.base_url}/api/token",
                 json={"api_key": self.api_key},
-                timeout=self.timeout,
+                timeout=(5, self.timeout),
             )
             if resp.status_code == 200:
                 self._token = resp.json().get("token")
@@ -58,7 +72,7 @@ class APIDbManager:
         """Check API + DB health via /api/health."""
         try:
             resp = self._session.get(
-                f"{self.base_url}/api/health", timeout=self.timeout
+                f"{self.base_url}/api/health", timeout=(3, self.timeout)
             )
             return resp.status_code == 200 and resp.json().get("status") == "ok"
         except Exception:
@@ -79,15 +93,28 @@ class APIDbManager:
     def _post_exec(self, endpoint: str, sql: str, params) -> object:
         import requests as _requests
         payload = {"sql": sql, "params": self._normalise_params(params)}
-        resp = self._session.post(
-            f"{self.base_url}{endpoint}", json=payload, timeout=self.timeout
-        )
-        if resp.status_code == 401:
-            self.logger.warning("Token expired, refreshing…")
-            self.connect()
+        resp = None
+        for attempt in range(3):
+            try:
+                resp = self._session.post(
+                    f"{self.base_url}{endpoint}", json=payload, timeout=(5, self.timeout)
+                )
+                break
+            except (_requests.Timeout, _requests.ConnectionError) as exc:
+                if attempt >= 2:
+                    raise
+                wait_s = 0.8 * (attempt + 1)
+                self.logger.warning("Transient network error, retrying in %.1fs: %s", wait_s, exc)
+                time.sleep(wait_s)
+        if resp is not None and resp.status_code == 401:
+            self.logger.warning("Token expired, refreshing...")
+            if not self.connect():
+                raise RuntimeError("API authentication failed during token refresh")
             resp = self._session.post(
-                f"{self.base_url}{endpoint}", json=payload, timeout=self.timeout
+                f"{self.base_url}{endpoint}", json=payload, timeout=(5, self.timeout)
             )
+        if resp is None:
+            raise RuntimeError("No response from API server")
         return resp
 
     # ── Public interface (mirrors DatabaseManagerPooled) ─────────────────────
@@ -102,10 +129,14 @@ class APIDbManager:
         self._ensure_token()
         try:
             resp = self._post_exec("/api/exec", sql, params)
+            if resp.status_code >= 500:
+                raise RuntimeError(f"API server error ({resp.status_code})")
             data = resp.json()
             if data.get("error"):
                 raise RuntimeError(data["error"])
             return data.get("result")
+        except ValueError:
+            raise RuntimeError(f"Unexpected API response (HTTP {resp.status_code})")
         except _requests.RequestException as exc:
             self.logger.error("execute_query network error: %s", exc)
             raise
@@ -121,6 +152,8 @@ class APIDbManager:
         self._ensure_token()
         try:
             resp = self._post_exec("/api/exec_safe", sql, params)
+            if resp.status_code >= 500:
+                return None, RuntimeError(f"API server error ({resp.status_code})")
             data = resp.json()
             exec_error = data.get("exec_error")
             error_code = data.get("error_code")
@@ -130,6 +163,8 @@ class APIDbManager:
                     err.args = (error_code, exec_error)
                 return None, err
             return data.get("result"), None
+        except ValueError:
+            return None, RuntimeError(f"Unexpected API response (HTTP {resp.status_code})")
         except _requests.RequestException as exc:
             self.logger.error(
                 "execute_query_with_exception network error: %s", exc
@@ -165,15 +200,16 @@ class APIDbManager:
             resp = self._session.post(
                 f"{self.base_url}/api/batch",
                 json={"queries": payload_queries},
-                timeout=self.timeout,
+                timeout=(5, self.timeout),
             )
             if resp.status_code == 401:
-                self.logger.warning("Token expired, refreshing…")
-                self.connect()
+                self.logger.warning("Token expired, refreshing...")
+                if not self.connect():
+                    return [{"result": None, "error": "API authentication failed", "cached": False} for _ in queries]
                 resp = self._session.post(
                     f"{self.base_url}/api/batch",
                     json={"queries": payload_queries},
-                    timeout=self.timeout,
+                    timeout=(5, self.timeout),
                 )
             return resp.json().get("results", [])
         except _requests.RequestException as exc:
