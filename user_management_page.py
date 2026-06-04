@@ -1316,6 +1316,14 @@ class UserManagementPage(QWidget):
         self.admin_brand_combo.setMinimumWidth(100)
         self.admin_brand_combo.setStyleSheet("QComboBox { font-weight:bold; }")
 
+        # OS Group assignment - only relevant for admin role
+        self.admin_group_label = QLabel("Group:")
+        self.admin_group_combo = QComboBox()
+        self.admin_group_combo.addItem("(All Groups)", "")
+        self.admin_group_combo.setMinimumWidth(160)
+        self.admin_group_combo.setStyleSheet("QComboBox { font-weight:bold; }")
+        self._load_admin_group_options()
+
         add_admin_btn = QPushButton("➕ Add User")
         add_admin_btn.setStyleSheet(
             "QPushButton { background:#8e44ad; color:white; padding:6px 16px;"
@@ -1333,6 +1341,8 @@ class UserManagementPage(QWidget):
         form_layout.addWidget(self.admin_role_combo)
         form_layout.addWidget(self.admin_brand_label)
         form_layout.addWidget(self.admin_brand_combo)
+        form_layout.addWidget(self.admin_group_label)
+        form_layout.addWidget(self.admin_group_combo)
         form_layout.addWidget(add_admin_btn)
         form_layout.addStretch()
         layout.addWidget(form_frame)
@@ -1473,7 +1483,20 @@ class UserManagementPage(QWidget):
             QMessageBox.warning(self, "Input Required", "Please enter a password.")
             return
 
+        os_group = self.admin_group_combo.currentData() if role == 'admin' else ""
+
         try:
+            # Ensure os_group column exists (added in new schema version)
+            col_check = self.db.execute_query(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' "
+                "AND COLUMN_NAME = 'os_group'"
+            )
+            if not col_check:
+                self.db.execute_query(
+                    "ALTER TABLE users ADD COLUMN os_group VARCHAR(128) DEFAULT NULL"
+                )
+
             # Check for duplicate username
             existing = self.db.execute_query(
                 "SELECT id FROM users WHERE username = %s", (username,)
@@ -1487,15 +1510,16 @@ class UserManagementPage(QWidget):
 
             hashed = hash_password(password)
             self.db.execute_query(
-                "INSERT INTO users (username, password, role, branch, corporation, account_type) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (username, hashed, role, "", "", account_type)
+                "INSERT INTO users (username, password, role, branch, corporation, account_type, os_group) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (username, hashed, role, "", "", account_type, os_group or None)
             )
             label = "Super Admin" if role == "super_admin" else "Admin"
             brand_info = f" ({self.admin_brand_combo.currentText()})" if role == 'admin' else ""
+            group_info = f" — Group: {os_group}" if os_group else ""
             QMessageBox.information(
                 self, "✅ Created",
-                f"{label} user '{username}'{brand_info} created successfully!"
+                f"{label} user '{username}'{brand_info}{group_info} created successfully!"
             )
             self.admin_username_input.clear()
             self.admin_password_input.clear()
@@ -1503,12 +1527,28 @@ class UserManagementPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to create user: {e}")
 
+    def _load_admin_group_options(self):
+        """Populate the OS Group combo from the branches table."""
+        try:
+            rows = self.db.execute_query(
+                "SELECT DISTINCT os_name FROM branches "
+                "WHERE os_name IS NOT NULL AND os_name != '' ORDER BY os_name"
+            )
+            if rows:
+                for r in rows:
+                    name = r['os_name'] if isinstance(r, dict) else r[0]
+                    self.admin_group_combo.addItem(name, name)
+        except Exception:
+            pass
+
     def _on_admin_role_changed(self, index):
-        """Show/hide brand dropdown based on role selection."""
+        """Show/hide brand and group dropdowns based on role selection."""
         role = self.admin_role_combo.currentData()
         is_admin = (role == 'admin')
         self.admin_brand_label.setVisible(is_admin)
         self.admin_brand_combo.setVisible(is_admin)
+        self.admin_group_label.setVisible(is_admin)
+        self.admin_group_combo.setVisible(is_admin)
 
     def _edit_admin_brand(self, user_id: int, username: str, current_type: int):
         """Dialog to change an admin's brand/account_type."""

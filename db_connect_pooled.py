@@ -3,6 +3,8 @@ import os
 import time
 import threading
 import logging
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from sqlalchemy import create_engine, text, pool
 from sqlalchemy.engine import Engine
 from config import DB_CONFIG
@@ -339,6 +341,17 @@ class RemoteDatabaseManager:
         self._api_key = api_key
         self._token   = None
         self._session = _req.Session()
+        retry = Retry(
+            total=2,
+            connect=2,
+            read=2,
+            backoff_factor=0.5,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["GET", "POST"],
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
         self._session.headers.update({"Content-Type": "application/json"})
         self.logger   = logging.getLogger("RemoteDatabaseManager")
 
@@ -350,7 +363,7 @@ class RemoteDatabaseManager:
             resp = self._session.post(
                 f"{self._api_url}/api/token",
                 json={"api_key": self._api_key},
-                timeout=10,
+                timeout=(5, 15),
             )
             if resp.status_code == 200:
                 self._token = resp.json()["token"]
@@ -362,6 +375,11 @@ class RemoteDatabaseManager:
             self.logger.error(f"Token refresh error: {e}")
             return False
 
+    @staticmethod
+    def _is_transient_network_error(exc: Exception) -> bool:
+        import requests as _req
+        return isinstance(exc, (_req.Timeout, _req.ConnectionError))
+
     def _ensure_token(self) -> bool:
         if self._token:
             return True
@@ -369,6 +387,7 @@ class RemoteDatabaseManager:
 
     def _call(self, endpoint: str, sql: str, params=None):
         """POST to endpoint, auto-refresh token on 401."""
+        import requests as _req
         if not self._ensure_token():
             return None, Exception("Could not obtain API token")
 
@@ -376,12 +395,12 @@ class RemoteDatabaseManager:
         if params is not None:
             payload["params"] = list(params)
 
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 resp = self._session.post(
                     f"{self._api_url}{endpoint}",
                     json=payload,
-                    timeout=30,
+                    timeout=(5, 45),
                 )
                 if resp.status_code == 401 and attempt == 0:
                     # Token expired — refresh and retry once
@@ -390,6 +409,11 @@ class RemoteDatabaseManager:
                     continue
                 return resp, None
             except Exception as e:
+                if self._is_transient_network_error(e) and attempt < 2:
+                    wait_s = 0.8 * (attempt + 1)
+                    self.logger.warning(f"Transient API network error, retrying in {wait_s:.1f}s: {e}")
+                    time.sleep(wait_s)
+                    continue
                 return None, e
 
         return None, Exception("API call failed after retry")
@@ -455,12 +479,12 @@ class RemoteDatabaseManager:
                 if code is not None:
                     exc.args = (code, data["exec_error"])
                 return None, exc
-        return data.get("result"), None
+            return data.get("result"), None
+        return None, Exception("API temporarily rate limited. Please try again in a moment.")
 
     def test_connection(self) -> bool:
         try:
-            import requests as _req
-            resp = _req.get(f"{self._api_url}/api/health", timeout=5)
+            resp = self._session.get(f"{self._api_url}/api/health", timeout=(3, 5))
             return resp.status_code == 200 and resp.json().get("db") is True
         except Exception:
             return False

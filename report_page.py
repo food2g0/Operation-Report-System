@@ -75,8 +75,7 @@ class ReportPage(QWidget):
         date_label = QLabel("Date:")
         date_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.generate_report)
-        # Backward-compat alias
+        # no auto-load on date change
         self.date_selector = self.date_range_widget
 
         registry_label = QLabel("Partner Registry No:")
@@ -85,8 +84,7 @@ class ReportPage(QWidget):
         self.registry_input.setPlaceholderText("e.g., P250683A")
         self.registry_input.setMaximumWidth(150)
         self.registry_input.setReadOnly(True)
-        # Re-generate report when registry number changes so header updates live
-        self.registry_input.textChanged.connect(self.generate_report)
+        # no auto-load on registry change
 
         # Registration status filter
         reg_filter_label = QLabel("Branch Status:")
@@ -94,21 +92,30 @@ class ReportPage(QWidget):
         self.reg_filter_selector = QComboBox()
         self.reg_filter_selector.setMinimumWidth(150)
         self.reg_filter_selector.addItem("Registered Only", "registered")
-        self.reg_filter_selector.currentIndexChanged.connect(self.generate_report)
+        # no auto-load on status change
+
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self._on_load_clicked)
 
         controls_layout.addWidget(corp_label)
         controls_layout.addWidget(self.corp_selector)
-        controls_layout.addSpacing(30)
+        controls_layout.addSpacing(20)
         controls_layout.addWidget(date_label)
         controls_layout.addWidget(self.date_range_widget)
-        controls_layout.addSpacing(30)
+        controls_layout.addSpacing(20)
         controls_layout.addWidget(registry_label)
         controls_layout.addWidget(self.registry_input)
-        controls_layout.addSpacing(30)
+        controls_layout.addSpacing(20)
         controls_layout.addWidget(reg_filter_label)
         controls_layout.addWidget(self.reg_filter_selector)
-        # Export / Print buttons moved here so they remain visible on small screens
-        # Use a compact style to avoid overflowing when window is narrow
+        controls_layout.addSpacing(12)
+        controls_layout.addWidget(self.load_btn)
+        # Export / Print buttons
         button_style = """
             QPushButton {
                 padding: 8px 16px;
@@ -229,19 +236,8 @@ class ReportPage(QWidget):
         self.registry_input.setText(registry)
         self.generate_report()
 
-    ALLOWED_CORPS = [
-        'SILVERSTAR JEWELRY AND PAWNSHOP INC.',
-        'ALLEXITE JEWELRY PAWNSHOP INC.',
-        'SAN RAMON PLATINUM PAWNSHOP INC.',
-        'HOMENEEDS PAWNSHOP INC.',
-        'KRISTAL CLEAR DIAMOND & GOLD PAWNSHOP INC.',
-        'SAFELOCK PAWNSHOP INC.',
-        'MEGAWORLD DOMESTIC PAWNSHOP INC',
-    ]
-
     def load_corporations(self):
         self.corp_selector.clear()
-        allowed = {c.upper().strip().rstrip('.') for c in self.ALLOWED_CORPS}
         try:
             rows = db_manager.execute_query(
                 "SELECT name FROM corporations ORDER BY name"
@@ -249,11 +245,12 @@ class ReportPage(QWidget):
             if rows:
                 for row in rows:
                     name = row.get('name') or row[0]
-                    if name.upper().strip().rstrip('.') in allowed:
-                        self.corp_selector.addItem(name)
+                    self.corp_selector.addItem(name)
         except Exception as e:
             print(f"Error loading corporations: {e}")
 
+        # Global Reliance is not a corporation in the DB — it groups all branches
+        # with global_tag = 'GLOBAL', so it must be added manually.
         self.corp_selector.addItem('Global Reliance Management & Holdings Corp.')
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -373,6 +370,16 @@ class ReportPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error retrieving totals: {str(e)}")
             return None
+
+    def _on_load_clicked(self):
+        self.load_btn.setEnabled(False)
+        self.load_btn.setText("⏳ Loading…")
+        QApplication.processEvents()
+        try:
+            self.generate_report()
+        finally:
+            self.load_btn.setEnabled(True)
+            self.load_btn.setText("🔍 Load Report")
 
     # ─────────────────────────────────────────────────────────────────────────
 

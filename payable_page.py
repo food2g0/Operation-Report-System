@@ -123,6 +123,16 @@ class PayablesPage(QWidget):
         except Exception as e:
             logger.error("verify_table_structure: %s", e)
 
+    def _on_load_clicked(self):
+        self.load_btn.setEnabled(False)
+        self.load_btn.setText("⏳ Loading…")
+        QApplication.processEvents()
+        try:
+            self.populate_table()
+        finally:
+            self.load_btn.setEnabled(True)
+            self.load_btn.setText("🔍 Load Report")
+
     # ─────────────────────────────────────────────────────────────────────────
     def populate_table(self):
         """Load data into table. _is_loading flag blocks auto-save during fill."""
@@ -151,31 +161,31 @@ class PayablesPage(QWidget):
         self.table.blockSignals(True)
 
         try:
-            # For both brands: ALL palawan columns come from payable_tbl_brand_a.
-            # SKID/SKIR/CANCEL/INC are also stored in payable_tbl_brand_a.
+            # For both brands: ALL palawan columns now come from daily report tables.
+            # daily_reports_brand_a (Brand A) and daily_reports (Brand B)
             if is_range:
                 lotes_join = (
                     "LEFT JOIN (SELECT corporation, branch, "
-                    "SUM(sendout_lotes) AS so_lotes, "
-                    "SUM(sendout_capital) AS so_capital, "
-                    "SUM(sendout_sc) AS so_sc, "
-                    "SUM(sendout_commission) AS so_commission, "
-                    "SUM(sendout_total) AS so_total, "
-                    "SUM(payout_lotes) AS po_lotes, "
-                    "SUM(payout_capital) AS po_capital, "
-                    "SUM(payout_sc) AS po_sc, "
-                    "SUM(payout_commission) AS po_commission, "
-                    "SUM(payout_total) AS po_total, "
-                    "SUM(international_lotes) AS int_lotes, "
-                    "SUM(international_capital) AS int_capital, "
-                    "SUM(international_sc) AS int_sc, "
-                    "SUM(international_commission) AS int_commission, "
-                    "SUM(international_total) AS int_total, "
-                    "SUM(skid) AS pt_skid, "
-                    "SUM(skir) AS pt_skir, "
-                    "SUM(cancellation) AS pt_cancellation, "
-                    "SUM(inc) AS pt_inc "
-                    "FROM payable_tbl_brand_a WHERE date BETWEEN %s AND %s GROUP BY corporation, branch) pt "
+                    "SUM(COALESCE(palawan_sendout_lotes_total, 0)) AS so_lotes, "
+                    "SUM(COALESCE(palawan_sendout_principal, 0)) AS so_capital, "
+                    "SUM(COALESCE(palawan_sendout_sc, 0)) AS so_sc, "
+                    "SUM(COALESCE(palawan_sendout_commission, 0)) AS so_commission, "
+                    "SUM(COALESCE(palawan_sendout_regular_total, 0)) AS so_total, "
+                    "SUM(COALESCE(palawan_payout_lotes_total, 0)) AS po_lotes, "
+                    "SUM(COALESCE(palawan_payout_principal, 0)) AS po_capital, "
+                    "SUM(COALESCE(palawan_payout_sc, 0)) AS po_sc, "
+                    "SUM(COALESCE(palawan_payout_commission, 0)) AS po_commission, "
+                    "SUM(COALESCE(palawan_payout_regular_total, 0)) AS po_total, "
+                    "SUM(COALESCE(palawan_international_lotes_total, 0)) AS int_lotes, "
+                    "SUM(COALESCE(palawan_international_principal, 0)) AS int_capital, "
+                    "SUM(COALESCE(palawan_international_sc, 0)) AS int_sc, "
+                    "SUM(COALESCE(palawan_international_commission, 0)) AS int_commission, "
+                    "SUM(COALESCE(palawan_international_regular_total, 0)) AS int_total, "
+                    "SUM(COALESCE(palawan_suki_discounts, 0)) AS pt_skid, "
+                    "SUM(COALESCE(palawan_suki_rebates, 0)) AS pt_skir, "
+                    "SUM(COALESCE(palawan_cancel, 0)) AS pt_cancellation, "
+                    "SUM(COALESCE(palawan_pay_out_incentives, 0)) AS pt_inc "
+                    f"FROM {self.daily_table} WHERE date BETWEEN %s AND %s GROUP BY corporation, branch) pt "
                     "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci "
                     "AND COALESCE(dr.corporation, c.name) COLLATE utf8mb4_general_ci = pt.corporation COLLATE utf8mb4_general_ci"
                 )
@@ -183,26 +193,26 @@ class PayablesPage(QWidget):
             else:
                 lotes_join = (
                     "LEFT JOIN (SELECT corporation, branch, "
-                    "MAX(sendout_lotes) AS so_lotes, "
-                    "MAX(sendout_capital) AS so_capital, "
-                    "MAX(sendout_sc) AS so_sc, "
-                    "MAX(sendout_commission) AS so_commission, "
-                    "MAX(sendout_total) AS so_total, "
-                    "MAX(payout_lotes) AS po_lotes, "
-                    "MAX(payout_capital) AS po_capital, "
-                    "MAX(payout_sc) AS po_sc, "
-                    "MAX(payout_commission) AS po_commission, "
-                    "MAX(payout_total) AS po_total, "
-                    "MAX(international_lotes) AS int_lotes, "
-                    "MAX(international_capital) AS int_capital, "
-                    "MAX(international_sc) AS int_sc, "
-                    "MAX(international_commission) AS int_commission, "
-                    "MAX(international_total) AS int_total, "
-                    "MAX(skid) AS pt_skid, "
-                    "MAX(skir) AS pt_skir, "
-                    "MAX(cancellation) AS pt_cancellation, "
-                    "MAX(inc) AS pt_inc "
-                    "FROM payable_tbl_brand_a WHERE date = %s GROUP BY corporation, branch) pt "
+                    "MAX(COALESCE(palawan_sendout_lotes_total, 0)) AS so_lotes, "
+                    "MAX(COALESCE(palawan_sendout_principal, 0)) AS so_capital, "
+                    "MAX(COALESCE(palawan_sendout_sc, 0)) AS so_sc, "
+                    "MAX(COALESCE(palawan_sendout_commission, 0)) AS so_commission, "
+                    "MAX(COALESCE(palawan_sendout_regular_total, 0)) AS so_total, "
+                    "MAX(COALESCE(palawan_payout_lotes_total, 0)) AS po_lotes, "
+                    "MAX(COALESCE(palawan_payout_principal, 0)) AS po_capital, "
+                    "MAX(COALESCE(palawan_payout_sc, 0)) AS po_sc, "
+                    "MAX(COALESCE(palawan_payout_commission, 0)) AS po_commission, "
+                    "MAX(COALESCE(palawan_payout_regular_total, 0)) AS po_total, "
+                    "MAX(COALESCE(palawan_international_lotes_total, 0)) AS int_lotes, "
+                    "MAX(COALESCE(palawan_international_principal, 0)) AS int_capital, "
+                    "MAX(COALESCE(palawan_international_sc, 0)) AS int_sc, "
+                    "MAX(COALESCE(palawan_international_commission, 0)) AS int_commission, "
+                    "MAX(COALESCE(palawan_international_regular_total, 0)) AS int_total, "
+                    "MAX(COALESCE(palawan_suki_discounts, 0)) AS pt_skid, "
+                    "MAX(COALESCE(palawan_suki_rebates, 0)) AS pt_skir, "
+                    "MAX(COALESCE(palawan_cancel, 0)) AS pt_cancellation, "
+                    "MAX(COALESCE(palawan_pay_out_incentives, 0)) AS pt_inc "
+                    f"FROM {self.daily_table} WHERE date = %s GROUP BY corporation, branch) pt "
                     "ON b.name COLLATE utf8mb4_general_ci = pt.branch COLLATE utf8mb4_general_ci "
                     "AND COALESCE(dr.corporation, c.name) COLLATE utf8mb4_general_ci = pt.corporation COLLATE utf8mb4_general_ci"
                 )
@@ -223,14 +233,14 @@ class PayablesPage(QWidget):
             int_comm_col    = "pt.int_commission"
             int_total_col   = "pt.int_total"
 
-            # Both brands use pt.* columns from payable_tbl_brand_a subquery (1 row per branch),
+            # Both brands use pt.* columns from daily report subquery (aggregated),
             # so MAX() avoids row-multiplication when joined with dr rows.
             _agg = "MAX"
-            # Prefer payable values, but fall back to daily-report values when payable is zero.
-            skid_col   = "MAX(COALESCE(NULLIF(pt.pt_skid, 0), dr.palawan_suki_discounts, 0))"
-            skir_col   = "MAX(COALESCE(NULLIF(pt.pt_skir, 0), dr.palawan_suki_rebates, 0))"
-            cancel_col = "MAX(COALESCE(NULLIF(pt.pt_cancellation, 0), dr.palawan_cancel, 0))"
-            inc_col    = "MAX(COALESCE(NULLIF(pt.pt_inc, 0), dr.palawan_pay_out_incentives, 0))"
+            # Use values directly from the daily report (canonical source)
+            skid_col   = "MAX(COALESCE(pt.pt_skid, 0))"
+            skir_col   = "MAX(COALESCE(pt.pt_skir, 0))"
+            cancel_col = "MAX(COALESCE(pt.pt_cancellation, 0))"
+            inc_col    = "MAX(COALESCE(pt.pt_inc, 0))"
 
             # ── Date filter goes into the LEFT JOIN ON clause (not WHERE) ──────
             # Putting date in WHERE turns the LEFT JOIN into an INNER JOIN,
@@ -699,7 +709,7 @@ class PayablesPage(QWidget):
         date_label = QLabel("Date:")
         date_label.setFont(QFont("Arial", 10, QFont.Bold))
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
+        # no auto-load — user clicks Load Report button
         self.date_selector = self.date_range_widget  # backward-compat
 
         if self.account_type != 1:
@@ -723,7 +733,7 @@ class PayablesPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Unregistered", "not_registered")
         self.reg_filter_selector.setCurrentIndex(1)  # Default to "Registered Only"
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
+        # no auto-load
         self.reg_filter_selector.setStyleSheet(_combo_ss)
 
         # OS (Operation Supervisor) filter
@@ -733,7 +743,7 @@ class PayablesPage(QWidget):
         self.os_filter_selector.setMinimumHeight(30)
         if self.account_type != 1:
             self.os_filter_selector.addItem("All (by Corporation)", None)
-        self.os_filter_selector.currentIndexChanged.connect(self.populate_table)
+        # no auto-load
         self.os_filter_selector.setStyleSheet(_combo_ss)
 
         # Category filter (60% / 30%)
@@ -744,8 +754,17 @@ class PayablesPage(QWidget):
         self.category_filter_selector.addItem("All", "all")
         self.category_filter_selector.addItem("60%", "60")
         self.category_filter_selector.addItem("30%", "30")
-        self.category_filter_selector.currentIndexChanged.connect(self.populate_table)
+        # no auto-load
         self.category_filter_selector.setStyleSheet(_combo_ss)
+
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setMinimumHeight(30)
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self._on_load_clicked)
 
         row2.addWidget(reg_filter_label)
         row2.addWidget(self.reg_filter_selector, 1)
@@ -753,6 +772,7 @@ class PayablesPage(QWidget):
         row2.addWidget(self.os_filter_selector, 1)
         row2.addWidget(category_filter_label)
         row2.addWidget(self.category_filter_selector, 1)
+        row2.addWidget(self.load_btn)
         row2.addStretch()
         controls_layout.addLayout(row2)
 

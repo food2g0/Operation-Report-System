@@ -41,11 +41,9 @@ class FTHOPage(QWidget):
 
         filter_row.addWidget(QLabel("Group:"))
         self.group_selector = QComboBox()
-        self.group_selector.currentTextChanged.connect(self.populate_table)
         filter_row.addWidget(self.group_selector, 1)
 
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         filter_row.addWidget(self.date_range_widget)
 
         filter_row.addWidget(QLabel("Status:"))
@@ -53,8 +51,16 @@ class FTHOPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Not Registered", "not_registered")
         self.reg_filter_selector.addItem("All Branches", "all")
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
         filter_row.addWidget(self.reg_filter_selector)
+
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self.populate_table)
+        filter_row.addWidget(self.load_btn)
 
         layout.addLayout(filter_row)
 

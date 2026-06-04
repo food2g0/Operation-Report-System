@@ -30,18 +30,14 @@ class MCPage(QWidget):
         # Corporation selector (hidden for Brand A)
         self.corp_label = QLabel("Select Corporation:")
         self.corp_selector = QComboBox()
-        self.corp_selector.currentTextChanged.connect(self.populate_table)
-
         # Group selector (visible for Brand A)
         self.group_label = QLabel("Select Group:")
         self.group_selector = QComboBox()
-        self.group_selector.currentTextChanged.connect(self.populate_table)
         self.group_label.setVisible(False)
         self.group_selector.setVisible(False)
 
         # Date selector
         self.date_range_widget = DateRangeWidget()
-        self.date_range_widget.dateRangeChanged.connect(self.populate_table)
         self.date_selector = self.date_range_widget  # backward-compat
 
         # Registration status filter
@@ -50,19 +46,32 @@ class MCPage(QWidget):
         self.reg_filter_selector.addItem("Registered Only", "registered")
         self.reg_filter_selector.addItem("Not Registered", "not_registered")
         self.reg_filter_selector.addItem("All Branches", "all")
-        self.reg_filter_selector.currentIndexChanged.connect(self.populate_table)
         self.reg_filter_label.setVisible(False)
         self.reg_filter_selector.setVisible(False)
 
-        # Add selectors to layout
-        self.layout.addWidget(self.corp_label)
-        self.layout.addWidget(self.corp_selector)
-        self.layout.addWidget(self.group_label)
-        self.layout.addWidget(self.group_selector)
-        self.layout.addWidget(QLabel("Select Date:"))
-        self.layout.addWidget(self.date_range_widget)
-        self.layout.addWidget(self.reg_filter_label)
-        self.layout.addWidget(self.reg_filter_selector)
+        # Load Report button
+        self.load_btn = QPushButton("🔍 Load Report")
+        self.load_btn.setStyleSheet(
+            "QPushButton{background:#27AE60;color:white;padding:6px 16px;"
+            "border:none;border-radius:4px;font-weight:bold;}"
+            "QPushButton:hover{background:#219A52;}"
+        )
+        self.load_btn.clicked.connect(self.populate_table)
+
+        # Filter row
+        from PyQt5.QtWidgets import QHBoxLayout
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(self.corp_label)
+        filter_row.addWidget(self.corp_selector)
+        filter_row.addWidget(self.group_label)
+        filter_row.addWidget(self.group_selector)
+        filter_row.addWidget(QLabel("Date:"))
+        filter_row.addWidget(self.date_range_widget)
+        filter_row.addWidget(self.reg_filter_label)
+        filter_row.addWidget(self.reg_filter_selector)
+        filter_row.addWidget(self.load_btn)
+        filter_row.addStretch()
+        self.layout.addLayout(filter_row)
 
         # Table - Fixed to 3 columns
         self.table = QTableWidget()

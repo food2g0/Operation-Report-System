@@ -142,29 +142,7 @@ class PalawanDetailsTab(QWidget):
         adj_box.setLayout(adj_form)
         inner_layout.addWidget(adj_box)
 
-        # Save button
-        btn_row = QHBoxLayout()
-        btn_row.addStretch()
-        self._save_btn = QPushButton("Save Palawan B")
-        self._save_btn.setFixedHeight(_sz(36))
-        self._save_btn.setMinimumWidth(_sz(200))
-        self._save_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {_SAVE_COLOR};
-                color: #FFFFFF;
-                border: none;
-                border-radius: {_sz(6)}px;
-                font-size: {_sz(13)}px;
-                font-weight: 700;
-                padding: 0 {_sz(24)}px;
-            }}
-            QPushButton:hover   {{ background-color: {_SAVE_HOVER}; }}
-            QPushButton:pressed {{ background-color: #000000; }}
-        """)
-        self._save_btn.clicked.connect(self._save)
-        btn_row.addWidget(self._save_btn)
-        inner_layout.addLayout(btn_row)
-
+        # Note: Palawan data is now saved with main report posting via post_button
         inner_layout.addStretch()
         scroll.setWidget(inner)
         outer.addWidget(scroll)

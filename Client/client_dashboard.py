@@ -2,6 +2,7 @@ import datetime
 import json
 import logging
 import os
+import sys
 import time
 import re
 
@@ -22,6 +23,19 @@ from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from Client.cash_flow_tab import CashFlowTab
 from Client.palawan_details_tab import PalawanDetailsTab
 from security import SessionManager
+from maintenance_mode_ui import MaintenanceNotificationBar
+from Client.ui_components import LoadingOverlay, NoWheelDateEdit
+from Client.ui_styles import (
+    _SLATE_50, _SLATE_100, _SLATE_200, _SLATE_300, _SLATE_400,
+    _SLATE_500, _SLATE_600, _SLATE_700, _SLATE_800, _SLATE_900,
+    _INDIGO_50, _INDIGO_100, _INDIGO_400, _INDIGO_500, _INDIGO_600,
+    _INDIGO_700, _EMERALD_50, _EMERALD_400, _EMERALD_500, _EMERALD_600,
+    _AMBER_400, _AMBER_500, _RED_400, _RED_500, _WHITE,
+    _BG_APP, _BG_CARD, _BG_INPUT, _BG_RDONLY, _BG_HEADER, _BORDER,
+    _TEXT_PRI, _TEXT_SEC, _TEXT_MUTED, _PRIMARY, _PRIMARY_DK,
+    _PRIMARY_PR, _SUCCESS, _SUCCESS_DK, _build_global_qss
+)
+from Client.ui_scaling import _sz
 
 
 try:
@@ -36,102 +50,6 @@ try:
 except ImportError:
     _ping_monitor = None
 
-class LoadingOverlay(QWidget):
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
-        self.setAttribute(Qt.WA_TranslucentBackground, False)
-        
-        self.setStyleSheet("background-color: rgba(0, 0, 0, 150);")
-        
-        container = QFrame(self)
-        container.setFixedSize(280, 140)
-        container.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 12px;
-                border: none;
-            }
-        """)
-        
-        layout = QVBoxLayout(container)
-        layout.setAlignment(Qt.AlignCenter)
-        layout.setSpacing(15)
-        
-      
-        self.status_label = QLabel("Posting report...")
-        self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("""
-            QLabel {
-                color: #333333;
-                font-size: 14px;
-                font-weight: bold;
-                font-family: 'Segoe UI', Arial;
-                background: transparent;
-            }
-        """)
-         
-        self.progress = QProgressBar()
-        self.progress.setRange(0, 0)
-        self.progress.setTextVisible(False)
-        self.progress.setFixedHeight(6)
-        self.progress.setStyleSheet("""
-            QProgressBar {
-                background-color: #f0f0f0;
-                border: none;
-                border-radius: 3px;
-            }
-            QProgressBar::chunk {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #667eea, stop:1 #764ba2);
-                border-radius: 3px;
-            }
-        """)
-        
-        # Subtitle
-        self.subtitle_label = QLabel("Please wait...")
-        self.subtitle_label.setAlignment(Qt.AlignCenter)
-        self.subtitle_label.setStyleSheet("""
-            QLabel {
-                color: #888888;
-                font-size: 11px;
-                font-family: 'Segoe UI', Arial;
-                background: transparent;
-            }
-        """)
-        
-        layout.addWidget(self.status_label)
-        layout.addWidget(self.progress)
-        layout.addWidget(self.subtitle_label)
-        
-        self.container = container
-        self.hide()
-    
-    def showEvent(self, event):
-      
-        super().showEvent(event)
-        if self.parent():
-            self.setGeometry(self.parent().rect())
-            self.container.move(
-                (self.width() - self.container.width()) // 2,
-                (self.height() - self.container.height()) // 2
-            )
-    
-    def resizeEvent(self, event):
-    
-        super().resizeEvent(event)
-        self.container.move(
-            (self.width() - self.container.width()) // 2,
-            (self.height() - self.container.height()) // 2
-        )
-    
-    def set_status(self, text, subtitle="Please wait..."):
-        self.status_label.setText(text)
-        self.subtitle_label.setText(subtitle)
-        QApplication.processEvents()
-
-
 try:
     from auto_updater import check_for_updates, check_update_success
     from version import __version__
@@ -141,275 +59,9 @@ except ImportError:
     __version__ = "1.0.0"
     check_update_success = None
 
-_SLATE_50   = "#F8FAFC"
-_SLATE_100  = "#F1F5F9"
-_SLATE_200  = "#E2E8F0"
-_SLATE_300  = "#CBD5E1"
-_SLATE_400  = "#94A3B8"
-_SLATE_500  = "#64748B"
-_SLATE_600  = "#475569"
-_SLATE_700  = "#334155"
-_SLATE_800  = "#1E293B"
-_SLATE_900  = "#0F172A"
-
-
-_INDIGO_50  = "#EEF2FF"
-_INDIGO_100 = "#E0E7FF"
-_INDIGO_400 = "#818CF8"
-_INDIGO_500 = "#0C0C0F"
-_INDIGO_600 = "#0B0B0C"
-_INDIGO_700 = "#111014"
-
-
-_EMERALD_50  = "#ECFDF5"
-_EMERALD_400 = "#34D399"
-_EMERALD_500 = "#10B981"
-_EMERALD_600 = "#059669"
-
-
-_AMBER_400  = "#FBBF24"
-_AMBER_500  = "#F59E0B"
-_RED_400    = "#F87171"
-_RED_500    = "#EF4444"
-_WHITE      = "#FFFFFF"
-
-
-_BG_APP     = _SLATE_100
-_BG_CARD    = _WHITE
-_BG_INPUT   = _WHITE
-_BG_RDONLY  = _SLATE_50
-_BG_HEADER  = _SLATE_900
-_BORDER     = _SLATE_200
-_TEXT_PRI   = _SLATE_800
-_TEXT_SEC   = _SLATE_500
-_TEXT_MUTED = _SLATE_400
-_PRIMARY    = _INDIGO_500
-_PRIMARY_DK = _INDIGO_600
-_PRIMARY_PR = _INDIGO_700
-_SUCCESS    = _EMERALD_500
-_SUCCESS_DK = _EMERALD_600
-
-from Client.ui_scaling import _sz
 
 def _s(px: int) -> int:
     return _sz(px)
-
-
-def _build_global_qss():
-    return f"""
-
-QWidget {{
-    background-color: {_BG_APP};
-    font-family: 'Segoe UI', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
-    font-size: {_sz(13)}px;
-    color: {_TEXT_PRI};
-}}
-
-
-QGroupBox {{
-    background-color: {_BG_CARD};
-    border: 1px solid {_BORDER};
-    border-radius: {_sz(8)}px;
-    margin-top: {_sz(22)}px;
-    padding: {_sz(18)}px {_sz(16)}px {_sz(16)}px {_sz(16)}px;
-    font-size: {_sz(11)}px;
-    font-weight: 700;
-    color: {_TEXT_SEC};
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-}}
-QGroupBox::title {{
-    subcontrol-origin: margin;
-    subcontrol-position: top left;
-    left: {_sz(12)}px;
-    top: -1px;
-    padding: {_sz(2)}px {_sz(8)}px;
-    background-color: {_BG_CARD};
-    color: {_PRIMARY};
-    font-size: {_sz(11)}px;
-    font-weight: 800;
-    letter-spacing: 1.3px;
-    border-radius: 3px;
-}}
-
-
-QLineEdit {{
-    background-color: {_BG_INPUT};
-    border: 1.5px solid {_BORDER};
-    border-radius: {_sz(6)}px;
-    padding: {_sz(7)}px {_sz(10)}px;
-    font-size: {_sz(14)}px;
-    font-weight: 500;
-    color: {_TEXT_PRI};
-    min-width: {_sz(80)}px;
-    min-height: {_sz(34)}px;
-    selection-background-color: {_INDIGO_100};
-    selection-color: {_PRIMARY_DK};
-}}
-QLineEdit:focus {{
-    border: 2px solid {_PRIMARY};
-    background-color: {_INDIGO_50};
-    padding: {_sz(6)}px {_sz(9)}px;
-}}
-QLineEdit:read-only {{
-    background-color: {_BG_RDONLY};
-    color: {_TEXT_PRI};
-    font-weight: 600;
-    border-color: {_BORDER};
-}}
-QLineEdit:disabled {{
-    background-color: {_SLATE_100};
-    color: {_TEXT_SEC};
-    border-color: {_SLATE_200};
-}}
-
-
-QLabel {{
-    color: {_TEXT_PRI};
-    font-size: {_sz(13)}px;
-    font-weight: 500;
-    min-width: 0;
-    background: transparent;
-}}
-
-
-QPushButton {{
-    background-color: {_PRIMARY};
-    color: {_WHITE};
-    border: none;
-    padding: {_sz(8)}px {_sz(18)}px;
-    border-radius: {_sz(6)}px;
-    font-size: {_sz(12)}px;
-    font-weight: 700;
-    min-width: {_sz(80)}px;
-    letter-spacing: 0.2px;
-}}
-QPushButton:hover   {{ background-color: {_PRIMARY_DK}; }}
-QPushButton:pressed {{ background-color: {_PRIMARY_PR}; }}
-QPushButton:disabled {{
-    background-color: {_SLATE_200};
-    color: {_TEXT_SEC};
-}}
-
-
-QTabWidget::pane {{
-    border: 1px solid {_BORDER};
-    background-color: {_BG_CARD};
-    border-radius: 0 {_sz(8)}px {_sz(8)}px {_sz(8)}px;
-    top: -1px;
-}}
-QTabBar::tab {{
-    background-color: {_SLATE_100};
-    color: {_TEXT_PRI};
-    border: 1px solid {_BORDER};
-    border-bottom: none;
-    padding: {_sz(10)}px {_sz(24)}px;
-    margin-right: 2px;
-    border-top-left-radius: {_sz(6)}px;
-    border-top-right-radius: {_sz(6)}px;
-    font-size: {_sz(13)}px;
-    font-weight: 600;
-    min-width: {_sz(110)}px;
-}}
-QTabBar::tab:selected {{
-    background-color: {_BG_CARD};
-    color: {_PRIMARY};
-    font-weight: 700;
-    border-bottom: 2px solid {_BG_CARD};
-}}
-QTabBar::tab:hover:!selected {{
-    background-color: {_SLATE_200};
-    color: {_TEXT_PRI};
-}}
-
-
-QScrollArea {{ border: none; background: transparent; }}
-QScrollBar:vertical {{
-    background: transparent; width: 5px; border-radius: 3px; margin: 2px 0;
-}}
-QScrollBar::handle:vertical {{
-    background: {_SLATE_300}; border-radius: 3px; min-height: 24px;
-}}
-QScrollBar::handle:vertical:hover {{ background: {_SLATE_400}; }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; border: none; }}
-QScrollBar:horizontal {{
-    background: transparent; height: 5px; border-radius: 3px;
-}}
-QScrollBar::handle:horizontal {{
-    background: {_SLATE_300}; border-radius: 3px;
-}}
-QScrollBar::handle:horizontal:hover {{ background: {_SLATE_400}; }}
-QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; border: none; }}
-
-
-QDateEdit {{
-    background-color: {_BG_INPUT};
-    border: 1.5px solid {_BORDER};
-    border-radius: {_sz(6)}px;
-    padding: {_sz(7)}px {_sz(10)}px;
-    font-size: {_sz(14)}px;
-    font-weight: 600;
-    color: {_TEXT_PRI};
-    min-height: {_sz(34)}px;
-}}
-QDateEdit:focus {{ border: 2px solid {_PRIMARY}; padding: {_sz(6)}px {_sz(9)}px; }}
-QDateEdit::drop-down {{
-    subcontrol-origin: padding;
-    subcontrol-position: top right;
-    width: 28px;
-    border: none;
-    border-left: 1px solid {_BORDER};
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
-    background-color: {_SLATE_100};
-}}
-QDateEdit::drop-down:hover {{
-    background-color: {_INDIGO_100};
-}}
-QDateEdit::down-arrow {{
-    image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTYiIGhlaWdodD0iMTYiIHZpZXdCb3g9IjAgMCAxNiAxNiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB4PSIyIiB5PSIyIiB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHJ4PSIyIiBzdHJva2U9IiM0NzU1NjkiIHN0cm9rZS13aWR0aD0iMS41Ii8+PHBhdGggZD0iTTIgNkgxNCIgc3Ryb2tlPSIjNDc1NTY5IiBzdHJva2Utd2lkdGg9IjEuNSIvPjxjaXJjbGUgY3g9IjUiIGN5PSIxMCIgcj0iMSIgZmlsbD0iIzQ3NTU2OSIvPjxjaXJjbGUgY3g9IjgiIGN5PSIxMCIgcj0iMSIgZmlsbD0iIzQ3NTU2OSIvPjxjaXJjbGUgY3g9IjExIiBjeT0iMTAiIHI9IjEiIGZpbGw9IiM0NzU1NjkiLz48L3N2Zz4=);
-    width: 16px;
-    height: 16px;
-}}
-
-
-QComboBox {{
-    background-color: {_BG_INPUT};
-    border: 1.5px solid {_BORDER};
-    border-radius: {_sz(6)}px;
-    padding: {_sz(7)}px {_sz(10)}px;
-    font-size: {_sz(14)}px;
-    font-weight: 600;
-    color: {_TEXT_PRI};
-    min-height: {_sz(34)}px;
-    min-width: {_sz(120)}px;
-}}
-QComboBox:focus {{
-    border: 2px solid {_PRIMARY};
-    background-color: {_INDIGO_50};
-}}
-QComboBox::drop-down {{ border: none; width: 28px; }}
-QComboBox::down-arrow {{
-    image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iOCIgdmlld0JveD0iMCAwIDEyIDgiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTEgMUw2IDZMMTEgMSIgc3Ryb2tlPSIjNjQ3NDhCIiBzdHJva2Utd2lkdGg9IjEuNSIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIi8+PC9zdmc+);
-    width: 12px; height: 8px;
-}}
-QComboBox QAbstractItemView {{
-    background-color: {_BG_CARD};
-    border: 1px solid {_BORDER};
-    border-radius: 6px;
-    selection-background-color: {_INDIGO_100};
-    selection-color: {_PRIMARY_DK};
-    padding: 3px;
-}}
-QComboBox QAbstractItemView::item {{
-    padding: {_sz(7)}px {_sz(12)}px;
-    border-radius: 3px;
-    color: {_TEXT_PRI};
-}}
-QComboBox QAbstractItemView::item:hover {{
-    background-color: {_INDIGO_50};
-}}
-"""
 
 
 def _hline():
@@ -1049,6 +701,10 @@ class ClientDashboard(QWidget):
         lay.setSpacing(_sz(6))
         lay.setContentsMargins(_sz(12), _sz(10), _sz(12), _sz(8))
 
+        # Add maintenance notification bar
+        self.maintenance_bar = MaintenanceNotificationBar(self)
+        lay.addWidget(self.maintenance_bar)
+
         lay.addWidget(self._build_header(username, branch, corporation))
         lay.addWidget(self._build_toolbar())
         lay.addWidget(self._build_tabs(), stretch=1)
@@ -1068,7 +724,6 @@ class ClientDashboard(QWidget):
         except Exception:
             pass
 
-        self.on_date_changed()
         self._connect_shared_fields()
         self._connect_palawan_adjustments_to_brand_b()
         self._connect_brand_a_auto_calculations()
@@ -1079,9 +734,12 @@ class ClientDashboard(QWidget):
         
         # Capture base fonts for zoom
         self._capture_base_fonts()
-        
+
         # Install event filter on application for zoom
         QApplication.instance().installEventFilter(self)
+
+        # Defer the initial date-load DB queries until after the window is painted
+        QTimer.singleShot(0, self.on_date_changed)
 
     def _setup_pc_salary_button(self):
    
@@ -1374,9 +1032,22 @@ class ClientDashboard(QWidget):
         
         h.addStretch()
 
+        ver_lbl = QLabel(f"v{__version__}")
+        ver_lbl.setStyleSheet(f"""
+            QLabel {{
+                color: {_TEXT_MUTED};
+                font-size: {_sz(11)}px;
+                font-weight: 600;
+                padding: 0 6px;
+                background: transparent;
+            }}
+        """)
+        ver_lbl.setToolTip(f"Operation Report System v{__version__}")
+        h.addWidget(ver_lbl)
+
         if AUTO_UPDATE_ENABLED:
-            upd_btn = QPushButton(f"v{__version__}")
-            upd_btn.setFixedSize(_sz(72), _sz(30))
+            upd_btn = QPushButton("🔄 Update")
+            upd_btn.setFixedSize(_sz(90), _sz(30))
             upd_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: rgba(99,102,241,0.15);
@@ -1450,11 +1121,19 @@ class ClientDashboard(QWidget):
         )
         date_card_layout.addWidget(date_title)
 
-        self.date_picker = QDateEdit()
+        # Use NoWheelDateEdit to prevent accidental scroll changes
+        self.date_picker = NoWheelDateEdit()
         self.date_picker.setCalendarPopup(True)
+        self.date_picker.setDisplayFormat("dd MMM yyyy")
         self.date_picker.setDate(QDate.currentDate())
         self.date_picker.setFixedHeight(_sz(34))
+        self.date_picker.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.date_picker.setMinimumWidth(_sz(140))
         self.date_picker.dateChanged.connect(self.on_date_changed)
+        _cal = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'assets', 'calendar.png'
+        ).replace('\\', '/')
         self.date_picker.setStyleSheet(f"""
             QDateEdit {{
                 background-color: {_WHITE};
@@ -1466,45 +1145,87 @@ class ClientDashboard(QWidget):
                 color: {_TEXT_PRI};
             }}
             QDateEdit::drop-down {{
-                subcontrol-origin: padding;
+                subcontrol-origin: border;
                 subcontrol-position: center right;
                 width: 28px;
-                border: none;
-                background-color: {_SLATE_100};
+                border-left: 1px solid {_BORDER};
+                background-color: #f0f2f5;
                 border-top-right-radius: 6px;
                 border-bottom-right-radius: 6px;
             }}
+            QDateEdit::drop-down:hover {{
+                background-color: #dde1e7;
+            }}
             QDateEdit::down-arrow {{
-                image: url(none);
-                width: 12px;
-                height: 12px;
+                image: url({_cal});
+                width: 14px;
+                height: 14px;
+            }}
+            QCalendarWidget {{
+                min-width: 340px;
+                min-height: 280px;
+                background: white;
+                border: 1px solid {_BORDER};
+                border-radius: 6px;
+            }}
+            QCalendarWidget QWidget#qt_calendar_navigationbar {{
+                background-color: #343a40;
+                min-height: 42px;
+                padding: 4px 6px;
+                border-radius: 4px 4px 0 0;
+            }}
+            QCalendarWidget QToolButton {{
+                color: #ecf0f1;
+                font-size: 14px;
+                font-weight: bold;
+                background-color: transparent;
+                padding: 6px 10px;
+                border-radius: 4px;
+                margin: 2px;
+            }}
+            QCalendarWidget QToolButton:hover {{
+                background-color: #007bff;
+                color: white;
+            }}
+            QCalendarWidget QToolButton:pressed {{
+                background-color: #0056b3;
+                color: white;
+            }}
+            QCalendarWidget QSpinBox {{
+                color: #2c3e50;
+                background-color: #ecf0f1;
+                font-size: 13px;
+                font-weight: bold;
+                border: 1px solid #bdc3c7;
+                border-radius: 4px;
+                padding: 4px 8px;
+                selection-background-color: #007bff;
+                selection-color: white;
+            }}
+            QCalendarWidget QAbstractItemView {{
+                background: white;
+                selection-background-color: #007bff;
+                selection-color: white;
+                font-size: 12px;
+                alternate-background-color: #f8f9fa;
+            }}
+            QCalendarWidget QAbstractItemView::item {{
+                padding: 6px;
+                border-radius: 4px;
+            }}
+            QCalendarWidget QAbstractItemView::item:alternate {{
+                background-color: #f8f9fa;
+            }}
+            QCalendarWidget QAbstractItemView::item:selected {{
+                background-color: #007bff;
+                color: white;
+                font-weight: bold;
             }}
         """)
-        date_card_layout.addWidget(self.date_picker)
 
-        self.load_report_btn = QPushButton("Load Submitted")
-        self.load_report_btn.setFixedHeight(_sz(28))
-        self.load_report_btn.setCursor(Qt.PointingHandCursor)
-        self.load_report_btn.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {_PRIMARY};
-                color: {_WHITE};
-                border: none;
-                border-radius: {_sz(6)}px;
-                font-size: {_sz(10)}px;
-                font-weight: 700;
-                padding: {_sz(4)}px {_sz(8)}px;
-            }}
-            QPushButton:hover {{
-                background-color: {_PRIMARY_DK};
-            }}
-            QPushButton:pressed {{
-                background-color: {_PRIMARY_PR};
-            }}
-        """)
-        self.load_report_btn.setToolTip("View previously submitted reports")
-        self.load_report_btn.clicked.connect(self.show_load_report_dialog)
-        date_card_layout.addWidget(self.load_report_btn)
+        # Add the date picker directly; auto-loads entry when date changes
+        self.date_picker.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        date_card_layout.addWidget(self.date_picker)
 
         outer.addWidget(date_card)
         outer.addSpacing(_sz(20))
@@ -1693,9 +1414,9 @@ class ClientDashboard(QWidget):
         elif index == 1: # Brand B
             self.summary_container_a.hide()
             self.summary_container_b.show()
-        else:            # Palawan Details B
-            self.summary_container_a.show()
-            self.summary_container_b.show()
+        else:            # Palawan Details B — hide all summaries
+            self.summary_container_a.hide()
+            self.summary_container_b.hide()
 
     def _build_summary_strip(self):
         strip = QFrame()
@@ -2419,8 +2140,103 @@ class ClientDashboard(QWidget):
         return None
 
 
+    def _clear_all_dialog_caches(self):
+        """Clear all cached dialog instances and breakdown data to prevent stale data from persisting."""
+        # Clear Empeno Jewelry dialogs (prevents old jewelry entries from showing)
+        if hasattr(self, '_jew_dialogs'):
+            for dlg in self._jew_dialogs.values():
+                if dlg and isinstance(dlg, QDialog):
+                    try:
+                        dlg.close()
+                    except Exception:
+                        pass
+            self._jew_dialogs.clear()
+        
+        # Clear Empeno Jewelry computed totals
+        if hasattr(self, '_jew_computed'):
+            for k in self._jew_computed:
+                self._jew_computed[k] = 0.0
+        if hasattr(self, '_jew_computed_b'):
+            for k in self._jew_computed_b:
+                self._jew_computed_b[k] = 0.0
+        
+        # Clear Motor/Car dialog instance
+        if hasattr(self, '_motor_dialog') and self._motor_dialog:
+            if isinstance(self._motor_dialog, QDialog):
+                try:
+                    self._motor_dialog.close()
+                except Exception:
+                    pass
+            self._motor_dialog = None
+        
+        # Clear Motor/Car breakdown data
+        if hasattr(self, '_motor_car_breakdown'):
+            self._motor_car_breakdown = {}
+        
+        # Clear Fund Transfer HO dialogs (prevents old FT data from showing)
+        if hasattr(self, '_ft_ho_dialogs'):
+            for dlg in self._ft_ho_dialogs.values():
+                if dlg and isinstance(dlg, QDialog):
+                    try:
+                        dlg.close()
+                    except Exception:
+                        pass
+            self._ft_ho_dialogs.clear()
+        
+        # Clear Fund Transfer HO breakdowns
+        if hasattr(self, '_ft_ho_breakdowns'):
+            self._ft_ho_breakdowns.clear()
+        
+        # Clear PC Salary dialog cache
+        if hasattr(self, '_salary_dialogs'):
+            for dlg in self._salary_dialogs.values():
+                if dlg and isinstance(dlg, QDialog):
+                    try:
+                        dlg.close()
+                    except Exception:
+                        pass
+            self._salary_dialogs.clear()
+        
+        # Clear PC Salary breakdown data
+        if hasattr(self, '_pc_salary_breakdown'):
+            self._pc_salary_breakdown = None
+        
+        # Clear MC (Multi-Currency) In/Out data for both brands
+        for cf_tab in [self.cash_flow_tab_a, self.cash_flow_tab_b]:
+            if hasattr(cf_tab, 'mc_currency_details'):
+                cf_tab.mc_currency_details['MC In'] = []
+                cf_tab.mc_currency_details['MC Out'] = []
+        
+        # Clear Fund Transfer to/from BRANCH data for both brands
+        for cf_tab in [self.cash_flow_tab_a, self.cash_flow_tab_b]:
+            if hasattr(cf_tab, 'branch_dest_inputs'):
+                # Clear the display/cache for Fund Transfer to BRANCH
+                ft_to_branch = cf_tab.branch_dest_inputs.get('Fund Transfer to BRANCH')
+                if ft_to_branch:
+                    ft_to_branch.blockSignals(True)
+                    ft_to_branch.clear()
+                    ft_to_branch.blockSignals(False)
+                
+                # Clear the display/cache for Fund Transfer from BRANCH
+                ft_from_branch = cf_tab.branch_dest_inputs.get('Fund Transfer from BRANCH')
+                if ft_from_branch:
+                    ft_from_branch.blockSignals(True)
+                    ft_from_branch.clear()
+                    ft_from_branch.blockSignals(False)
+        
+        logger.debug("All dialog caches cleared (Jewelry, Motor, FT HO, FT Branch, MC In/Out, Salary)")
+
     def on_date_changed(self):
         sd = self.date_picker.date().toString("yyyy-MM-dd")
+
+        # Show loading indicator while checking and loading report
+        if hasattr(self, 'loading_overlay'):
+            self.loading_overlay.set_status("Checking report...", f"Loading {sd}")
+            self.loading_overlay.show()
+            QApplication.processEvents()
+
+        # Clear all cached dialogs and breakdowns FIRST to prevent stale data
+        self._clear_all_dialog_caches()
 
         for bb in (self.beginning_balance_input_a, self.beginning_balance_input_b):
             bb.clear()
@@ -2438,11 +2254,16 @@ class ClientDashboard(QWidget):
             """)
         for cc in (self.cash_count_input_a, self.cash_count_input_b):
             cc.clear()
+        # Clear cash float input for Brand A
+        if hasattr(self, 'cash_float_input_a') and self.cash_float_input_a:
+            self.cash_float_input_a.clear()
+            self.cash_float_input_a.setReadOnly(False)  # Make editable by default
 
         for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b, self.palawan_tab):
             if hasattr(tab, 'clear_fields'):
                 tab.clear_fields()
 
+        # Load payable data (both sendout/payout/int and adjustments for locked reports)
         self._restore_palawan_payable(sd)
 
         self.beginning_balance_auto_filled_a = False
@@ -2450,19 +2271,49 @@ class ClientDashboard(QWidget):
         self.previous_day_balance_a = self.previous_day_date_a = None
         self.previous_day_balance_b = self.previous_day_date_b = None
 
-        status_a = self.check_existing_entry(sd, "Brand A")  
+        status_a = self.check_existing_entry(sd, "Brand A")
         status_b = self.check_existing_entry(sd, "Brand B")
+        logger.debug(f"on_date_changed: date={sd} branch={self.branch} corp={self.corporation} status_a={status_a} status_b={status_b}")
 
         if status_a == "locked" and status_b == "locked":
+
+            try:
+                if hasattr(self, 'loading_overlay'):
+                    self.loading_overlay.set_status("Loading submitted reports...", "Please wait")
+                    self.loading_overlay.show()
+                    QApplication.processEvents()
+
+                self._load_brand_report_data("Brand A", sd)
+                self._load_brand_report_data("Brand B", sd)
+                # Load Palawan tab data including adjustment fields from daily_reports
+                self._restore_palawan_payable(sd)
+                self._restore_palawan_tab(sd)
+            finally:
+                try:
+                    if hasattr(self, 'loading_overlay'):
+                        self.loading_overlay.hide()
+                except Exception:
+                    pass
+
             for brand in ("A", "B"):
                 self._set_status_brand(brand, "Submitted", _RED_500, bold=True)
             self.auto_fill_button_a.setEnabled(False)
             self.auto_fill_button_b.setEnabled(False)
             self.post_button.setEnabled(False)
+            # Prevent loading draft for submitted reports
+            if hasattr(self, 'load_draft_button'):
+                self.load_draft_button.setEnabled(False)
             self._toggle_inputs(False)
+            # Make cash float read-only when viewing locked report
+            if hasattr(self, 'cash_float_input_a') and self.cash_float_input_a:
+                self.cash_float_input_a.setReadOnly(True)
+            # Silently remove drafts for all submitted dates
+            self._purge_submitted_drafts()
             return
 
         self._toggle_inputs(True)
+        if hasattr(self, 'load_draft_button'):
+            self.load_draft_button.setEnabled(True)
 
         any_unlocked = False
         for brand, status, bf in [("A", status_a, "Brand A"), ("B", status_b, "Brand B")]:
@@ -2486,7 +2337,7 @@ class ClientDashboard(QWidget):
                 self._load_brand_report_data(bf, sd)
   
                 self._set_status_brand(brand, "🔄 Reset by Admin — Edit & Resubmit", "#E67E22", bold=True)
-                af_btn.setEnabled(False) 
+                af_btn.setEnabled(True)
                 bb_input.setEnabled(True)
                 bb_input.setReadOnly(False)
                 cc_input.setEnabled(True)
@@ -2497,6 +2348,13 @@ class ClientDashboard(QWidget):
                     self.beginning_balance_auto_filled_a = True
                 else:
                     self.beginning_balance_auto_filled_b = True
+
+                prev_bal, prev_date = self.get_previous_day_ending_balance(sd, bf)
+                if prev_bal is not None:
+                    if brand == "A":
+                        self.previous_day_balance_a, self.previous_day_date_a = prev_bal, prev_date
+                    else:
+                        self.previous_day_balance_b, self.previous_day_date_b = prev_bal, prev_date
             else:
      
                 af_btn.setEnabled(True)
@@ -2536,6 +2394,10 @@ class ClientDashboard(QWidget):
         self._restore_palawan_tab(sd)
 
         self.recalculate_all()
+
+        # Hide loading overlay after report is fully loaded
+        if hasattr(self, 'loading_overlay'):
+            self.loading_overlay.hide()
 
     def _restore_palawan_tab(self, date_str):
         """Load palawan data from both Brand A and Brand B tables.
@@ -2590,33 +2452,54 @@ class ClientDashboard(QWidget):
             logger.error("[_restore_palawan_tab] %s", e)
 
     def _restore_palawan_payable(self, date_str):
-        """Load Palawan Payable data from payable_tbl_brand_a for the selected date."""
+        """Load Palawan adjustment fields from the daily_reports tables.
+        Adjustment fields (Skid, Skir, Cancel, Inc) can be stored for BOTH brands.
+        Brand B values take precedence when non-zero."""
+        mapped = {}
+
+        # Load adjustments from Brand A (daily_reports_brand_a)
         try:
-            result = self.db_manager.execute_query(
-                "SELECT * FROM payable_tbl_brand_a "
+            result_a = self.db_manager.execute_query(
+                "SELECT palawan_suki_discounts, palawan_suki_rebates, "
+                "palawan_cancel, palawan_pay_out_incentives "
+                "FROM daily_reports_brand_a "
                 "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
                 (date_str, self.branch, self.corporation)
             )
-            if result:
-                row = dict(result[0])
-                # Remap payable_tbl_brand_a column names to the prefix keys expected by load_data
-                mapped = {
-                    "so_lotes":       row.get("sendout_lotes", 0),
-                    "so_principal":   row.get("sendout_capital", 0),
-                    "so_sc":          row.get("sendout_sc", 0),
-                    "so_commission":  row.get("sendout_commission", 0),
-                    "po_lotes":       row.get("payout_lotes", 0),
-                    "po_principal":   row.get("payout_capital", 0),
-                    "po_sc":          row.get("payout_sc", 0),
-                    "po_commission":  row.get("payout_commission", 0),
-                    "int_lotes":      row.get("international_lotes", 0),
-                    "int_principal":  row.get("international_capital", 0),
-                    "int_sc":         row.get("international_sc", 0),
-                    "int_commission": row.get("international_commission", 0),
-                }
-                self.palawan_tab.load_data(mapped)
+            if result_a:
+                row = dict(result_a[0])
+                for col in ("palawan_suki_discounts", "palawan_suki_rebates",
+                            "palawan_cancel", "palawan_pay_out_incentives"):
+                    val = row.get(col) or 0
+                    if float(val) != 0:
+                        mapped[col] = val
         except Exception as e:
-            logger.error("[_restore_palawan_payable] %s", e)
+            logger.error("[_restore_palawan_payable] Brand A query error: %s", e)
+
+        # Load adjustments from Brand B (daily_reports — no brand column, exclusively Brand B)
+        try:
+            result_b = self.db_manager.execute_query(
+                "SELECT palawan_suki_discounts, palawan_suki_rebates, "
+                "palawan_cancel, palawan_pay_out_incentives "
+                "FROM daily_reports "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                (date_str, self.branch, self.corporation)
+            )
+            if result_b:
+                row = dict(result_b[0])
+                for col in ("palawan_suki_discounts", "palawan_suki_rebates",
+                            "palawan_cancel", "palawan_pay_out_incentives"):
+                    val = row.get(col) or 0
+                    if float(val) != 0:
+                        mapped[col] = val  # Brand B value takes precedence
+        except Exception as e:
+            logger.error("[_restore_palawan_payable] Brand B query error: %s", e)
+
+        if mapped:
+            try:
+                self.palawan_tab.load_data(mapped)
+            except Exception as e:
+                logger.error("[_restore_palawan_payable] load_data error: %s", e)
 
     def _set_status(self, text, color, bold=False):
         self._set_status_brand("A", text, color, bold)
@@ -2634,14 +2517,17 @@ class ClientDashboard(QWidget):
         sd        = self.date_picker.date().toString("yyyy-MM-dd")
         brand_full = "Brand A" if brand == "A" else "Brand B"
 
-        if self.check_existing_entry(sd, brand_full):
+        status = self.check_existing_entry(sd, brand_full)
+        if status == "locked":
             self._msg("Entry Exists",
-                      f"An entry already exists for {brand_full} on {sd}.",
+                      f"An entry already exists for {brand_full} on {sd} and it is locked.",
                       QMessageBox.Warning)
             return
 
         prev_bal  = self.previous_day_balance_a if brand == "A" else self.previous_day_balance_b
         prev_date = self.previous_day_date_a    if brand == "A" else self.previous_day_date_b
+        if prev_bal is None:
+            prev_bal, prev_date = self.get_previous_day_ending_balance(sd, brand_full)
         bb_input  = self.beginning_balance_input_a if brand == "A" else self.beginning_balance_input_b
         af_btn    = self.auto_fill_button_a        if brand == "A" else self.auto_fill_button_b
 
@@ -2980,6 +2866,63 @@ class ClientDashboard(QWidget):
             logger.error("Could not verify database save: %s", e)
             return True  # Don't fail hard, just log it
 
+    def _propagate_opening_balance_to_following_days(self, date_str, brand_full, ending_balance):
+        table_name = "daily_reports_brand_a" if brand_full == "Brand A" else "daily_reports"
+        try:
+            current = datetime.datetime.strptime(date_str, "%Y-%m-%d")
+        except Exception as e:
+            logger.error("Invalid date for propagation: %s", e)
+            return
+
+        next_date = current + datetime.timedelta(days=1)
+        while True:
+            next_date_str = next_date.strftime("%Y-%m-%d")
+            query = (
+                f"SELECT beginning_balance, debit_total, credit_total, cash_count, ending_balance, is_locked "
+                f"FROM {table_name} WHERE date = %s AND branch = %s AND corporation = %s LIMIT 1"
+            )
+            result = self.db_manager.execute_query(query, (next_date_str, self.branch, self.corporation))
+            if not result:
+                break
+
+            row = result[0]
+            if row.get("is_locked", 1):
+                break
+
+            old_begin = float(row.get("beginning_balance", 0) or 0)
+            if abs(old_begin - ending_balance) < 0.01:
+                ending_balance = float(row.get("ending_balance", 0) or 0)
+                next_date += datetime.timedelta(days=1)
+                continue
+
+            debit_total = float(row.get("debit_total", 0) or 0)
+            credit_total = float(row.get("credit_total", 0) or 0)
+            cash_count = float(row.get("cash_count", 0) or 0)
+
+            debit_amount = debit_total - old_begin
+            new_debit_total = ending_balance + debit_amount
+            new_ending = ending_balance + debit_amount - credit_total
+            new_cash_result = cash_count - new_ending
+            variance_status = (
+                "balanced" if abs(new_cash_result) < 0.01
+                else "over" if new_cash_result > 0
+                else "short"
+            )
+
+            update_query = (
+                f"UPDATE {table_name} SET beginning_balance = %s, debit_total = %s, "
+                f"ending_balance = %s, cash_result = %s, variance_status = %s "
+                f"WHERE date = %s AND branch = %s AND corporation = %s"
+            )
+            self.db_manager.execute_query(
+                update_query,
+                (ending_balance, new_debit_total, new_ending, new_cash_result,
+                 variance_status, next_date_str, self.branch, self.corporation)
+            )
+
+            ending_balance = new_ending
+            next_date += datetime.timedelta(days=1)
+
     def handle_post(self):
         try:
             sd = self.date_picker.date().toString("yyyy-MM-dd")
@@ -3043,7 +2986,7 @@ class ClientDashboard(QWidget):
                 for k, v in cf['credit'].items():
                     if v != 0 or k not in all_vals:
                         all_vals[k] = v
-        
+
                 if hasattr(cf_tab, 'selected_bank_account') and cf_tab.selected_bank_account:
                     all_vals['fund_transfer_bank_account'] = cf_tab.selected_bank_account
                 
@@ -3254,6 +3197,7 @@ class ClientDashboard(QWidget):
                             self.user_email, self.branch, self.corporation,
                             brand_full, sd, ending
                         )
+                    self._propagate_opening_balance_to_following_days(sd, brand_full, ending)
                 elif rows is None:
                     results.append((brand_full, "error",
                                     str(last_err) if last_err else "Unknown error"))
@@ -3289,28 +3233,21 @@ class ClientDashboard(QWidget):
                 return
 
             if successes:
-                
-                self.loading_overlay.set_status("Saving Palawan details...", "Finalizing report")
-                QApplication.processEvents()
-                
-                # Save Palawan Details to payable table for all brands (uses payable_tbl_brand_a)
-                pal = self.palawan_tab.get_data()
-                for brand_full in successes:
-                    self._save_palawan_to_payable(sd, brand_full, pal)
 
-               
+                self.loading_overlay.set_status("Finalizing report...", "Complete")
+                QApplication.processEvents()
+
+                # Save cash float for Brand A
                 if "Brand A" in successes:
-                    self.loading_overlay.set_status("Saving service tables...", "Brand A supplementary data")
-                    QApplication.processEvents()
-                    self._post_to_service_tables(
-                        sd, brand_all_vals.get("Brand A", {})
-                    )
-                    
                     self._save_cash_float(sd)
-                
-                
+
+                # NOTE: Client only writes to daily_reports_brand_a and daily_reports.
+                # Supplementary tables (service tables, palawan payable) are
+                # now managed server-side from the canonical daily report tables.
+                # This prevents duplicate/sync issues across multiple tables.
+
                 self.loading_overlay.hide()
-                
+
                 parts = f"Posted: {', '.join(successes)}"
                 if skipped:
                     parts += f"\nSkipped (already exists): {', '.join(skipped)}"
@@ -3319,6 +3256,15 @@ class ClientDashboard(QWidget):
                                            f"date={sd} brands={', '.join(successes)}")
                 self._msg_success(f"Report for {sd}\n\n{parts}")
                 self._delete_draft(sd)
+
+                # Immediately lock inputs and disable post button for successfully posted brands
+                if "Brand A" in successes or "Brand B" in successes:
+                    self._toggle_inputs(False)
+                    self.post_button.setEnabled(False)
+
+                # Brief delay to ensure database transaction is committed and visible
+                time.sleep(0.5)
+
                 self.on_date_changed()
                 self.clear_all_fields()
             elif skipped and not successes:
@@ -3374,12 +3320,11 @@ class ClientDashboard(QWidget):
                 for k, v in cf['credit'].items():
                     if v != 0 or k not in all_vals:
                         all_vals[k] = v
-                
-                
+
                 if hasattr(cf_tab, 'selected_bank_account') and cf_tab.selected_bank_account:
                     all_vals['fund_transfer_bank_account'] = cf_tab.selected_bank_account
-                
-                
+
+
                 if hasattr(self, '_ft_ho_breakdowns'):
                     bd = self._ft_ho_breakdowns.get(brand_full)
                     if bd:
@@ -3468,7 +3413,16 @@ class ClientDashboard(QWidget):
             self._msg("Offline Save Error", f"Failed to save entry: {e}", QMessageBox.Critical)
 
     def _save_palawan_to_payable(self, selected_date, brand_full, palawan_data):
-        """Save Palawan details to payable_tbl_brand_a for both brands."""
+        """DEPRECATED: Client no longer writes to payable_tbl_brand_a.
+        
+        All palawan data is now stored in daily_reports_brand_a and daily_reports.
+        Server-side processes will extract and manage payable table as needed.
+        """
+        logger.info("_save_palawan_to_payable() called but skipped - client writes only to daily report tables")
+        pass
+
+    def _save_palawan_to_payable_DISABLED_old(self, selected_date, brand_full, palawan_data):
+        """DISABLED: Old version kept for reference."""
         try:
             payable_table = "payable_tbl_brand_a"
 
@@ -3554,163 +3508,14 @@ class ClientDashboard(QWidget):
             logger.error("Error saving Palawan to payable (%s): %s", brand_full, e)
 
     def _post_to_service_tables(self, selected_date, all_vals: dict):
-
-        base_cols = ['date', 'branch', 'corporation', 'username']
-        base_vals = [selected_date, self.branch, self.corporation, self.user_email]
-
-        def _insert(table, field_names):
-            try:
-                col_query = (
-                    "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s"
-                )
-                col_rows = self.db_manager.execute_query(col_query, (table,))
-                if col_rows:
-                    existing_cols = {r['COLUMN_NAME'] for r in col_rows}
-                    field_names = [f for f in field_names if f in existing_cols]
-                    eff_base = [(c, v) for c, v in zip(base_cols, base_vals) if c in existing_cols]
-                else:
-                    eff_base = list(zip(base_cols, base_vals))
-
-                if not field_names:
-                    logger.debug("%s: no matching columns found, skipping", table)
-                    return
-
-                row = {f: float(all_vals.get(f, 0) or 0) for f in field_names}
-                eff_base_cols = [c for c, v in eff_base]
-                eff_base_vals = [v for c, v in eff_base]
-                cols = eff_base_cols + list(row.keys())
-                vals = eff_base_vals + list(row.values())
-                ph   = ', '.join(['%s'] * len(cols))
-                upd  = ', '.join(f"`{c}`=VALUES(`{c}`)" for c in row)
-                q    = (f"INSERT INTO `{table}` ({', '.join(f'`{c}`' for c in cols)}) "
-                        f"VALUES ({ph})"
-                        + (f" ON DUPLICATE KEY UPDATE {upd}" if upd else ""))
-                self.db_manager.execute_query(q, vals)
-                logger.debug("Wrote supplementary table: %s", table)
-            except Exception as e:
-                logger.error("Error writing %s: %s", table, e)
-
-        logger.debug("Writing supplementary Brand A tables…")
-
-
-        _insert("daily_transaction_tbl_brand_a", [
-            "empeno_jew_new", "empeno_jew_new_lotes",
-            "empeno_jew_renew", "empeno_jew_renew_lotes",
-            "empeno_sto_new", "empeno_sto_new_lotes",
-            "fund_empeno_sto_renew", "fund_empeno_sto_renew_lotes",
-            "empeno_motor_car", "empeno_motor_car_lotes",
-            "mc_out", "mc_out_lotes",
-            "empeno_silver", "empeno_silver_lotes",
-            "rescate_jewelry", "rescate_jewelry_lotes",
-            "cr_storage", "cr_storage_lotes",
-            "rescate_silver", "rescate_silver_lotes",
-            "res_storage", "res_storage_lotes",
-            "res_motor", "res_motor_lotes",
-            "osf_storage", "osf_storage_lotes",
-            "osf_silver", "osf_silver_lotes",
-            "osf_motor", "osf_motor_lotes",
-            "insurance_sunlife_20", "insurance_sunlife_20_lotes",
-            "palawan_send_out", "palawan_send_out_lotes",
-            "palawan_sc", "palawan_sc_lotes",
-            "palawan_pay_out", "palawan_pay_out_lotes",
-            "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
-            "ecbills", "ecbills_lotes", "ecload", "ecload_lotes", "eccash", "eccash_lotes", "eccash_out", "eccash_out_lotes",
-            "gcash_in", "gcash_in_lotes",
-            "gcash_out", "gcash_out_lotes",
-            "transfast", "transfast_lotes",
-            "ria_out", "ria_out_lotes",
-            "i2i_remittance_in", "i2i_remittance_in_lotes",
-            "i2i_bills_payment", "i2i_bills_payment_lotes",
-            "i2i_instapay", "i2i_instapay_lotes",
-            "sendah_load_sc", "sendah_load_sc_lotes",
-            "sendah_bills_sc", "sendah_bills_sc_lotes",
-            "paymaya_in", "paymaya_in_lotes",
-            "smart_money_sc", "smart_money_sc_lotes",
-            "smart_money_po", "smart_money_po_lotes",
-            "gcash_padala_sendah", "gcash_padala_sendah_lotes",
-            "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
-            "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
-            "remitly", "remitly_lotes",
-        ])
-
-      
-        _insert("other_services_tbl_brand_a", [
-            "palawan_send_out", "palawan_send_out_lotes",
-            "palawan_sc", "palawan_sc_lotes",
-            "palawan_pay_out", "palawan_pay_out_lotes",
-            "sendah_load_sc", "sendah_load_sc_lotes",
-            "smart_money_sc", "smart_money_sc_lotes",
-            "smart_money_po", "smart_money_po_lotes",
-            "palawan_pay_out_incentives", "palawan_pay_out_incentives_lotes",
-            "palawan_pay_cash_in_sc", "palawan_pay_cash_in_sc_lotes",
-            "palawan_pay_bills_sc",
-            "palawan_load_sc",
-            "palawan_pay_cash_out", "palawan_pay_cash_out_lotes",
-            "palawan_suki_card",
-            "gcash_in", "gcash_in_lotes",
-            "gcash_out", "gcash_out_lotes",
-            "gcash_padala_sendah", "gcash_padala_sendah_lotes",
-            "abra_so_sc", "abra_po",
-            "gprs_in",
-            "remitly", "remitly_lotes",
-            "paymaya_in", "paymaya_in_lotes",
-            "paymaya_out",
-            "ria_in_sc", "ria_in_sc_lotes",
-            "ria_out", "ria_out_lotes",
-            "bdo_sc", "bdo_po",
-            "transfast", "transfast_lotes",
-            "banko_in", "banko_out",
-            "sendah_bills_sc", "sendah_bills_sc_lotes",
-            "eccash_out",
-            "i2i_remittance_in", "i2i_remittance_in_lotes",
-            "i2i_bills_payment", "i2i_bills_payment_lotes",
-            "i2i_bank_transfer", "i2i_pesonet",
-            "i2i_instapay", "i2i_instapay_lotes",
-            "truemoney_out",
-            "i2i_remittance_out",
-        ])
-
-
-        # Post to global_other_services_tbl if this branch has a global tag
-        if self.global_tag and self.global_tag.upper() not in ('', 'NO'):
-            # Map ria_out → ria so the global_other_services_tbl column gets populated
-            all_vals['ria'] = all_vals.get('ria_out', 0) or 0
-            # Map eccash_out → ec_pay_out for the global table column name
-            all_vals['ec_pay_out'] = all_vals.get('eccash_out', 0) or 0
-            _insert("global_other_services_tbl", [
-                "gcash_out", "gcash_out_lotes",
-                "moneygram", "moneygram_lotes",
-                "transfast", "transfast_lotes",
-                "ria", "ria_lotes",
-                "smart_money_out", "smart_money_out_lotes",
-                "gcash_padala", "gcash_padala_lotes",
-                "abra_out", "abra_out_lotes",
-                "remitly", "remitly_lotes",
-                "pal_pay_cash_out", "pal_pay_cash_out_lotes",
-                "mc_out", "mc_out_lotes",
-                "ec_pay_out",
-            ])
-            logger.debug("Wrote global_other_services_tbl (global_tag=%s)", self.global_tag)
-
-        _insert("PL_tbl_brand_a", [
-            "interest", "penalty", "stamp", "rescuardo_affidavit",
-            "jew_ai", "service_charge",
-            "habol_renew_tubos", "habol_rt_interest_stamp",
-            "storage_ai", "osf_storage", "cr_storage_int_penalty",
-            "silver_ai", "osf_silver", "res_storage_int_penalty",
-            "motor_ai", "osf_motor", "penalty_motor",
-            "miscellaneous_fee",
-            "pc_transpo", "pc_salary",
-            "pc_inc_motor", "pc_inc_emp", "pc_inc_suki_card",
-            "pc_inc_insurance", "pc_inc_mc",
-            "pc_supplies_xerox_maintenance",
-            "pc_electric", "pc_water", "pc_internet",
-            "pc_rental", "pc_permits_bir_payments", "pc_lbc_jrs_jnt",
-            "palawan_suki_discounts", "palawan_suki_rebates",
-            "storage_rebates", "silver_rebates", "palawan_suki_card",
-        ])
-
+        """DEPRECATED: Client no longer writes to supplementary service tables.
+        
+        All data is now written only to daily_reports_brand_a and daily_reports.
+        Server-side processes will extract and denormalize data to service tables as needed.
+        This eliminates duplicate/sync problems across multiple tables.
+        """
+        logger.info("_post_to_service_tables() called but skipped - client writes only to daily report tables")
+        pass
 
     def _save_cash_float(self, selected_date):
 
@@ -3857,6 +3662,9 @@ class ClientDashboard(QWidget):
             self, "Advance Date", "Report posted! Move to the next day?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
         )
+        # ALWAYS clear dialog caches, even if user doesn't move to next day
+        self._clear_all_dialog_caches()
+
         if r == QMessageBox.Yes:
             for tab, meth in [
                 (self.cash_flow_tab_a, 'clear_fields'),
@@ -3866,8 +3674,15 @@ class ClientDashboard(QWidget):
                 if hasattr(tab, meth):
                     getattr(tab, meth)()
             self.date_picker.setDate(self.date_picker.date().addDays(1))
+        else:
+            # User clicked "No" — reload current day's report to show it's locked
+            sd = self.date_picker.date().toString("yyyy-MM-dd")
+            self.on_date_changed()
 
     def clear_all_fields_silent(self):
+        # Clear all cached dialogs and breakdowns FIRST
+        self._clear_all_dialog_caches()
+        
         for bb in (self.beginning_balance_input_a, self.beginning_balance_input_b):
             bb.clear()
             bb.setStyleSheet(f"""
@@ -4220,7 +4035,6 @@ class ClientDashboard(QWidget):
                 ("storage_ai", ["Sto. A.I", "STO AI"], "(Empeno STO NEW + Empeno STO RENEW) × 20%"),
                 ("silver_ai", ["Silver A.I", "SILVER AI"], "Empeno Silver × 20%"),
                 ("osf_silver", ["O.s.f Silver", "OSF SILVER"], "Empeno Silver × 0.75%"),
-                ("motor_ai", ["Motor A.I", "MOTOR AI"], "Empeno Motor/Car × 10%"),
                 ("osf_motor", ["O.s.f Motor", "OSF MOTOR"], "Empeno Motor/Car × 0.75%"),
             ]
             for col, fallback_labels, tip in targets:
@@ -4501,16 +4315,30 @@ class ClientDashboard(QWidget):
                         plus_btn_b.clicked.connect(_make_open_dialog_b(label, field_b, field_a_ref))
                         layout_b.insertWidget(0, plus_btn_b)
 
-            # Setup Jew. A.I for Brand A (read-only)
+
+            # Setup Jew. A.I for Brand A (editable)
             jew_ai_a = d_inp_a.get("Jew. A.I")
             if jew_ai_a:
-                jew_ai_a.setReadOnly(True)
+                jew_ai_a.setReadOnly(False)
                 jew_ai_a.setStyleSheet(
-                    jew_ai_a.styleSheet() +
-                    "background-color: #EFF6FF; color: #1E40AF;"
+                    f"""
+                    QLineEdit {{
+                        background-color: #FFFBEB;
+                        border: 1.5px solid #FCD34D;
+                        border-radius: 6px;
+                        padding: 7px 12px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #78350F;
+                    }}
+                    QLineEdit:focus {{
+                        border: 2px solid #F59E0B;
+                        background-color: #FEF3C7;
+                    }}
+                    """
                 )
-                jew_ai_a.setToolTip("Computed Total (JEW NEW) + Computed Total (JEW RENEW)")
-                jew_ai_a.setPlaceholderText("Auto-calculated")
+                jew_ai_a.setToolTip("Computed Total (JEW NEW) + Computed Total (JEW RENEW) • Editable")
+                jew_ai_a.setPlaceholderText("Auto-calculated from dialogs")
 
             # Setup Jew. A.I for Brand B (editable, calculated from computed totals)
             jew_ai_b = d_inp_b.get("Jew. A.I")
@@ -4536,14 +4364,33 @@ class ClientDashboard(QWidget):
                 jew_ai_b.setToolTip("Computed Total (JEW NEW) + Computed Total (JEW RENEW) • Editable")
                 jew_ai_b.setPlaceholderText("Auto-calculated from dialogs")
 
-            # Setup S.C. for Brand B (editable)
+
+            # Setup S.C. for both Brand A and Brand B (editable)
             sc_a = d_inp_a.get("S.C")
             sc_b = d_inp_b.get("S.C")
-            if sc_a and sc_b:
-                # Make Brand A S.C. read-only (from auto calc)
-                # Already handled in _connect_brand_a_auto_calculations
-                
-                # Make Brand B S.C. editable
+            if sc_a:
+                sc_a.setReadOnly(False)
+                sc_a.setStyleSheet(
+                    f"""
+                    QLineEdit {{
+                        background-color: #FFFBEB;
+                        border: 1.5px solid #FCD34D;
+                        border-radius: 6px;
+                        padding: 7px 12px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #78350F;
+                    }}
+                    QLineEdit:focus {{
+                        border: 2px solid #F59E0B;
+                        background-color: #FEF3C7;
+                    }}
+                    """
+                )
+                sc_a.setToolTip("Calculated as (Lotes JEW NEW + Lotes JEW RENEW) × 5 • Editable")
+                sc_a.setPlaceholderText("Auto or manual")
+
+            if sc_b:
                 sc_b.setReadOnly(False)
                 sc_b.setStyleSheet(
                     f"""
@@ -4565,14 +4412,13 @@ class ClientDashboard(QWidget):
                 sc_b.setToolTip("Calculated as (Lotes JEW NEW + Lotes JEW RENEW) × 5 • Editable")
                 sc_b.setPlaceholderText("Auto or manual")
 
-                # Connect lotes changes to recalculate S.C
-                lotes_new_b = c_lotes_b.get("Empeno JEW. (NEW)")
-                lotes_renew_b = c_lotes_b.get("Empeno JEW (RENEW)")
-                
-                if lotes_new_b:
-                    lotes_new_b.textChanged.connect(_calculate_sc_b)
-                if lotes_renew_b:
-                    lotes_renew_b.textChanged.connect(_calculate_sc_b)
+            # Connect lotes changes to recalculate S.C for Brand B only (if needed)
+            lotes_new_b = c_lotes_b.get("Empeno JEW. (NEW)")
+            lotes_renew_b = c_lotes_b.get("Empeno JEW (RENEW)")
+            if lotes_new_b:
+                lotes_new_b.textChanged.connect(_calculate_sc_b)
+            if lotes_renew_b:
+                lotes_renew_b.textChanged.connect(_calculate_sc_b)
 
             # Connect Empeno JEW amount fields in Brand B to auto-update Jew. A.I and S.C
             jewb_new = c_inp_b.get("Empeno JEW. (NEW)")
@@ -4669,13 +4515,8 @@ class ClientDashboard(QWidget):
 
             motor_ai = d_inp.get("Motor A.I")
             if motor_ai:
-                motor_ai.setReadOnly(True)
-                motor_ai.setStyleSheet(
-                    motor_ai.styleSheet() +
-                    "background-color: #EFF6FF; color: #1E40AF;"
-                )
-                motor_ai.setToolTip("Computed Total from Empeno Motor/Car breakdown")
-                motor_ai.setPlaceholderText("Auto-calculated")
+                motor_ai.setToolTip("Computed Total from Empeno Motor/Car breakdown; editable")
+                motor_ai.setPlaceholderText("Computed from Empeno Motor/Car — editable")
 
             logger.debug("Empeno Motor/Car detail button set up.")
 
@@ -4765,7 +4606,14 @@ class ClientDashboard(QWidget):
             logger.warning("_setup_ft_ho_button error (non-fatal): %s", e)
 
     def _get_draft_path(self):
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Always store drafts in %APPDATA%\OperationReportSystem\drafts\
+        # Program Files requires admin rights — writing there causes WinError 5.
+        # %APPDATA% is always writable by the current user and survives restarts.
+        if getattr(sys, 'frozen', False):
+            appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+            base = os.path.join(appdata, 'OperationReportSystem')
+        else:
+            base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         drafts_dir = os.path.join(base, "drafts")
         os.makedirs(drafts_dir, exist_ok=True)
         def _safe(s):
@@ -4848,39 +4696,27 @@ class ClientDashboard(QWidget):
 
     def _load_draft(self):
         try:
+            # Purge first — DB is guaranteed available at this point
+            self._purge_submitted_drafts()
+
             path = self._get_draft_path()
             if not os.path.exists(path):
                 return
             with open(path, "r", encoding="utf-8") as f:
                 raw = json.load(f)
 
+            # Normalise old single-entry format to {date: draft} dict
             if "date" in raw and "saved_at" in raw:
                 all_drafts = {raw["date"]: raw}
             else:
-                all_drafts = raw
-
-            if not all_drafts:
-                return
-            posted_dates = []
-            for d in list(all_drafts.keys()):
-                status_a = self.check_existing_entry(d, "Brand A")
-                status_b = self.check_existing_entry(d, "Brand B")
-                if status_a == "locked" and status_b == "locked":
-                    posted_dates.append(d)
-                    del all_drafts[d]
-
-            if posted_dates:
-                if not all_drafts:
-                    if os.path.exists(path):
-                        os.remove(path)
-                else:
-                    with open(path, "w", encoding="utf-8") as f:
-                        json.dump(all_drafts, f, indent=2, ensure_ascii=False)
+                all_drafts = dict(raw)
 
             if not all_drafts:
                 return
 
             sorted_dates = sorted(all_drafts.keys(), reverse=True)
+            if not sorted_dates:
+                return
 
             if len(sorted_dates) == 1:
                 chosen_date = sorted_dates[0]
@@ -4917,6 +4753,14 @@ class ClientDashboard(QWidget):
             qdate = QDate.fromString(chosen_date, "yyyy-MM-dd")
             if qdate.isValid():
                 self.date_picker.setDate(qdate)
+
+            # CRITICAL: After changing date, check if report is already submitted
+            # If so, don't overwrite with draft data
+            status_a = self.check_existing_entry(chosen_date, "Brand A")
+            status_b = self.check_existing_entry(chosen_date, "Brand B")
+            if (status_a == "locked") or (status_b == "locked"):
+                # Report already submitted - don't load draft data
+                return
 
             for letter, key in [("a", "brand_a"), ("b", "brand_b")]:
                 bd      = draft.get(key, {})
@@ -4956,6 +4800,42 @@ class ClientDashboard(QWidget):
 
         except Exception as e:
             logger.warning("_load_draft error (non-fatal): %s", e)
+
+    def _purge_submitted_drafts(self):
+        """Remove all draft entries whose dates already have a submitted report.
+        Safe to call at any time — silently skips if file doesn't exist."""
+        try:
+            path = self._get_draft_path()
+            if not os.path.exists(path):
+                return
+            with open(path, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+
+            # Normalise old single-entry format to {date: draft} dict
+            if "date" in raw and "saved_at" in raw:
+                all_drafts = {raw["date"]: raw}
+            else:
+                all_drafts = dict(raw)
+
+            removed = []
+            for d in list(all_drafts.keys()):
+                sa = self.check_existing_entry(d, "Brand A")
+                sb = self.check_existing_entry(d, "Brand B")
+                if sa == "locked" or sb == "locked":
+                    del all_drafts[d]
+                    removed.append(d)
+
+            if not removed:
+                return
+
+            logger.debug("Purged submitted drafts: %s", removed)
+            if not all_drafts:
+                os.remove(path)
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(all_drafts, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.warning("_purge_submitted_drafts error: %s", e)
 
     def _delete_draft(self, date=None):
         try:
@@ -5151,6 +5031,20 @@ class ClientDashboard(QWidget):
         try:
             if dialog:
                 dialog.close()
+
+            # Clear cached dialogs/data to avoid showing stale values
+            try:
+                self._clear_all_dialog_caches()
+            except Exception:
+                pass
+
+            # Show loading overlay while fetching and populating report
+            try:
+                self.loading_overlay.set_status("Loading report...", "Fetching latest report")
+                self.loading_overlay.show()
+                QApplication.processEvents()
+            except Exception:
+                pass
             
             for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b):
                 if hasattr(tab, 'clear_fields'):
@@ -5182,12 +5076,20 @@ class ClientDashboard(QWidget):
             for brand in ("A", "B"):
                 self._set_status_brand(brand, "Viewing Submitted Report", _TEXT_MUTED, bold=True)
             
+            # Ensure UI updated before notifying user
+            QApplication.processEvents()
+
             QMessageBox.information(
                 self, "Report Loaded",
                 f"Report for {date_str} has been loaded.\n\n"
                 "Note: This is a read-only view of the submitted report.",
                 QMessageBox.Ok
             )
+            
+            try:
+                self.loading_overlay.hide()
+            except Exception:
+                pass
             
         except Exception as e:
             QMessageBox.critical(
@@ -5233,7 +5135,7 @@ class ClientDashboard(QWidget):
                         break
             
             if not results or len(results) == 0:
-                logger.warning(
+                logger.debug(
                     "_load_brand_report_data: No row found for brand=%s branch=%s date=%s corp=%s",
                     brand, self.branch, date_str, self.corporation
                 )
@@ -5247,11 +5149,28 @@ class ClientDashboard(QWidget):
             
             cash_count = data.get('cash_count', 0) or 0
             cc_input.setText(f"{float(cash_count):.2f}")
-            
 
-            if brand == "Brand A" and hasattr(self, 'cash_float_input_a') and self.cash_float_input_a:
-                cash_float = data.get('cash_float', 0) or 0
-                self.cash_float_input_a.setText(f"{float(cash_float):.2f}")
+            # Load cash float for Brand A from cash_float_tbl
+            if brand == "Brand A":
+                try:
+                    # Query cash_float_tbl for the stored cash float value
+                    cf_result = self.db_manager.execute_query(
+                        "SELECT cash_float FROM cash_float_tbl WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                        (date_str, self.branch, self.corporation)
+                    )
+                    cash_float = 0.0
+                    if cf_result:
+                        cash_float = cf_result[0].get('cash_float', 0) or 0
+
+                    cash_float = float(cash_float)
+                    if hasattr(self, 'cash_float_input_a') and self.cash_float_input_a:
+                        self.cash_float_input_a.blockSignals(True)
+                        self.cash_float_input_a.setText(f"{cash_float:.2f}")
+                        self.cash_float_input_a.blockSignals(False)
+                    else:
+                        logger.warning("cash_float_input_a widget not found or is None")
+                except Exception as e:
+                    logger.error("Error loading cash_float for Brand A: %s", e)
             
    
             col_mapping = cf_tab._build_column_mapping()
@@ -5262,39 +5181,49 @@ class ClientDashboard(QWidget):
             for label, widget in cf_tab.debit_inputs.items():
                 db_col = col_mapping.get(label, cf_tab._sanitize_column(label))
                 value = data.get(db_col, 0)
+                widget.blockSignals(True)
                 if value:
-                    widget.blockSignals(True)
                     widget.setText(f"{float(value):.2f}")
-                    widget.blockSignals(False)
+                else:
+                    widget.clear()  # Clear if value is 0 or missing
+                widget.blockSignals(False)
                 
                 lotes_col = db_col + "_lotes"
                 lotes_val = data.get(lotes_col, 0)
                 lotes_widget = cf_tab.debit_lotes_inputs.get(label)
-                if lotes_widget and lotes_val:
+                if lotes_widget:
                     lotes_widget.blockSignals(True)
-                    try:
-                        lotes_widget.setText(str(int(float(lotes_val))))
-                    except (ValueError, TypeError):
-                        lotes_widget.setText(str(lotes_val))
+                    if lotes_val:
+                        try:
+                            lotes_widget.setText(str(int(float(lotes_val))))
+                        except (ValueError, TypeError):
+                            lotes_widget.setText(str(lotes_val))
+                    else:
+                        lotes_widget.clear()  # Clear if value is 0 or missing
                     lotes_widget.blockSignals(False)
             
             for label, widget in cf_tab.credit_inputs.items():
                 db_col = col_mapping.get(label, cf_tab._sanitize_column(label))
                 value = data.get(db_col, 0)
+                widget.blockSignals(True)
                 if value:
-                    widget.blockSignals(True)
                     widget.setText(f"{float(value):.2f}")
-                    widget.blockSignals(False)
+                else:
+                    widget.clear()  # Clear if value is 0 or missing
+                widget.blockSignals(False)
                 
                 lotes_col = db_col + "_lotes"
                 lotes_val = data.get(lotes_col, 0)
                 lotes_widget = cf_tab.credit_lotes_inputs.get(label)
-                if lotes_widget and lotes_val:
+                if lotes_widget:
                     lotes_widget.blockSignals(True)
-                    try:
-                        lotes_widget.setText(str(int(float(lotes_val))))
-                    except (ValueError, TypeError):
-                        lotes_widget.setText(str(lotes_val))
+                    if lotes_val:
+                        try:
+                            lotes_widget.setText(str(int(float(lotes_val))))
+                        except (ValueError, TypeError):
+                            lotes_widget.setText(str(lotes_val))
+                    else:
+                        lotes_widget.clear()  # Clear if value is 0 or missing
                     lotes_widget.blockSignals(False)
             
             # Force a full UI recalculation now that all fields are populated
@@ -5386,37 +5315,45 @@ class ClientDashboard(QWidget):
             credit_total = sum(amount for _, amount, _ in data["credit"])
             
             doc = QTextDocument()
+            # Set default document font to ensure proper scaling for print
+            default_font = QFont("Segoe UI", 12)
+            doc.setDefaultFont(default_font)
+
             html = f"""
             <html>
             <head>
                 <style>
-                    body {{ font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; }}
-                    h1 {{ color: #1E293B; font-size: 18px; margin-bottom: 5px; }}
-                    h2 {{ color: #3B82F6; font-size: 14px; margin-top: 15px; margin-bottom: 8px; }}
-                    h3 {{ color: #64748B; font-size: 12px; margin-top: 10px; margin-bottom: 5px; }}
-                    .meta {{ color: #64748B; font-size: 10px; margin-bottom: 15px; }}
-                    table {{ border-collapse: collapse; width: 100%; margin-bottom: 15px; }}
-                    th {{ background-color: #1E293B; color: white; padding: 8px 10px; text-align: left; font-size: 11px; }}
-                    td {{ border: 1px solid #E2E8F0; padding: 6px 10px; font-size: 11px; }}
+                    /* Page body uses a centered container sized for print */
+                    body {{ font-family: 'Segoe UI', Arial, sans-serif; font-size: 8pt; color: black; margin: 0; padding: 0; }}
+                    /* Container sized to approximately half A4 width (95mm) and 3/4 A4 height (~208mm) */
+                    .page-container {{ width: 95mm; height: 208mm; margin: 10mm auto; padding: 6mm; box-sizing: border-box; }}
+                    h1 {{ font-size: 8pt; margin-bottom: 8px; color: black; font-weight: bold; }}
+                    h2 {{ font-size: 6pt; margin-top: 2px; margin-bottom: 2px; color: black; font-weight: bold; }}
+                    h3 {{ font-size: 6pt; margin-top: 2px; margin-bottom: 2px; color: black; font-weight: bold; }}
+                    .meta {{ font-size: 8pt; margin-bottom: 4px; color: black; line-height: 1.4; }}
+                    table {{ width: 100%; margin-bottom: 12px; border-spacing: 0; }}
+                    th {{ padding: 4px; text-align: left; font-size: 7pt; color: black; border: none; font-weight: bold; }}
+                    td {{ padding: 2px 2px; font-size: 5pt; border: none; line-height: 1.3; }}
                     .amount {{ text-align: right; font-weight: 600; }}
-                    .lotes {{ text-align: center; color: #64748B; }}
-                    .total-row {{ background-color: #F1F5F9; font-weight: 700; }}
-                    .summary-table {{ margin-top: 20px; }}
-                    .summary-label {{ font-weight: 700; color: #334155; }}
-                    .variance-positive {{ color: #22C55E; font-weight: 700; }}
-                    .variance-negative {{ color: #EF4444; font-weight: 700; }}
-                    .variance-zero {{ color: #64748B; font-weight: 700; }}
+                    .lotes {{ text-align: center; color: black; }}
+                    .total-row {{ font-weight: 700; }}
+                    .summary-table {{ margin-top: 8px; }}
+                    .summary-label {{ font-weight: 700; color: black; }}
+                    .variance-positive {{ color: black; font-weight: 700; }}
+                    .variance-negative {{ color: black; font-weight: 700; }}
+                    .variance-zero {{ color: black; font-weight: 700; }}
                 </style>
             </head>
             <body>
-                <h1>Daily Cash Report - Brand A</h1>
+                <div class="page-container">
+                <h1 style="font-size:8pt;">Daily Cash Report - Brand A</h1>
                 <div class="meta">
                     <b>Date:</b> {selected_date}<br>
                     <b>User:</b> {user_info}<br>
                     <b>Generated:</b> {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                 </div>
                 
-                <h2 style="color: #3B82F6;">Summary</h2>
+                <h2 style="font-size:8pt;">Summary</h2>
                 <table class="summary-table">
                     <tr>
                         <td class="summary-label">Beginning Balance</td>
@@ -5440,7 +5377,7 @@ class ClientDashboard(QWidget):
             """
             
             if data["debit"]:
-                html += '<h3 style="color: #EF4444;">Cash In (Debit)</h3>'
+                html += '<h3 style="font-size:8pt;">Cash In (Debit)</h3>'
                 html += '<table>'
                 html += '<tr><th>Field</th><th>Amount</th><th>Lotes</th></tr>'
                 
@@ -5451,7 +5388,7 @@ class ClientDashboard(QWidget):
                 html += '</table>'
             
             if data["credit"]:
-                html += '<h3 style="color: #22C55E;">Cash Out (Credit)</h3>'
+                html += '<h3 style="font-size:8pt;">Cash Out (Credit)</h3>'
                 html += '<table>'
                 html += '<tr><th>Field</th><th>Amount</th><th>Lotes</th></tr>'
                 
@@ -5462,11 +5399,12 @@ class ClientDashboard(QWidget):
                 html += '</table>'
             
             html += """
+                </div>
                 <br><br>
-                <table style="border: none; width: 100%;">
+                <table style="width: 100%;">
                     <tr>
-                        <td style="border: none; width: 50%;"><b>Prepared by:</b> ________________________</td>
-                        <td style="border: none; width: 50%;"><b>Approved by:</b> ________________________</td>
+                        <td style="width: 50%;"><b>Prepared by:</b> ________________________</td>
+                        <td style="width: 50%;"><b>Approved by:</b> ________________________</td>
                     </tr>
                 </table>
             </body>
@@ -5477,6 +5415,8 @@ class ClientDashboard(QWidget):
             
             printer = QPrinter(QPrinter.HighResolution)
             printer.setPageSize(QPrinter.A4)
+            printer.setPageMargins(10, 10, 10, 10, QPrinter.Millimeter)
+            printer.setResolution(300)
             dialog = QPrintDialog(printer, self)
             dialog.setWindowTitle("Print Non-Zero Report")
             
@@ -5538,19 +5478,17 @@ class ClientDashboard(QWidget):
             wb = Workbook()
             
 
-            title_font = Font(bold=True, size=16, color="1E293B")
-            header_font = Font(bold=True, size=11, color="FFFFFF")
-            header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-            summary_fill = PatternFill(start_color="EFF6FF", end_color="EFF6FF", fill_type="solid")
-            debit_fill = PatternFill(start_color="FEF2F2", end_color="FEF2F2", fill_type="solid")
-            credit_fill = PatternFill(start_color="F0FDF4", end_color="F0FDF4", fill_type="solid")
-            total_fill = PatternFill(start_color="F1F5F9", end_color="F1F5F9", fill_type="solid")
-            border = Border(
-                left=Side(style='thin', color='E2E8F0'),
-                right=Side(style='thin', color='E2E8F0'),
-                top=Side(style='thin', color='E2E8F0'),
-                bottom=Side(style='thin', color='E2E8F0')
-            )
+            # Use only black text; remove fills and borders for black-only printers
+            title_font = Font(bold=True, size=16, color="000000")
+            header_font = Font(bold=True, size=11, color="000000")
+            # No fills (remove background colors)
+            header_fill = PatternFill(fill_type=None)
+            summary_fill = PatternFill(fill_type=None)
+            debit_fill = PatternFill(fill_type=None)
+            credit_fill = PatternFill(fill_type=None)
+            total_fill = PatternFill(fill_type=None)
+            # No visible borders
+            border = Border()
             
             brands_to_export = []
             if has_data_a:
@@ -5566,6 +5504,12 @@ class ClientDashboard(QWidget):
                     first_sheet = False
                 else:
                     ws = wb.create_sheet(title=f"{brand_name} Report")
+
+                # Hide Excel gridlines for cleaner printouts
+                try:
+                    ws.sheet_view.showGridLines = False
+                except Exception:
+                    pass
                 
 
                 ws.merge_cells('A1:D1')
@@ -5593,7 +5537,7 @@ class ClientDashboard(QWidget):
                 ws.merge_cells(f'A{current_row}:D{current_row}')
                 summary_header = ws.cell(row=current_row, column=1)
                 summary_header.value = "Summary"
-                summary_header.font = Font(bold=True, size=14, color="3B82F6")
+                summary_header.font = Font(bold=True, size=14, color="000000")
                 summary_header.fill = summary_fill
                 summary_header.alignment = Alignment(horizontal='center')
                 current_row += 1
@@ -5608,7 +5552,8 @@ class ClientDashboard(QWidget):
                 for label, value in summary_items:
                     label_cell = ws.cell(row=current_row, column=1)
                     label_cell.value = label
-                    label_cell.font = Font(bold=True)
+                    label_cell.font = Font(bold=True, color="000000")
+                    # no border for black-only print
                     label_cell.border = border
                     
                     value_cell = ws.cell(row=current_row, column=2)
@@ -5621,13 +5566,13 @@ class ClientDashboard(QWidget):
                         status_cell = ws.cell(row=current_row, column=3)
                         if value > 0:
                             status_cell.value = "(Over)"
-                            status_cell.font = Font(color="22C55E", bold=True)
+                            status_cell.font = Font(bold=True, color="000000")
                         elif value < 0:
                             status_cell.value = "(Short)"
-                            status_cell.font = Font(color="EF4444", bold=True)
+                            status_cell.font = Font(bold=True, color="000000")
                         else:
                             status_cell.value = "(Balanced)"
-                            status_cell.font = Font(color="64748B", bold=True)
+                            status_cell.font = Font(bold=True, color="000000")
                         status_cell.border = border
                     
                     current_row += 1
@@ -5639,7 +5584,7 @@ class ClientDashboard(QWidget):
                     ws.merge_cells(f'A{current_row}:D{current_row}')
                     section_cell = ws.cell(row=current_row, column=1)
                     section_cell.value = "Cash In (Debit)"
-                    section_cell.font = Font(bold=True, color="EF4444")
+                    section_cell.font = Font(bold=True, color="000000")
                     section_cell.fill = debit_fill
                     current_row += 1
                     
@@ -5673,7 +5618,7 @@ class ClientDashboard(QWidget):
                     
                     total_label = ws.cell(row=current_row, column=1)
                     total_label.value = "Total Cash Receipt"
-                    total_label.font = Font(bold=True)
+                    total_label.font = Font(bold=True, color="000000")
                     total_label.fill = total_fill
                     total_label.border = border
                     
@@ -5695,7 +5640,7 @@ class ClientDashboard(QWidget):
                     ws.merge_cells(f'A{current_row}:D{current_row}')
                     section_cell = ws.cell(row=current_row, column=1)
                     section_cell.value = "Cash Out (Credit)"
-                    section_cell.font = Font(bold=True, color="22C55E")
+                    section_cell.font = Font(bold=True, color="000000")
                     section_cell.fill = credit_fill
                     current_row += 1
                     
@@ -5729,7 +5674,7 @@ class ClientDashboard(QWidget):
                     
                     total_label = ws.cell(row=current_row, column=1)
                     total_label.value = "Total Cash Out"
-                    total_label.font = Font(bold=True)
+                    total_label.font = Font(bold=True, color="000000")
                     total_label.fill = total_fill
                     total_label.border = border
                     

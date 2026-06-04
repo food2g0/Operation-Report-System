@@ -5,12 +5,32 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, pyqtSignal
 from PyQt5.QtGui import QFont
 import calendar
+import os
 
 
 _DATEEDIT_STYLE = (
-    "QDateEdit{padding:8px;border:2px solid #dee2e6;border-radius:6px;"
+    "QDateEdit{padding:8px 32px 8px 8px;border:2px solid #dee2e6;border-radius:6px;"
     "background:white;font-size:13px;}"
     "QDateEdit:focus{border-color:#007bff;}"
+    "QDateEdit::drop-down{subcontrol-origin:border;subcontrol-position:center right;"
+    "width:28px;border-left:1px solid #dee2e6;background:#f0f2f5;"
+    "border-top-right-radius:6px;border-bottom-right-radius:6px;}"
+    "QDateEdit::drop-down:hover{background:#dde1e7;}"
+    "QDateEdit::down-arrow{width:10px;height:10px;}"
+    "QCalendarWidget{min-width:340px;min-height:280px;background:white;border:1px solid #dee2e6;border-radius:6px;}"
+    "QCalendarWidget QWidget#qt_calendar_navigationbar{background-color:#343a40;min-height:42px;padding:4px 6px;border-radius:4px 4px 0 0;}"
+    "QCalendarWidget QToolButton{color:#ecf0f1;font-size:14px;font-weight:bold;"
+    "background-color:transparent;padding:6px 10px;border-radius:4px;margin:2px;}"
+    "QCalendarWidget QToolButton:hover{background-color:#007bff;color:white;}"
+    "QCalendarWidget QToolButton:pressed{background-color:#0056b3;color:white;}"
+    "QCalendarWidget QSpinBox{color:#2c3e50;background-color:#ecf0f1;font-size:13px;"
+    "font-weight:bold;border:1px solid #bdc3c7;border-radius:4px;padding:4px 8px;"
+    "selection-background-color:#007bff;selection-color:white;}"
+    "QCalendarWidget QAbstractItemView{background:white;selection-background-color:#007bff;"
+    "selection-color:white;font-size:12px;alternate-background-color:#f8f9fa;}"
+    "QCalendarWidget QAbstractItemView::item{padding:6px;border-radius:4px;}"
+    "QCalendarWidget QAbstractItemView::item:alternate{background-color:#f8f9fa;}"
+    "QCalendarWidget QAbstractItemView::item:selected{background-color:#007bff;color:white;font-weight:bold;}"
 )
 
 _COMBO_STYLE = (
@@ -184,8 +204,14 @@ class DateRangeWidget(QWidget):
     def _make_date_edit():
         de = QDateEdit(calendarPopup=True)
         de.setDate(QDate.currentDate())
-        de.setDisplayFormat("yyyy-MM-dd")
+        de.setDisplayFormat("dd MMM yyyy")
         de.setMinimumHeight(38)
         de.setMinimumWidth(150)
-        de.setStyleSheet(_DATEEDIT_STYLE)
+        _cal = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), 'assets', 'calendar.png'
+        ).replace('\\', '/')
+        de.setStyleSheet(
+            _DATEEDIT_STYLE +
+            f"QDateEdit::down-arrow{{image:url({_cal});width:14px;height:14px;}}"
+        )
         return de

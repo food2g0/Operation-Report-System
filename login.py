@@ -1,15 +1,15 @@
 from PyQt5.QtWidgets import (
     QWidget, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout,
-    QMessageBox, QLabel, QCheckBox, QFrame, QGraphicsDropShadowEffect
+    QMessageBox, QLabel, QCheckBox, QFrame,
+    QSplashScreen, QApplication
 )
 from PyQt5.QtCore import QSettings, Qt
-from PyQt5.QtGui import QFont, QPixmap, QIcon
+from PyQt5.QtGui import QFont, QPixmap, QColor, QPainter
 import logging
 import os
 
 logger = logging.getLogger(__name__)
 
-from Client.client_dashboard import ClientDashboard
 from db_connect_pooled import db_manager
 from security import (
     verify_password, hash_password, is_password_hashed,
@@ -20,10 +20,12 @@ from ping_monitor import ping_monitor
 
 
 try:
-    from auto_updater import check_for_updates_silent
+    from auto_updater import check_for_updates_silent, check_version_compliance
     from version import __version__, CHECK_ON_STARTUP
     AUTO_UPDATE_ENABLED = True
 except ImportError:
+    __version__ = "1.0.0"
+    CHECK_ON_STARTUP = False
     AUTO_UPDATE_ENABLED = False
     logger.warning("Auto-updater not available (missing dependencies)")
 
@@ -37,18 +39,65 @@ class LoginWindow(QWidget):
         self.setWindowTitle("Operation Report System")
         self.setFixedSize(820, 500)
         self.settings = QSettings("OperationReportSystem", "ORS")
+        self._version_blocked = False
 
 
         self.setup_ui()
         self.apply_styles()
         self.load_saved_credentials()
         self.center_window()
+
+        self.enforce_version_policy()
+        if self._version_blocked:
+            return
         
       
         self.init_database()
 
         if AUTO_UPDATE_ENABLED and CHECK_ON_STARTUP:
             self.check_updates_on_startup()
+
+    def enforce_version_policy(self):
+        """Block access if app version does not match latest GitHub release."""
+        if not AUTO_UPDATE_ENABLED:
+            return
+
+        try:
+            compliance = check_version_compliance(timeout=8)
+        except Exception as e:
+            logger.warning("Version policy check failed: %s", e)
+            return
+
+        if compliance.get("check_failed"):
+            logger.warning("Version policy check unavailable: %s", compliance.get("message", ""))
+            return
+
+        if compliance.get("compliant", True):
+            return
+
+        self._version_blocked = True
+        latest = compliance.get("latest_version", "unknown")
+        current = compliance.get("current_version", __version__)
+
+        self.username_input.setEnabled(False)
+        self.password_input.setEnabled(False)
+        self.remember_me_checkbox.setEnabled(False)
+        self.show_password_checkbox.setEnabled(False)
+        self.login_button.setEnabled(False)
+        self.login_button.setText("Update Required")
+
+        self.connection_status_label.setText(f"Update required: v{current} -> v{latest}")
+        self.connection_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+        self.connection_status_label.setVisible(True)
+
+        QMessageBox.warning(
+            self,
+            "Update Required",
+            "This application version is no longer allowed.\n\n"
+            f"Current version: {current}\n"
+            f"Latest version: {latest}\n\n"
+            "Please update the app before logging in."
+        )
 
     def init_database(self):
 
@@ -151,9 +200,17 @@ class LoginWindow(QWidget):
         left_layout.addWidget(brand_title)
 
         left_layout.addStretch()
-        credit_label = QLabel("© 2026 Paolo Somido")
+        credit_label = QLabel()
+        credit_label.setTextFormat(Qt.RichText)
+        credit_label.setText(
+            '© 2026 <a href="http://222.127.90.218:8080/" '
+            'style="color: rgba(255,255,255,0.75); text-decoration: none;">'
+            'Paolo Somido</a>'
+        )
         credit_label.setAlignment(Qt.AlignCenter)
-        credit_label.setStyleSheet("color: rgba(255,255,255,0.5); font-size: 11px;")
+        credit_label.setStyleSheet("font-size: 11px;")
+        credit_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        credit_label.setOpenExternalLinks(True)
         left_layout.addWidget(credit_label)
 
         main_layout.addWidget(left_panel)
@@ -398,6 +455,14 @@ class LoginWindow(QWidget):
         self.activateWindow()
 
     def manual_login(self):
+        if self._version_blocked:
+            self.show_message(
+                "Update Required",
+                "Login is disabled because this app version is outdated. Please update to the latest version.",
+                QMessageBox.Warning
+            )
+            return
+
         username = self.username_input.text().strip()
         password = self.password_input.text().strip()
 
@@ -412,7 +477,7 @@ class LoginWindow(QWidget):
             success, user_data = offline_manager.verify_offline_credentials(username, password)
             
             if success and user_data:
-                self._handle_offline_login(username, password, user_data)
+                self._handle_offline_login(username, user_data)
             else:
                 if offline_manager.has_cached_credentials(username):
                     error_msg = "Offline Login Failed\n\n"
@@ -433,15 +498,6 @@ class LoginWindow(QWidget):
         self.login_button.setText("Logging in...")
 
         try:
-
-            if not self.test_database_connection():
-                error_msg = "Database connection lost\n\n"
-                error_msg += "Your internet connection may be unstable.\n"
-                error_msg += "Please check your connection and try again."
-                self.show_message("Connection Error", error_msg, QMessageBox.Critical)
-                return
-
-
             is_locked, lockout_remaining = login_rate_limiter.is_locked(username)
             if is_locked:
                 self.show_message(
@@ -464,7 +520,7 @@ class LoginWindow(QWidget):
             self.login_button.setEnabled(True)
             self.login_button.setText("Login")
 
-    def _handle_offline_login(self, username: str, password: str, user_data: dict):
+    def _handle_offline_login(self, username: str, user_data: dict):
         """Handle successful offline login with cached credentials"""
         role = user_data.get("role", "user")
         branch = user_data.get("branch", "Unknown")
@@ -499,17 +555,22 @@ class LoginWindow(QWidget):
         self.save_credentials(username)
         
 
+        splash = self._make_splash(username, 'user', {})
+        splash.show()
+        QApplication.processEvents()
         try:
             # Offline mode: use direct db_manager as a fallback (no network available)
+            from Client.client_dashboard import ClientDashboard
             self.dashboard = ClientDashboard(
                 username, branch, corporation, db_manager,
                 offline_mode=True
             )
             self.dashboard.logout_requested.connect(self.handle_logout)
             self.dashboard.showMaximized()
+            splash.close()
             self.hide()
         except Exception as e:
-            import traceback
+            splash.close()
             logger.error("Error loading ClientDashboard in offline mode: %s", e, exc_info=True)
             self.show_message("Error", "Failed to load client dashboard.", QMessageBox.Critical)
             return
@@ -543,7 +604,8 @@ class LoginWindow(QWidget):
 
         try:
             query = """
-                    SELECT id, username, password, branch, corporation, role, account_type
+                    SELECT id, username, password, branch, corporation, role, account_type,
+                           COALESCE(os_group, '') AS os_group
                     FROM users
                     WHERE username = %s
                       AND role IN ('admin', 'super_admin') LIMIT 1
@@ -559,21 +621,24 @@ class LoginWindow(QWidget):
                 if verify_password(password, stored_password):
 
                     self._migrate_password_if_needed(user_id, password, stored_password)
-                    login_rate_limiter.reset(username) 
+                    login_rate_limiter.reset(username)
                     role = user_data.get('role', 'admin')
                     try:
+                        # ── Build and show splash screen immediately ──────────────
+                        splash = self._make_splash(username, role, user_data)
+                        splash.show()
+                        QApplication.processEvents()
+
+                        self.save_credentials(username)
+
                         if role == 'super_admin':
                             from super_admin_dashboard import SuperAdminDashboard
-                            self.show_message("Super Admin Login", f"Welcome, {username}! (Super Admin)", QMessageBox.Information)
-                            self.save_credentials(username)
                             self.dashboard = SuperAdminDashboard()
                         else:
                             from admin_dashboard import AdminDashboard
-                            account_type = user_data.get('account_type', 2)  
-                            brand_label = "Brand A" if account_type == 1 else "Brand B"
-                            self.show_message("Admin Login", f"Welcome, {username}! ({brand_label} Admin)", QMessageBox.Information)
-                            self.save_credentials(username)
-                            self.dashboard = AdminDashboard(account_type=account_type)
+                            account_type = user_data.get('account_type', 2)
+                            os_group = user_data.get('os_group', '') or ''
+                            self.dashboard = AdminDashboard(account_type=account_type, os_group=os_group)
 
                         role = user_data.get('role', 'admin')
                         ping_monitor.start(db_manager, username, role)
@@ -581,7 +646,8 @@ class LoginWindow(QWidget):
                         if hasattr(self.dashboard, 'logout_requested'):
                             self.dashboard.logout_requested.connect(self.handle_logout)
                         self.dashboard.showMaximized()
-                        self.hide()  
+                        splash.close()
+                        self.hide()
                         return True
                     except Exception as e:
                         logger.error("Error loading dashboard: %s", e)
@@ -632,8 +698,13 @@ class LoginWindow(QWidget):
                     
                     ping_monitor.start(db_manager, db_username, role)
                     ping_monitor.log_event('login_success', db_username, f'role={role} branch={branch}')
-                    self.show_message("Login Success", f"Welcome, {db_username}!", QMessageBox.Information)
                     self.save_credentials(db_username)
+
+                    # Show splash immediately — no blocking dialog before loading
+                    splash = self._make_splash(db_username, role, user_data)
+                    splash.show()
+                    QApplication.processEvents()
+
                     if role == 'super_admin':
                         try:
                             from super_admin_dashboard import SuperAdminDashboard
@@ -641,6 +712,7 @@ class LoginWindow(QWidget):
                             if hasattr(self.dashboard, 'logout_requested'):
                                 self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
+                            splash.close()
                             logger.error("Error loading SuperAdminDashboard: %s", e)
                             self.show_message("Error", "Failed to load super admin dashboard.", QMessageBox.Critical)
                             return
@@ -652,6 +724,7 @@ class LoginWindow(QWidget):
                             if hasattr(self.dashboard, 'logout_requested'):
                                 self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
+                            splash.close()
                             logger.error("Error loading AdminDashboard: %s", e)
                             self.show_message("Error", "Failed to load admin dashboard.", QMessageBox.Critical)
                             return
@@ -662,6 +735,7 @@ class LoginWindow(QWidget):
                                 from Client.api_db_manager import APIDbManager
                                 _client_db = APIDbManager()
                                 if not _client_db.connect():
+                                    splash.close()
                                     self.show_message(
                                         "API Connection Failed",
                                         "Could not connect to the API server.\n"
@@ -671,15 +745,18 @@ class LoginWindow(QWidget):
                                     return
                             else:
                                 _client_db = db_manager
+                            from Client.client_dashboard import ClientDashboard
                             self.dashboard = ClientDashboard(db_username, branch, corporation, _client_db)
                             self.dashboard.logout_requested.connect(self.handle_logout)
                         except Exception as e:
+                            splash.close()
                             logger.error("Error loading ClientDashboard: %s", e, exc_info=True)
                             self.show_message("Error", "Failed to load client dashboard.", QMessageBox.Critical)
                             return
-                    
+
                     self.dashboard.showMaximized()
-                    self.hide() 
+                    splash.close()
+                    self.hide()
                 else:
         
                     is_locked, remaining, lockout_time = login_rate_limiter.record_failed_attempt(username)
@@ -705,6 +782,64 @@ class LoginWindow(QWidget):
         except Exception as e:
             logger.error("Database Error during authentication: %s", e)
             self.show_message("Connection Error", "Failed to connect to the database.", QMessageBox.Critical)
+
+    def _make_splash(self, username: str, role: str, user_data: dict) -> QSplashScreen:
+        """Build a branded splash screen shown while the dashboard loads."""
+        W, H = 520, 200
+        px = QPixmap(W, H)
+        px.fill(QColor("#1a252f"))
+
+        painter = QPainter(px)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Accent bar on the left
+        painter.fillRect(0, 0, 6, H, QColor("#3498db"))
+
+        # App title
+        painter.setPen(QColor("#ecf0f1"))
+        painter.setFont(QFont("Segoe UI", 18, QFont.Bold))
+        painter.drawText(24, 52, "Operation Report System")
+
+        # Welcome line
+        if role == 'super_admin':
+            subtitle = f"Welcome, {username}  —  Super Admin"
+        elif role == 'admin':
+            account_type = user_data.get('account_type', 2)
+            brand = "Brand A" if account_type == 1 else "Brand B"
+            os_group = user_data.get('os_group', '') or ''
+            group_part = f"  ·  {os_group}" if os_group else ""
+            subtitle = f"Welcome, {username}  —  {brand} Admin{group_part}"
+        else:
+            branch = user_data.get('branch', '') or ''
+            corporation = user_data.get('corporation', '') or ''
+            if branch and corporation:
+                subtitle = f"Welcome, {username}  —  {branch}  ·  {corporation}"
+            elif branch:
+                subtitle = f"Welcome, {username}  —  {branch}"
+            else:
+                subtitle = f"Welcome, {username}!"
+
+        painter.setFont(QFont("Segoe UI", 11))
+        painter.setPen(QColor("#bdc3c7"))
+        painter.drawText(24, 88, subtitle)
+
+        # Loading indicator
+        painter.setPen(QColor("#7f8c8d"))
+        painter.setFont(QFont("Segoe UI", 10))
+        painter.drawText(24, H - 28, "Loading dashboard, please wait…")
+
+        # Spinner dots
+        dot_x = W - 80
+        for i, alpha in enumerate([255, 180, 100, 50]):
+            painter.setBrush(QColor(52, 152, 219, alpha))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(dot_x + i * 18, H - 40, 10, 10)
+
+        painter.end()
+
+        splash = QSplashScreen(px, Qt.WindowStaysOnTopHint)
+        splash.setFont(QFont("Segoe UI", 10))
+        return splash
 
     def show_message(self, title, message, icon):
         msg = QMessageBox(icon, title, message, QMessageBox.Ok, self)
