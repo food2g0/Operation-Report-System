@@ -2307,15 +2307,15 @@ class ClientDashboard(QWidget):
 
         # Show offline banner with clear message
         self._conn_banner.set_message(
-            "⚠  No internet connection — check your cable or try to restart the app."
+            "⚠  No internet connection — you can continue inputting data and save drafts, but cannot post."
         )
         self._conn_banner.show_banner()
 
         # Pause session timeout
         self._session_timer.stop()
 
-        # Disable ALL input fields when offline
-        self._toggle_inputs(False)
+        # Keep input fields ENABLED so users can continue typing and save drafts
+        # Only disable action buttons that require internet
 
         # Disable all action buttons
         self.post_button.setEnabled(False)
@@ -2331,15 +2331,21 @@ class ClientDashboard(QWidget):
             return  # already online
         self._is_connected = True
 
-        # Re-enable all inputs
-        self._toggle_inputs(True)
-
         # Show restored banner briefly
         self._conn_banner.set_message(
             "✓  Connection restored — click Refresh to reload your report."
         )
         self._conn_banner.setStyleSheet("QWidget#ConnectionBanner { background-color: #27ae60; }")
         self._conn_banner.show_banner()
+
+        # Re-enable action buttons (inputs were never disabled)
+        self.post_button.setEnabled(True)
+        self.post_button.setToolTip("Post report to database")
+        self.refresh_button.setEnabled(True)
+        self.refresh_button.setToolTip("Refresh report data from database")
+        for btn in (self.auto_fill_button_a, self.auto_fill_button_b):
+            btn.setEnabled(True)
+            btn.setToolTip("Auto-fill from previous entry")
 
         self._session_timer.start(60_000)
 
@@ -4793,14 +4799,16 @@ class ClientDashboard(QWidget):
         try:
             sd = self.date_picker.date().toString("yyyy-MM-dd")
 
-            status_a = self.check_existing_entry(sd, "Brand A")
-            status_b = self.check_existing_entry(sd, "Brand B")
-            if status_a == "locked" and status_b == "locked":
-                self._msg("Draft Not Saved",
-                          f"Report for {sd} has already been submitted.\n"
-                          "There is no need to save a draft for this date.",
-                          QMessageBox.Information)
-                return
+            # Only check existing entries if online (requires DB access)
+            if self._is_connected:
+                status_a = self.check_existing_entry(sd, "Brand A")
+                status_b = self.check_existing_entry(sd, "Brand B")
+                if status_a == "locked" and status_b == "locked":
+                    self._msg("Draft Not Saved",
+                              f"Report for {sd} has already been submitted.\n"
+                              "There is no need to save a draft for this date.",
+                              QMessageBox.Information)
+                    return
             draft = {
                 "saved_at": datetime.datetime.now().isoformat(),
                 "date": sd,
