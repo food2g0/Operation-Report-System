@@ -126,6 +126,18 @@ def _cache_set(key: str, result: Any, ttl: int = None) -> None:
         _cache[key] = (time.monotonic() + effective_ttl, result)
 
 
+def _cache_clear_all() -> None:
+    """Clear all cached query results to ensure fresh reads after writes."""
+    global _cache
+    if _redis_ok and _redis is not None:
+        try:
+            _redis.delete(*_redis.keys("ors:*"))
+        except Exception:
+            pass
+    with _cache_lock:
+        _cache.clear()
+
+
 
 _task_queue:   queue.Queue = queue.Queue(maxsize=500)
 _task_results: dict        = {}   # task_id -> {status, result, error, finished_at}
@@ -144,10 +156,9 @@ class BackgroundTask:
 def _run_background_task(task: BackgroundTask) -> None:
     try:
         result = _db.execute_query(task.sql, task.params)
-        # Invalidate cache for any related SELECT keys after a write
+        # Clear cache after writes to ensure fresh reads
         if not _is_select(task.sql):
-            # Best-effort: clear full cache so stale reads don't linger
-            _cache_set.__doc__  # no-op, just a check
+            _cache_clear_all()
         with _task_lock:
             _task_results[task.task_id] = {
                 "status":      "done",
@@ -741,8 +752,12 @@ def exec_query(body: ExecRequest, request: Request, _: None = Depends(_require_t
 
     try:
         result = _db.execute_query(body.sql, params)
-        if CACHE_TTL > 0 and _is_select(body.sql):
-            _cache_set(key, result, ttl=body.ttl)
+        if CACHE_TTL > 0:
+            if _is_select(body.sql):
+                _cache_set(key, result, ttl=body.ttl)
+            else:
+                # Clear cache after writes so fresh reads don't get stale data
+                _cache_clear_all()
         return {"result": result, "error": None, "cached": False}
     except Exception as e:
         log.error(f"Query error: {e} | SQL: {body.sql[:120]}")
@@ -765,8 +780,12 @@ def exec_query_safe(body: ExecRequest, request: Request, _: None = Depends(_requ
             return {"result": cached, "exec_error": None, "error_type": None, "error_code": None, "cached": True}
 
     result, err = _db.execute_query_with_exception(body.sql, params)
-    if CACHE_TTL > 0 and _is_select(body.sql) and not err:
-        _cache_set(key, result, ttl=body.ttl)
+    if CACHE_TTL > 0:
+        if _is_select(body.sql) and not err:
+            _cache_set(key, result, ttl=body.ttl)
+        elif not _is_select(body.sql) and not err:
+            # Clear cache after successful writes so fresh reads don't get stale data
+            _cache_clear_all()
     return {
         "result":     result,
         "exec_error": str(err) if err else None,
@@ -791,6 +810,7 @@ def exec_batch(body: BatchRequest, request: Request, _: None = Depends(_require_
     remote = request.client.host if request.client else "unknown"
     _exec_rate_check(remote)
     results = []
+    has_writes = False
     for item in body.queries:
         _check_blocked(item.sql, remote)
         params = tuple(item.params) if item.params else None
@@ -802,13 +822,19 @@ def exec_batch(body: BatchRequest, request: Request, _: None = Depends(_require_
                 results.append({"result": cached, "error": None, "cached": True})
                 continue
         result, err = _db.execute_query_with_exception(item.sql, params)
-        if CACHE_TTL > 0 and _is_select(item.sql) and not err:
-            _cache_set(key, result, ttl=item.ttl)
+        if CACHE_TTL > 0:
+            if _is_select(item.sql) and not err:
+                _cache_set(key, result, ttl=item.ttl)
+            elif not _is_select(item.sql) and not err:
+                has_writes = True
         results.append({
             "result": result,
             "error":  str(err) if err else None,
             "cached": False,
         })
+    # Clear cache after batch if any writes occurred
+    if has_writes and CACHE_TTL > 0:
+        _cache_clear_all()
     return {"results": results}
 
 
