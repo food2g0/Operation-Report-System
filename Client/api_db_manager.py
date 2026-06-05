@@ -101,6 +101,14 @@ class APIDbManager:
         except Exception:
             return False
 
+    def reset_connection(self) -> None:
+        """Reset the API connection to ensure fresh DB connection on next query.
+
+        Use this after writes (INSERT/UPDATE/DELETE) to flush any connection
+        pooling issues that prevent subsequent reads from seeing new data.
+        """
+        self._token = None
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _ensure_token(self) -> None:
