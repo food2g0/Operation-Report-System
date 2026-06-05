@@ -1319,7 +1319,7 @@ class ClientDashboard(QWidget):
                 QPushButton:hover {{ background-color: #4F46E5; }}
                 QPushButton:pressed {{ background-color: #4338CA; }}
             """)
-            self.refresh_button.clicked.connect(self.on_date_changed)
+            self.refresh_button.clicked.connect(self._force_reload_current_date)
             self.refresh_button.setToolTip("Reload the report for the current date.")
             title_row.addWidget(self.refresh_button)
 
@@ -2405,6 +2405,33 @@ class ClientDashboard(QWidget):
                 if hasattr(self, 'loading_overlay'):
                     self.loading_overlay.hide()
                 raise
+
+    def _force_reload_current_date(self):
+        """Force reload the current date, bypassing offline check and date signal."""
+        # Works even if offline or if user clicks same date again
+        if not self._is_connected:
+            self._msg("Offline",
+                     "Cannot reload when offline. Please check your internet connection.",
+                     QMessageBox.Information)
+            return
+
+        sd = self.date_picker.date().toString("yyyy-MM-dd")
+
+        # Show loading indicator
+        if hasattr(self, 'loading_overlay'):
+            self.loading_overlay.set_status("Reloading report...", f"Loading {sd}")
+            self.loading_overlay.show()
+            QApplication.processEvents()
+
+        try:
+            self._on_date_changed_inner(sd)
+        except Exception as exc:
+            if hasattr(self, 'loading_overlay'):
+                self.loading_overlay.hide()
+            if self._is_network_error(exc):
+                self._on_connection_lost()
+            else:
+                self._msg("Error", f"Failed to reload: {exc}", QMessageBox.Critical)
 
     def _on_date_changed_inner(self, sd):
         # Clear all cached dialogs and breakdowns FIRST to prevent stale data
