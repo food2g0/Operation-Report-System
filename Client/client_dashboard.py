@@ -3445,6 +3445,15 @@ class ClientDashboard(QWidget):
                 # now managed server-side from the canonical daily report tables.
                 # This prevents duplicate/sync issues across multiple tables.
 
+                # Reset API connection to ensure new data is visible on next query
+                # This fixes database connection pooling issues that prevent newly
+                # posted reports from appearing until app restart
+                try:
+                    if hasattr(self.db_manager, 'reset_connection'):
+                        self.db_manager.reset_connection()
+                except Exception:
+                    pass
+
                 self.loading_overlay.hide()
 
                 parts = f"Posted: {', '.join(successes)}"
