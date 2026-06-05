@@ -24,9 +24,6 @@ from PyQt5.QtGui import QFont
 
 from db_connect_pooled import db_manager
 from security import SessionManager
-from ping_monitor import PingMonitorWindow
-from maintenance_mode import is_maintenance_active, start_maintenance, stop_maintenance, init_maintenance_table
-from maintenance_mode_ui import MaintenanceNotificationBar
 from currency_manager import init_currencies_table, get_all_currencies_with_status, add_currency, remove_currency, restore_currency
 
 # Optional auto-updater
@@ -299,180 +296,6 @@ def _remove_db_columns(db_col: str) -> tuple:
     
     msg = f"Removed from: {', '.join(removed_from)}" if removed_from else "No columns found to remove"
     return True, msg
-
-
-class MaintenanceConfigDialog(QDialog):
-    """Dialog for configuring maintenance mode."""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("System Maintenance Mode")
-        self.setModal(True)
-        self.setMinimumWidth(500)
-        self._build_ui()
-        self._refresh_status()
-    
-    def _build_ui(self):
-        """Build the maintenance configuration UI."""
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-        
-        # Status frame
-        status_frame = QGroupBox("Current Status")
-        status_layout = QVBoxLayout(status_frame)
-        
-        self.status_label = QLabel()
-        self.status_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
-        status_layout.addWidget(self.status_label)
-        layout.addWidget(status_frame)
-        
-        # Configuration frame
-        config_frame = QGroupBox("Configuration")
-        config_layout = QVBoxLayout(config_frame)
-        
-        # Title
-        QLabel("Title:").setStyleSheet("font-weight: bold;")
-        config_layout.addWidget(QLabel("Title:"))
-        self.title_input = QLineEdit()
-        self.title_input.setPlaceholderText("e.g., System Maintenance")
-        self.title_input.setText("System Maintenance")
-        config_layout.addWidget(self.title_input)
-        
-        # Message
-        config_layout.addWidget(QLabel("Message:"))
-        self.message_input = QLineEdit()
-        self.message_input.setPlaceholderText("e.g., We are performing scheduled maintenance...")
-        self.message_input.setText("We are performing scheduled maintenance. We'll be back soon!")
-        config_layout.addWidget(self.message_input)
-        
-        # Duration
-        duration_layout = QHBoxLayout()
-        duration_layout.addWidget(QLabel("Duration (minutes):"))
-        self.duration_spin = QLineEdit()
-        self.duration_spin.setText("30")
-        self.duration_spin.setMaximumWidth(80)
-        duration_layout.addWidget(self.duration_spin)
-        duration_layout.addStretch()
-        config_layout.addLayout(duration_layout)
-        
-        # Blocking mode
-        self.blocking_checkbox = QCheckBox("🔒 Block Client Access (Full-screen)")
-        self.blocking_checkbox.setToolTip(
-            "If checked: Clients see full-screen maintenance dialog and cannot use the app\n"
-            "If unchecked: Clients see notification banner but can continue working"
-        )
-        self.blocking_checkbox.setStyleSheet("font-weight: bold; color: #e74c3c;")
-        config_layout.addWidget(self.blocking_checkbox)
-        
-        layout.addWidget(config_frame)
-        
-        # Buttons
-        btn_layout = QHBoxLayout()
-        
-        self.start_btn = QPushButton("▶ Start Maintenance")
-        self.start_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #e74c3c; color: white;
-                border: none; padding: 10px 20px; border-radius: 6px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #c0392b; }
-        """)
-        self.start_btn.clicked.connect(self._start_maintenance)
-        btn_layout.addWidget(self.start_btn)
-        
-        self.stop_btn = QPushButton("⏹ Stop Maintenance")
-        self.stop_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #27ae60; color: white;
-                border: none; padding: 10px 20px; border-radius: 6px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #229954; }
-        """)
-        self.stop_btn.clicked.connect(self._stop_maintenance)
-        self.stop_btn.setEnabled(False)
-        btn_layout.addWidget(self.stop_btn)
-        
-        btn_layout.addStretch()
-        
-        close_btn = QPushButton("Close")
-        close_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #95a5a6; color: white;
-                border: none; padding: 10px 20px; border-radius: 6px;
-                font-weight: bold;
-            }
-            QPushButton:hover { background-color: #7f8c8d; }
-        """)
-        close_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(close_btn)
-        
-        layout.addLayout(btn_layout)
-    
-    def _refresh_status(self):
-        """Update the status display."""
-        if is_maintenance_active():
-            self.status_label.setText("🔴 Maintenance mode is ACTIVE")
-            self.status_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #e74c3c;")
-            self.start_btn.setEnabled(False)
-            self.stop_btn.setEnabled(True)
-            self.title_input.setEnabled(False)
-            self.message_input.setEnabled(False)
-            self.duration_spin.setEnabled(False)
-        else:
-            self.status_label.setText("🟢 Maintenance mode is INACTIVE")
-            self.status_label.setStyleSheet("font-size: 13px; font-weight: bold; color: #27ae60;")
-            self.start_btn.setEnabled(True)
-            self.stop_btn.setEnabled(False)
-            self.title_input.setEnabled(True)
-            self.message_input.setEnabled(True)
-            self.duration_spin.setEnabled(True)
-    
-    def _start_maintenance(self):
-        """Start maintenance mode."""
-        try:
-            duration = int(self.duration_spin.text())
-            if duration <= 0:
-                QMessageBox.warning(self, "Invalid Duration", "Duration must be greater than 0 minutes.")
-                return
-            
-            username = self.parent().session.username if hasattr(self.parent(), 'session') else 'super_admin'
-            is_blocking = self.blocking_checkbox.isChecked()
-            
-            if start_maintenance(
-                title=self.title_input.text(),
-                message=self.message_input.text(),
-                duration_minutes=duration,
-                username=username,
-                is_blocking=is_blocking
-            ):
-                mode_type = "BLOCKING" if is_blocking else "Notification"
-                QMessageBox.information(
-                    self, "Success", 
-                    f"Maintenance mode started for {duration} minutes.\n\n"
-                    f"Mode: {mode_type}\n"
-                    f"Clients will see: {'Full-screen block' if is_blocking else 'Notification banner'}"
-                )
-                self._refresh_status()
-            else:
-                QMessageBox.critical(self, "Error", "Failed to start maintenance mode.")
-        except ValueError:
-            QMessageBox.warning(self, "Invalid Input", "Duration must be a valid number.")
-    
-    def _stop_maintenance(self):
-        """Stop maintenance mode."""
-        reply = QMessageBox.question(
-            self, "Confirm", "Stop maintenance mode now?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            if stop_maintenance():
-                QMessageBox.information(self, "Success", "Maintenance mode stopped.")
-                self._refresh_status()
-            else:
-                QMessageBox.critical(self, "Error", "Failed to stop maintenance mode.")
 
 
 class CurrencyManagerDialog(QDialog):
@@ -1284,9 +1107,6 @@ class SuperAdminDashboard(QWidget):
         self.setMinimumSize(1050, 700)
         self.showMaximized()
 
-        # Initialize maintenance mode
-        init_maintenance_table()
-        
         # Initialize currencies
         init_currencies_table()
 
@@ -1405,9 +1225,7 @@ class SuperAdminDashboard(QWidget):
             QPushButton:hover { background-color: #9b59b6; }
             QPushButton:pressed { background-color: #7d3c98; }
         """)
-        ping_btn.setToolTip("View user connection / ping logs")
-        ping_btn.clicked.connect(self._open_ping_monitor)
-        h.addWidget(ping_btn)
+        # ping monitor button removed
 
         currency_btn = QPushButton("💱 Currencies")
         currency_btn.setStyleSheet("""
@@ -1422,20 +1240,6 @@ class SuperAdminDashboard(QWidget):
         currency_btn.setToolTip("Manage MC currencies")
         currency_btn.clicked.connect(self._open_currency_manager)
         h.addWidget(currency_btn)
-
-        maintenance_btn = QPushButton("🔧 Maintenance")
-        maintenance_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #e74c3c; color: white;
-                border: none; padding: 10px 16px; border-radius: 6px;
-                font-weight: bold; font-size: 11px; min-width: 120px;
-            }
-            QPushButton:hover { background-color: #c0392b; }
-            QPushButton:pressed { background-color: #a93226; }
-        """)
-        maintenance_btn.setToolTip("Trigger system maintenance mode")
-        maintenance_btn.clicked.connect(self._open_maintenance_dialog)
-        h.addWidget(maintenance_btn)
 
         logout_btn = QPushButton("🚪 Logout")
         logout_btn.setStyleSheet("""
@@ -1639,18 +1443,11 @@ class SuperAdminDashboard(QWidget):
                 f"Failed to load Client dashboard:\n{e}"
             )
 
-    def _open_ping_monitor(self):
-        window = PingMonitorWindow(db_manager, parent=self)
-        window.exec_()
+    # ping monitor method removed
 
     def _open_currency_manager(self):
         """Open currency management dialog."""
         dialog = CurrencyManagerDialog(self)
-        dialog.exec_()
-
-    def _open_maintenance_dialog(self):
-        """Open maintenance mode configuration dialog."""
-        dialog = MaintenanceConfigDialog(self)
         dialog.exec_()
 
     def _handle_logout(self):
