@@ -17,13 +17,12 @@ from PyQt5.QtWidgets import (
     QProgressBar, QGraphicsOpacityEffect
 )
 from PyQt5.QtGui import QDoubleValidator, QFont, QFontDatabase, QTextDocument, QMovie
-from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer, QPropertyAnimation, QThread
+from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer, QPropertyAnimation
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 
 from Client.cash_flow_tab import CashFlowTab
 from Client.palawan_details_tab import PalawanDetailsTab
 from security import SessionManager
-from maintenance_mode_ui import MaintenanceNotificationBar
 from Client.ui_components import LoadingOverlay, NoWheelDateEdit
 from Client.ui_styles import (
     _SLATE_50, _SLATE_100, _SLATE_200, _SLATE_300, _SLATE_400,
@@ -44,11 +43,6 @@ try:
 except ImportError:
     OFFLINE_SUPPORT = False
     offline_manager = None
-
-try:
-    from ping_monitor import ping_monitor as _ping_monitor
-except ImportError:
-    _ping_monitor = None
 
 try:
     from auto_updater import check_for_updates, check_update_success
@@ -88,6 +82,9 @@ def _micro_label(text, color=_TEXT_MUTED):
         f"letter-spacing: 1.1px; background: transparent;"
     )
     return lbl
+
+
+from connection_watcher import ConnectionBanner
 
 
 class FundTransferHODialog(QDialog):
@@ -686,6 +683,13 @@ class ClientDashboard(QWidget):
         self._session_timer.timeout.connect(self._check_session_timeout)
         self._session_timer.start(60_000)
 
+        # Network connectivity state — check every 5s via QThreadPool (non-blocking)
+        # Defer first check by 3 seconds to not block app startup
+        self._is_connected = True
+        self._conn_timer = QTimer(self)
+        self._conn_timer.timeout.connect(self._check_internet)
+        QTimer.singleShot(3_000, lambda: self._conn_timer.start(5_000))
+
         self.beginning_balance_auto_filled_a = False
         self.beginning_balance_auto_filled_b = False
         self.previous_day_balance_a = None
@@ -701,9 +705,10 @@ class ClientDashboard(QWidget):
         lay.setSpacing(_sz(6))
         lay.setContentsMargins(_sz(12), _sz(10), _sz(12), _sz(8))
 
-        # Add maintenance notification bar
-        self.maintenance_bar = MaintenanceNotificationBar(self)
-        lay.addWidget(self.maintenance_bar)
+        # ── Connectivity banner (hidden until connection drops) ───────────
+        self._conn_banner = ConnectionBanner()
+        self._conn_banner.retry_btn.clicked.connect(self.on_date_changed)
+        lay.addWidget(self._conn_banner)
 
         lay.addWidget(self._build_header(username, branch, corporation))
         lay.addWidget(self._build_toolbar())
@@ -1285,13 +1290,40 @@ class ClientDashboard(QWidget):
         col = QVBoxLayout()
         col.setSpacing(3)
 
-  
+        # Title row with refresh button on the right
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(8)
+
         title = QLabel(f"{label}  —  Opening Balance")
         title.setStyleSheet(
             f"font-size: 10px; font-weight: 600; color: {_TEXT_SEC}; background: transparent;"
             f" text-transform: uppercase; letter-spacing: 1px;"
         )
-        col.addWidget(title)
+        title_row.addWidget(title)
+        title_row.addStretch()
+
+        # Add refresh button on top right (only for Brand A)
+        if brand == "A" and not hasattr(self, 'refresh_button'):
+            self.refresh_button = QPushButton("↻")
+            self.refresh_button.setFixedSize(_sz(32), _sz(28))
+            self.refresh_button.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: #6366F1;
+                    color: {_WHITE};
+                    font-size: {_sz(14)}px;
+                    font-weight: 700;
+                    border: none;
+                    border-radius: {_sz(6)}px;
+                }}
+                QPushButton:hover {{ background-color: #4F46E5; }}
+                QPushButton:pressed {{ background-color: #4338CA; }}
+            """)
+            self.refresh_button.clicked.connect(self.on_date_changed)
+            self.refresh_button.setToolTip("Reload the report for the current date.")
+            title_row.addWidget(self.refresh_button)
+
+        col.addLayout(title_row)
 
         bb_input = QLineEdit()
         bb_input.setValidator(QDoubleValidator(0.0, 1e12, 2))
@@ -1791,6 +1823,10 @@ class ClientDashboard(QWidget):
             self.close()
 
     def _check_session_timeout(self):
+        # Don't time out while a loading overlay is visible (network op in progress)
+        if hasattr(self, 'loading_overlay') and self.loading_overlay.isVisible():
+            self.session.update_activity()
+            return
         if self.session.check_timeout():
             self._session_timer.stop()
             QMessageBox.warning(
@@ -1806,23 +1842,31 @@ class ClientDashboard(QWidget):
         super().mousePressEvent(event)
 
     def eventFilter(self, obj, event):
-        """Handle application-level events for zoom"""
+        """Handle application-level events for zoom and session activity tracking."""
         from PyQt5.QtCore import QEvent
-        # Capture wheel events at app level
+        # Reset session timer on any real user interaction
+        _activity_types = (
+            QEvent.MouseButtonPress, QEvent.MouseButtonRelease,
+            QEvent.MouseMove, QEvent.KeyPress, QEvent.Wheel,
+            QEvent.FocusIn, QEvent.TouchBegin,
+        )
+        if event.type() in _activity_types:
+            self.session.update_activity()
+
+        # Capture wheel events at app level for zoom
         if event.type() == QEvent.Wheel:
-            # Check if Ctrl is pressed
             if event.modifiers() & Qt.ControlModifier:
                 delta = event.angleDelta().y()
                 if delta > 0:
                     self.zoom_in()
                 else:
                     self.zoom_out()
-                return True  # Consume the event
+                return True
         # Check for Ctrl+0 key press
         elif event.type() == QEvent.KeyPress:
             if event.modifiers() & Qt.ControlModifier and event.key() == Qt.Key_0:
                 self.reset_zoom()
-                return True  # Consume the event
+                return True
         return super().eventFilter(obj, event)
 
     def wheelEvent(self, event):
@@ -2226,7 +2270,117 @@ class ClientDashboard(QWidget):
         
         logger.debug("All dialog caches cleared (Jewelry, Motor, FT HO, FT Branch, MC In/Out, Salary)")
 
+    def _check_internet(self):
+        """Submit non-blocking socket check to QThreadPool every 5 seconds."""
+        from connection_watcher import _PingWorker
+        from PyQt5.QtCore import QThreadPool
+        worker = _PingWorker()
+        worker.signals.result.connect(self._on_internet_check)
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_internet_check(self, ok: bool):
+        """Called when socket check completes — show/hide banner based on result."""
+        if not ok and self._is_connected:
+            # Just went offline
+            self._on_connection_lost()
+        elif ok and not self._is_connected:
+            # Just came back online
+            self._on_connection_restored()
+
+    def _hide_conn_banner_and_reset(self):
+        self._conn_banner.hide_banner()
+        self._conn_banner.setStyleSheet("""
+            QWidget#ConnectionBanner { background-color: #c0392b; }
+        """)
+        self._conn_banner.set_message(
+            "⚠  No internet connection — check your cable or try to restart the app."
+        )
+
+    def _on_connection_lost(self):
+        if self._is_connected is False:
+            return  # already in offline mode
+        self._is_connected = False
+
+        # Hide any stuck loading overlay
+        if hasattr(self, 'loading_overlay'):
+            self.loading_overlay.hide()
+
+        # Show offline banner with clear message
+        self._conn_banner.set_message(
+            "⚠  No internet connection — check your cable or try to restart the app."
+        )
+        self._conn_banner.show_banner()
+
+        # Pause session timeout
+        self._session_timer.stop()
+
+        # Disable ALL input fields when offline
+        self._toggle_inputs(False)
+
+        # Disable all action buttons
+        self.post_button.setEnabled(False)
+        self.post_button.setToolTip("Disabled — no internet connection.")
+        self.refresh_button.setEnabled(False)
+        self.refresh_button.setToolTip("Disabled — no internet connection.")
+        for btn in (self.auto_fill_button_a, self.auto_fill_button_b):
+            btn.setEnabled(False)
+            btn.setToolTip("Disabled — no internet connection.")
+
+    def _on_connection_restored(self):
+        if self._is_connected is True:
+            return  # already online
+        self._is_connected = True
+
+        # Re-enable all inputs
+        self._toggle_inputs(True)
+
+        # Show restored banner briefly
+        self._conn_banner.set_message(
+            "✓  Connection restored — click Refresh to reload your report."
+        )
+        self._conn_banner.setStyleSheet("QWidget#ConnectionBanner { background-color: #27ae60; }")
+        self._conn_banner.show_banner()
+
+        self._session_timer.start(60_000)
+
+        # Re-enable DB-dependent buttons
+        self.post_button.setToolTip("")
+        self.refresh_button.setEnabled(True)
+        self.refresh_button.setToolTip("Reload the report for the current date.")
+        for btn in (self.auto_fill_button_a, self.auto_fill_button_b):
+            btn.setEnabled(True)
+            btn.setToolTip("")
+        self.update_cash_result()
+
+        # Hide restored banner after 3 seconds
+        QTimer.singleShot(3000, self._hide_conn_banner_and_reset)
+
+    def _is_network_error(self, exc):
+        """Return True if the exception looks like a connectivity or timeout issue."""
+        msg = str(exc).lower()
+        return any(k in msg for k in (
+            "timeout", "timed out", "connection", "network", "unreachable",
+            "refused", "reset", "broken pipe", "eof", "errno",
+            "requests.exceptions", "connectionerror", "readtimeout",
+        ))
+
+    def _show_network_error(self, action="load data"):
+        """Show a friendly retry dialog and hide the loading overlay."""
+        if hasattr(self, 'loading_overlay'):
+            self.loading_overlay.hide()
+        QMessageBox.warning(
+            self,
+            "Connection Problem",
+            f"Unable to {action} — the connection is slow or unavailable.\n\n"
+            "Please check your internet connection and try again.",
+            QMessageBox.Ok
+        )
+
     def on_date_changed(self):
+        # Skip entirely when offline — no network calls, no lag
+        if not self._is_connected:
+            return
+
         sd = self.date_picker.date().toString("yyyy-MM-dd")
 
         # Show loading indicator while checking and loading report
@@ -2235,6 +2389,18 @@ class ClientDashboard(QWidget):
             self.loading_overlay.show()
             QApplication.processEvents()
 
+        try:
+            self._on_date_changed_inner(sd)
+        except Exception as exc:
+            if self._is_network_error(exc):
+                # Immediately enter offline mode — don't wait for the watcher
+                self._on_connection_lost()
+            else:
+                if hasattr(self, 'loading_overlay'):
+                    self.loading_overlay.hide()
+                raise
+
+    def _on_date_changed_inner(self, sd):
         # Clear all cached dialogs and breakdowns FIRST to prevent stale data
         self._clear_all_dialog_caches()
 
@@ -2514,6 +2680,8 @@ class ClientDashboard(QWidget):
 
 
     def auto_fill_beginning_balance(self, brand="A"):
+        if not self._is_connected:
+            return  # Auto-fill button is already disabled offline — safety guard
         sd        = self.date_picker.date().toString("yyyy-MM-dd")
         brand_full = "Brand A" if brand == "A" else "Brand B"
 
@@ -2634,7 +2802,9 @@ class ClientDashboard(QWidget):
     def update_cash_result(self):
         ready_a = self._update_brand_variance("A")
         ready_b = self._update_brand_variance("B")
-        self.post_button.setEnabled(ready_a and ready_b)
+        # Never re-enable post button while offline
+        if self._is_connected:
+            self.post_button.setEnabled(ready_a and ready_b)
 
     def _update_brand_variance(self, brand):
         bb  = self.beginning_balance_input_a if brand == "A" else self.beginning_balance_input_b
@@ -2924,6 +3094,8 @@ class ClientDashboard(QWidget):
             next_date += datetime.timedelta(days=1)
 
     def handle_post(self):
+        if not self._is_connected:
+            return  # Post button is already disabled offline — safety guard
         try:
             sd = self.date_picker.date().toString("yyyy-MM-dd")
             if not self._check_optional_tabs_empty():
@@ -3224,12 +3396,6 @@ class ClientDashboard(QWidget):
                 self._msg("Save Error - Validation Failed" if val_errors else "Database Error",
                           error_msg,
                           QMessageBox.Critical)
-                if _ping_monitor:
-                    fail_detail = f"date={sd} | " + " | ".join(
-                        f"{b}: {e}" for b, e in (errors + val_errors)
-                    )
-                    _ping_monitor.log_event('post_failed', self.user_email,
-                                           fail_detail[:500])
                 return
 
             if successes:
@@ -3251,9 +3417,6 @@ class ClientDashboard(QWidget):
                 parts = f"Posted: {', '.join(successes)}"
                 if skipped:
                     parts += f"\nSkipped (already exists): {', '.join(skipped)}"
-                if _ping_monitor:
-                    _ping_monitor.log_event('post_success', self.user_email,
-                                           f"date={sd} brands={', '.join(successes)}")
                 self._msg_success(f"Report for {sd}\n\n{parts}")
                 self._delete_draft(sd)
 
@@ -3275,7 +3438,10 @@ class ClientDashboard(QWidget):
 
         except Exception as e:
             self.loading_overlay.hide()
-            self._msg("Error", f"Failed to post: {e}", QMessageBox.Critical)
+            if self._is_network_error(e):
+                self._on_connection_lost()
+            else:
+                self._msg("Error", f"Failed to post: {e}", QMessageBox.Critical)
 
     def _handle_offline_post(self, selected_date):
 
@@ -5484,8 +5650,6 @@ class ClientDashboard(QWidget):
             # No fills (remove background colors)
             header_fill = PatternFill(fill_type=None)
             summary_fill = PatternFill(fill_type=None)
-            debit_fill = PatternFill(fill_type=None)
-            credit_fill = PatternFill(fill_type=None)
             total_fill = PatternFill(fill_type=None)
             # No visible borders
             border = Border()
@@ -5581,13 +5745,6 @@ class ClientDashboard(QWidget):
                 
 
                 if data["debit"]:
-                    ws.merge_cells(f'A{current_row}:D{current_row}')
-                    section_cell = ws.cell(row=current_row, column=1)
-                    section_cell.value = "Cash In (Debit)"
-                    section_cell.font = Font(bold=True, color="000000")
-                    section_cell.fill = debit_fill
-                    current_row += 1
-                    
                     for col, hdr in enumerate(["Field", "Amount", "Lotes", ""], 1):
                         cell = ws.cell(row=current_row, column=col)
                         cell.value = hdr
@@ -5637,13 +5794,6 @@ class ClientDashboard(QWidget):
                 
       
                 if data["credit"]:
-                    ws.merge_cells(f'A{current_row}:D{current_row}')
-                    section_cell = ws.cell(row=current_row, column=1)
-                    section_cell.value = "Cash Out (Credit)"
-                    section_cell.font = Font(bold=True, color="000000")
-                    section_cell.fill = credit_fill
-                    current_row += 1
-                    
                     for col, hdr in enumerate(["Field", "Amount", "Lotes", ""], 1):
                         cell = ws.cell(row=current_row, column=col)
                         cell.value = hdr

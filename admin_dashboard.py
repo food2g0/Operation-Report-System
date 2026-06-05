@@ -32,7 +32,7 @@ from global_other_services_page import GlobalOtherServicesPage
 from ft_ho_page import FTHOPage
 from depo_br_page import DepoBRPage
 from review_summary_page import ReviewSummaryPage
-from maintenance_mode_ui import MaintenanceNotificationBar
+from connection_watcher import ConnectionWatcher, ConnectionBanner
 
 
 try:
@@ -66,10 +66,14 @@ class AdminDashboard(QWidget):
         self.session = SessionManager(inactivity_timeout=1800)
         self._session_timer = QTimer(self)
         self._session_timer.timeout.connect(self._check_session_timeout)
-        self._session_timer.start(60000)  
+        self._session_timer.start(60000)
 
-        # Initialize maintenance mode UI
-        self.maintenance_bar = MaintenanceNotificationBar(self)
+        # Network connectivity monitor
+        self._is_connected = True
+        self._conn_watcher = ConnectionWatcher(self.db)
+        self._conn_watcher.connection_lost.connect(self._on_connection_lost)
+        self._conn_watcher.connection_restored.connect(self._on_connection_restored)
+        self._conn_watcher.start()
 
         self.debit_inputs = {}
         self.credit_inputs = {}
@@ -676,8 +680,9 @@ class AdminDashboard(QWidget):
         main_layout.setContentsMargins(10, 8, 10, 8)
         main_layout.setSpacing(6)
 
-        # Add maintenance notification bar
-        main_layout.addWidget(self.maintenance_bar)
+        # Connectivity banner (hidden until connection drops)
+        self._conn_banner = ConnectionBanner()
+        main_layout.addWidget(self._conn_banner)
 
         header_frame = QFrame()
         header_frame.setStyleSheet("""
@@ -898,6 +903,18 @@ class AdminDashboard(QWidget):
             self.logout_requested.emit()
             self.close()
     
+    def _on_connection_lost(self):
+        self._is_connected = False
+        if hasattr(self, '_conn_banner'):
+            self._conn_banner.show_banner()
+        self._session_timer.stop()
+
+    def _on_connection_restored(self):
+        self._is_connected = True
+        if hasattr(self, '_conn_banner'):
+            self._conn_banner.hide_banner()
+        self._session_timer.start(60000)
+
     def _check_session_timeout(self):
 
         if self.session.check_timeout():
