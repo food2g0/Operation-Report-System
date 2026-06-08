@@ -3149,10 +3149,22 @@ class AdminDashboard(QWidget):
             from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
             from openpyxl.utils import get_column_letter
         except ImportError:
-            QMessageBox.critical(self, "Missing Dependency", 
+            QMessageBox.critical(self, "Missing Dependency",
                 "The openpyxl package is required.\nInstall with: pip install openpyxl")
             return
-        
+
+        # Create a progress dialog to show loading spinner
+        from PyQt5.QtWidgets import QProgressDialog
+        progress = QProgressDialog("Generating report...", None, 0, 0, self)
+        progress.setWindowTitle("Generating Daily Cash Count Report")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setStyleSheet("""
+            QProgressDialog { background-color: white; }
+            QLabel { color: #333; font-size: 12px; }
+        """)
+        progress.setCancelButton(None)  # No cancel button
+        progress.show()
+
         by_corp = self.report_by_corp_radio.isChecked()
         selected_date = self.report_date_picker.date().toString("yyyy-MM-dd")
         
@@ -3206,12 +3218,18 @@ class AdminDashboard(QWidget):
             params = (filter_value, selected_date)
         
         if not filter_value:
+            progress.close()
             QMessageBox.warning(self, "Selection Required", f"Please select a {filter_label}.")
             return
-        
+
+        # Update progress: Loading data
+        progress.setLabelText("📊 Loading data from database...")
+        QApplication.processEvents()
+
         results = db_manager.execute_query(query, params)
-        
+
         if not results:
+            progress.close()
             QMessageBox.warning(self, "No Data", f"No data found for {filter_value} on {selected_date}.")
             return
         
@@ -3222,8 +3240,13 @@ class AdminDashboard(QWidget):
         )
         
         if not file_path:
+            progress.close()
             return
-        
+
+        # Update progress: Building Excel file
+        progress.setLabelText("📄 Building Excel spreadsheet...")
+        QApplication.processEvents()
+
         try:
             wb = Workbook()
             ws = wb.active
@@ -3389,12 +3412,20 @@ class AdminDashboard(QWidget):
                     ws.column_dimensions[col_letter].width = 20
                 else:
                     ws.column_dimensions[col_letter].width = 12
-            
+
+            # Update progress: Saving file
+            progress.setLabelText("💾 Saving file to disk...")
+            QApplication.processEvents()
+
             wb.save(file_path)
             dialog.accept()
+
+            # Close progress and show success
+            progress.close()
             QMessageBox.information(self, "Export Successful", f"Report exported to:\n{file_path}")
-            
+
         except Exception as e:
+            progress.close()
             QMessageBox.critical(self, "Export Error", f"Error exporting: {str(e)}")
 
     def show_date_range_report_dialog(self):
