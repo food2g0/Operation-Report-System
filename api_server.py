@@ -868,8 +868,22 @@ def task_status(task_id: str, _: None = Depends(_require_token)):
 
 if __name__ == "__main__":
     import uvicorn
+    import os as _os
     log.info(f"Starting ORS API Server on {API_HOST}:{API_PORT}")
     log.info(f"API Key: {API_KEY[:8]}... (set ORS_API_KEY env var to change)")
+
+    # Check for SSL certificate files
+    cert_file = _os.path.join(_os.path.dirname(__file__), "cert.pem")
+    key_file = _os.path.join(_os.path.dirname(__file__), "key.pem")
+    use_ssl = _os.path.exists(cert_file) and _os.path.exists(key_file)
+
+    if use_ssl:
+        log.info(f"Using HTTPS with self-signed certificate")
+        log.info(f"⚠️  Certificate: {cert_file}")
+    else:
+        log.warning(f"No SSL certificate found. Using HTTP (not secure)")
+        log.warning(f"To enable HTTPS, run: openssl req -x509 -newkey rsa:4096 -nodes -out cert.pem -keyout key.pem -days 365")
+
     uvicorn.run(
         app,
         host=API_HOST,
@@ -877,4 +891,6 @@ if __name__ == "__main__":
         # Allow enough threads to serve 400+ concurrent sync handlers
         # without queuing behind the default anyio limit of 40.
         limit_concurrency=500,
+        ssl_keyfile=key_file if use_ssl else None,
+        ssl_certfile=cert_file if use_ssl else None,
     )

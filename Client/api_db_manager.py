@@ -23,16 +23,7 @@ log = logging.getLogger("APIDbManager")
 
 
 class APIDbManager:
-    """Drop-in replacement for DatabaseManagerPooled that sends every
-    execute_query / execute_query_with_exception call to the API server.
 
-    The public interface matches DatabaseManagerPooled:
-        .execute_query(sql, params)              → rows or row-count
-        .execute_query_with_exception(sql, params) → (result, exception|None)
-        .test_connection()                       → bool
-        .connect()                               → bool
-        .logger                                  → logging.Logger
-    """
 
     def __init__(self, base_url: str = None, api_key: str = None, timeout: int = 30):
         # Lazy-import api_config so the module can be imported even if
@@ -63,6 +54,11 @@ class APIDbManager:
         adapter = HTTPAdapter(max_retries=retry)
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
+        # Disable SSL verification for self-signed certificates
+        # Only safe because we control both server and client in private network
+        self._session.verify = False
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         # Keep the session alive across calls
         self._session.headers.update({"Content-Type": "application/json"})
 
