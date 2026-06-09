@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import re
+import html
 
 logger = logging.getLogger(__name__)
 
@@ -2130,15 +2131,17 @@ class ClientDashboard(QWidget):
         return "Both"
 
     def get_previous_day_ending_balance(self, selected_date, brand="Brand A"):
-  
+
 
         if self.offline_mode and OFFLINE_SUPPORT and offline_manager:
             return self._get_offline_previous_balance(selected_date, brand)
-        
-   
+
+
         try:
             current    = datetime.datetime.strptime(selected_date, "%Y-%m-%d")
             table_name = "daily_reports_brand_a" if brand == "Brand A" else "daily_reports"
+            # CRITICAL FIX: Validate table name to prevent SQL injection
+            table_name = validate_table_name(table_name)
             for days_back in range(1, 11):
                 prev_str = (current - datetime.timedelta(days=days_back)).strftime("%Y-%m-%d")
                 try:
@@ -2153,12 +2156,15 @@ class ClientDashboard(QWidget):
                             # CRITICAL FIX #2: Safely cast balance to float with validation
                             safe_val = safe_float_cast(val, field_name="ending_balance", min_val=0)
                             if safe_val is not None:
-                                # HIGH FIX #8: Validate date continuity
-                                if validate_balance_date_continuity(current, datetime.datetime.strptime(prev_str, "%Y-%m-%d")):
+                                # HIGH FIX #5: Validate date continuity - REJECT if gap > 10 days
+                                prev_date = datetime.datetime.strptime(prev_str, "%Y-%m-%d")
+                                if validate_balance_date_continuity(current, prev_date):
                                     return safe_val, prev_str
                                 else:
-                                    logger.warning(f"Large gap detected: using balance from {prev_str}")
-                                    return safe_val, prev_str  # Still use it but logged for review
+                                    gap_days = (current - prev_date).days
+                                    logger.error(f"Large gap detected ({gap_days} days): Rejecting balance from {prev_str} - user must enter opening balance manually")
+                                    # Continue to next day instead of using this balance
+                                    continue
                 except Exception as e:
                     logger.warning("Query error for %s: %s", prev_str, e)
         except Exception as e:
@@ -2244,6 +2250,8 @@ class ClientDashboard(QWidget):
         try:
             if brand == "Brand A":
                 table_name = "daily_reports_brand_a"
+                # CRITICAL FIX: Validate table name to prevent SQL injection
+                table_name = validate_table_name(table_name)
                 # Try with corporation first, then branch-only fallback
                 for q, params in [
                     (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
@@ -2258,6 +2266,8 @@ class ClientDashboard(QWidget):
                 # Brand B: daily_reports is exclusively the Brand B table.
                 # Query by date+branch+corporation; no brand filter needed.
                 table_name = "daily_reports"
+                # CRITICAL FIX: Validate table name to prevent SQL injection
+                table_name = validate_table_name(table_name)
                 for q, params in [
                     (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
                      (selected_date, self.branch, self.corporation)),
@@ -3174,6 +3184,8 @@ class ClientDashboard(QWidget):
 
     def _propagate_opening_balance_to_following_days(self, date_str, brand_full, ending_balance):
         table_name = "daily_reports_brand_a" if brand_full == "Brand A" else "daily_reports"
+        # CRITICAL FIX: Validate table name to prevent SQL injection
+        table_name = validate_table_name(table_name)
         try:
             current = datetime.datetime.strptime(date_str, "%Y-%m-%d")
         except Exception as e:
@@ -5426,6 +5438,8 @@ class ClientDashboard(QWidget):
 
         try:
             table_name = "daily_reports_brand_a" if brand == "Brand A" else "daily_reports"
+            # CRITICAL FIX: Validate table name to prevent SQL injection
+            table_name = validate_table_name(table_name)
             cf_tab = self.cash_flow_tab_a if brand == "Brand A" else self.cash_flow_tab_b
             bb_input = self.beginning_balance_input_a if brand == "Brand A" else self.beginning_balance_input_b
             cc_input = self.cash_count_input_a if brand == "Brand A" else self.cash_count_input_b
@@ -5633,17 +5647,18 @@ class ClientDashboard(QWidget):
                 return
             
             selected_date = self.date_picker.date().toString("yyyy-MM-dd")
-            user_info = f"{self.user_email} · {self.branch} · {self.corporation}"
-            
+            # MEDIUM FIX #6: Escape HTML to prevent injection from user data
+            user_info = f"{html.escape(self.user_email)} · {html.escape(self.branch)} · {html.escape(self.corporation)}"
+
             debit_total = sum(amount for _, amount, _ in data["debit"])
             credit_total = sum(amount for _, amount, _ in data["credit"])
-            
+
             doc = QTextDocument()
             # Set default document font to ensure proper scaling for print
             default_font = QFont("Segoe UI", 12)
             doc.setDefaultFont(default_font)
 
-            html = f"""
+            html_content = f"""
             <html>
             <head>
                 <style>
@@ -5734,8 +5749,8 @@ class ClientDashboard(QWidget):
             </body>
             </html>
             """
-            
-            doc.setHtml(html)
+
+            doc.setHtml(html_content)
             
             printer = QPrinter(QPrinter.HighResolution)
             printer.setPageSize(QPrinter.A4)
@@ -5794,8 +5809,19 @@ class ClientDashboard(QWidget):
                 default_filename,
                 "Excel Files (*.xlsx);;All Files (*)"
             )
-            
+
             if not file_path:
+                return
+
+            # MEDIUM FIX #10: Validate file path to prevent directory traversal
+            file_path = os.path.abspath(file_path)
+            home_dir = os.path.expanduser("~")
+            documents_dir = os.path.join(home_dir, "Documents")
+
+            # Allow save in Documents folder or current user's home directory
+            if not (file_path.startswith(documents_dir) or file_path.startswith(home_dir)):
+                logger.error(f"Invalid file path: {file_path} - must be in Documents or home directory")
+                QMessageBox.warning(self, "Invalid Path", "File must be saved in your Documents folder or home directory.")
                 return  
             
 
