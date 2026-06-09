@@ -4178,7 +4178,7 @@ class AdminDashboard(QWidget):
 
                 # ── Build query identical to palawan_page.py ──────────────
                 select_cols = """
-                    SELECT b.name AS branch,
+                    SELECT DISTINCT b.name AS branch,
                            COALESCE(dr.palawan_send_out, 0)                    AS palawan_send_out,
                            COALESCE(dr.palawan_sc, 0)                          AS palawan_sc,
                            COALESCE(dr.palawan_pay_out, 0)                     AS palawan_pay_out,
