@@ -69,6 +69,27 @@ class MoneyInput(QWidget):
     def setReadOnly(self, readonly):
         self.input.setReadOnly(readonly)
 
+    def isReadOnly(self):
+        return self.input.isReadOnly()
+
+    def setPlaceholderText(self, text):
+        self.input.setPlaceholderText(text)
+
+    def clear(self):
+        self.input.clear()
+
+    def setValidator(self, validator):
+        self.input.setValidator(validator)
+
+    def setStyleSheet(self, stylesheet):
+        self.input.setStyleSheet(stylesheet)
+
+    def setProperty(self, name, value):
+        self.input.setProperty(name, value)
+
+    def property(self, name):
+        return self.input.property(name)
+
 
 class LotesInput(QSpinBox):
     """Integer input for lote counts with styling."""
@@ -101,6 +122,10 @@ class LotesInput(QSpinBox):
     def text(self):
         """Get text representation of value (for QLineEdit compatibility)."""
         return str(self.value())
+
+    def setMaximumWidth(self, width):
+        """Set maximum width (for consistent API)."""
+        super().setMaximumWidth(width)
 
 
 class DisplayField(QLineEdit):
