@@ -3419,17 +3419,25 @@ class AdminDashboard(QWidget):
                             sql_params = (selected_date, filter_value)
                         else:
                             # corporation filter – join corps table to filter by name
+                            # Also apply registration filter if specified
+                            if reg_filter == "registered":
+                                reg_clause_corp = "AND b.is_registered = 1"
+                            elif reg_filter == "not_registered":
+                                reg_clause_corp = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                            else:
+                                reg_clause_corp = ""
+
                             if table == "payable_tbl_brand_a":
                                 sql = (
                                     f"SELECT b.name AS branch, MAX(b.global_tag) AS global_tag, {', '.join(select_parts)} "
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
                                     f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name = %s "
+                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 {global_where} "
+                                    f"WHERE 1=1 {global_where} {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
                             else:
@@ -3438,12 +3446,12 @@ class AdminDashboard(QWidget):
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
                                     f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name = %s "
+                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 {global_where} "
+                                    f"WHERE 1=1 {global_where} {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
                             sql_params = (filter_value, selected_date)
@@ -3484,6 +3492,14 @@ class AdminDashboard(QWidget):
                         # Include branches even if they have no entries for the selected date.
                         if filter_type == "corporation":
                             # For corporation filter, join corporations to filter by name
+                            # Also apply registration filter if specified
+                            if reg_filter == "registered":
+                                reg_clause_corp = "AND b.is_registered = 1"
+                            elif reg_filter == "not_registered":
+                                reg_clause_corp = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                            else:
+                                reg_clause_corp = ""
+
                             if table == "payable_tbl_brand_a":
                                 sql = (
                                     f"SELECT b.name AS branch, {', '.join(select_parts)} "
@@ -3494,7 +3510,7 @@ class AdminDashboard(QWidget):
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 "
+                                    f"WHERE 1=1 {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
                             else:
@@ -3508,7 +3524,7 @@ class AdminDashboard(QWidget):
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 "
+                                    f"WHERE 1=1 {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
                             sql_params = (filter_value, selected_date)
