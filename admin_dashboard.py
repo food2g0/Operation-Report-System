@@ -3433,11 +3433,10 @@ class AdminDashboard(QWidget):
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
                                     f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 {global_where} {reg_clause_corp} "
+                                    f"WHERE c.name COLLATE utf8mb4_general_ci = %s {global_where} {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
                             else:
@@ -3446,15 +3445,14 @@ class AdminDashboard(QWidget):
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
                                     f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 {global_where} {reg_clause_corp} "
+                                    f"WHERE c.name COLLATE utf8mb4_general_ci = %s {global_where} {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
-                            sql_params = (filter_value, selected_date)
+                            sql_params = (selected_date, filter_value)
 
                     elif filter_type == "os":
                         if reg_filter == "registered":
@@ -3506,11 +3504,10 @@ class AdminDashboard(QWidget):
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
                                     f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 {reg_clause_corp} "
+                                    f"WHERE c.name COLLATE utf8mb4_general_ci = %s {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
                             else:
@@ -3519,15 +3516,14 @@ class AdminDashboard(QWidget):
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
                                     f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
-                                    f"WHERE 1=1 {reg_clause_corp} "
+                                    f"WHERE c.name COLLATE utf8mb4_general_ci = %s {reg_clause_corp} "
                                     f"GROUP BY b.name ORDER BY b.name"
                                 )
-                            sql_params = (filter_value, selected_date)
+                            sql_params = (selected_date, filter_value)
                         else:
                             # Fallback for non-corporation filters (shouldn't normally reach here)
                             sql = (
