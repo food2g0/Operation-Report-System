@@ -90,6 +90,18 @@ class LotesInput(QSpinBox):
             }
         """)
 
+    def setText(self, text):
+        """Set value from text (for QLineEdit compatibility)."""
+        try:
+            val = int(text or 0)
+            self.setValue(val)
+        except (ValueError, TypeError):
+            self.setValue(0)
+
+    def text(self):
+        """Get text representation of value (for QLineEdit compatibility)."""
+        return str(self.value())
+
 
 class DisplayField(QLineEdit):
     """Read-only display field with styling."""
