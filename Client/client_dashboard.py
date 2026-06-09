@@ -3926,15 +3926,6 @@ class ClientDashboard(QWidget):
         except Exception as e:
             self._msg("Offline Save Error", f"Failed to save entry: {e}", QMessageBox.Critical)
 
-    def _save_palawan_to_payable(self, selected_date, brand_full, palawan_data):
-        """DEPRECATED: Client no longer writes to payable_tbl_brand_a.
-        
-        All palawan data is now stored in daily_reports_brand_a and daily_reports.
-        Server-side processes will extract and manage payable table as needed.
-        """
-        logger.info("_save_palawan_to_payable() called but skipped - client writes only to daily report tables")
-        pass
-
     def _save_palawan_to_payable_DISABLED_old(self, selected_date, brand_full, palawan_data):
         """DISABLED: Old version kept for reference."""
         try:
