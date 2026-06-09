@@ -479,7 +479,7 @@ class AdminDashboard(QWidget):
             QLineEdit[class="money"] {
                 font-weight: bold;
                 text-align: right;
-                color: #27ae60;
+                color: #000000;
                 font-size: 12px;
             }
 
@@ -488,7 +488,7 @@ class AdminDashboard(QWidget):
                 border: 2px solid #ffeaa7;
                 font-weight: bold;
                 font-size: 12px;
-                color: #856404;
+                color: #000000;
             }
 
             /* Dropdowns */
