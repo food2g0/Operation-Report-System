@@ -5,7 +5,6 @@ import time
 import uuid
 import queue
 import hashlib
-import logging
 import datetime
 import collections
 import threading
@@ -19,14 +18,19 @@ try:
 except ImportError:
     pass  # python-dotenv not installed — env vars must be set manually
 
+# Setup centralized logging FIRST
+from logging_config import setup_logging, get_logger
+setup_logging("api_server", os.environ.get("ORS_LOG_LEVEL", "INFO"))
+
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 import jwt as pyjwt
 
-
 from db_connect_pooled import DatabaseManagerPooled
+from error_tracker import error_tracker, audit_logger, log_exception, log_audit
 
 
 API_KEY    = os.environ.get("ORS_API_KEY",    "")
@@ -39,11 +43,7 @@ CACHE_MAX   = int(os.environ.get("ORS_CACHE_MAX",  2000))   # in-memory fallback
 REDIS_URL   = os.environ.get("ORS_REDIS_URL",  "redis://127.0.0.1:6379/0")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-log = logging.getLogger("api_server")
+log = get_logger("api_server")
 
 # ── Shared DB pool ────────────────────────────────────────────────────────────
 # One shared pool per Gunicorn worker — idle monitor disabled on the server.
@@ -73,6 +73,31 @@ _cache_misses = 0
 
 def _is_select(sql: str) -> bool:
     return sql.strip().upper().startswith("SELECT")
+
+
+def _extract_table_name(sql: str) -> Optional[str]:
+    """Extract table name from SQL query (basic extraction)."""
+    sql_upper = sql.strip().upper()
+    try:
+        if "INSERT INTO" in sql_upper:
+            start = sql_upper.find("INSERT INTO") + len("INSERT INTO")
+            table = sql[start:].strip().split()[0].split("(")[0].strip("`\"")
+            return table
+        elif "UPDATE" in sql_upper:
+            start = sql_upper.find("UPDATE") + len("UPDATE")
+            table = sql[start:].strip().split()[0].strip("`\"")
+            return table
+        elif "DELETE FROM" in sql_upper:
+            start = sql_upper.find("DELETE FROM") + len("DELETE FROM")
+            table = sql[start:].strip().split()[0].strip("`\"")
+            return table
+        elif "SELECT" in sql_upper:
+            start = sql_upper.find("FROM") + len("FROM")
+            table = sql[start:].strip().split()[0].strip("`\"")
+            return table
+    except Exception:
+        pass
+    return "unknown"
 
 
 def _make_cache_key(sql: str, params) -> str:
@@ -495,6 +520,27 @@ app = FastAPI(
 app.add_middleware(_TrackingMiddleware)
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle Pydantic validation errors with detailed error messages."""
+    errors = []
+    for error in exc.errors():
+        field = ".".join(str(x) for x in error["loc"][1:]) if len(error["loc"]) > 1 else "body"
+        errors.append({
+            "field": field,
+            "message": error["msg"],
+            "type": error["type"]
+        })
+    log.warning(f"Validation error from {request.client.host if request.client else 'unknown'}: {errors}")
+    return JSONResponse(
+        status_code=400,
+        content={
+            "error": "Request validation failed",
+            "details": errors
+        }
+    )
+
+
 @app.on_event("startup")
 async def _raise_thread_limiter():
     """Raise anyio's default thread pool cap (40) so 400+ concurrent sync
@@ -554,25 +600,59 @@ def _check_blocked(sql: str, remote: str = "") -> None:
 
 
 # ── Request/Response models ───────────────────────────────────────────────────
+from pydantic import Field, validator
 
 class TokenRequest(BaseModel):
-    api_key: str
+    api_key: str = Field(..., min_length=1, max_length=256, description="API key for authentication")
+
+    @validator('api_key')
+    def api_key_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("API key cannot be empty or whitespace")
+        return v.strip()
 
 
 class ExecRequest(BaseModel):
-    sql: str
-    params: Optional[List[Any]] = None
-    ttl: Optional[int] = None   # per-query cache TTL override (seconds); None = use server default
+    sql: str = Field(..., min_length=1, max_length=100000, description="SQL query to execute")
+    params: Optional[List[Any]] = Field(None, max_items=1000, description="Query parameters")
+    ttl: Optional[int] = Field(None, ge=0, le=86400, description="Cache TTL in seconds (0-86400)")
+
+    @validator('sql')
+    def sql_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("SQL query cannot be empty")
+        return v.strip()
+
+    @validator('params')
+    def params_valid(cls, v):
+        if v is not None:
+            # Ensure params is a list of basic types
+            for i, param in enumerate(v):
+                if not isinstance(param, (str, int, float, bool, type(None))):
+                    raise ValueError(f"Parameter {i} has unsupported type: {type(param).__name__}")
+        return v
 
 
 class BatchItem(BaseModel):
-    sql: str
-    params: Optional[List[Any]] = None
-    ttl: Optional[int] = None   # per-query cache TTL override
+    sql: str = Field(..., min_length=1, max_length=100000, description="SQL query")
+    params: Optional[List[Any]] = Field(None, max_items=1000, description="Query parameters")
+    ttl: Optional[int] = Field(None, ge=0, le=86400, description="Cache TTL in seconds")
+
+    @validator('sql')
+    def sql_not_empty(cls, v):
+        if not v or not v.strip():
+            raise ValueError("SQL query cannot be empty")
+        return v.strip()
 
 
 class BatchRequest(BaseModel):
-    queries: List[BatchItem]
+    queries: List[BatchItem] = Field(..., min_items=1, max_items=100, description="List of queries to execute")
+
+    @validator('queries')
+    def queries_not_empty(cls, v):
+        if not v or len(v) == 0:
+            raise ValueError("At least one query is required")
+        return v
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -743,25 +823,45 @@ def exec_query(body: ExecRequest, request: Request, _: None = Depends(_require_t
     _check_blocked(body.sql, remote)
 
     params = tuple(body.params) if body.params else None
+    is_write = not _is_select(body.sql)
+    operation = "INSERT" if "INSERT" in body.sql.upper() else "UPDATE" if "UPDATE" in body.sql.upper() else "DELETE" if "DELETE" in body.sql.upper() else "SELECT"
+    table_name = _extract_table_name(body.sql)
 
-    if CACHE_TTL > 0 and _is_select(body.sql):
+    if CACHE_TTL > 0 and not is_write:
         key = _make_cache_key(body.sql, params)
         hit, cached = _cache_get(key)
         if hit:
             return {"result": cached, "error": None, "cached": True}
 
+    start_time = time.time()
     try:
         result = _db.execute_query(body.sql, params)
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Log audit trail for writes
+        if is_write:
+            affected_rows = result if isinstance(result, int) else 0
+            log_audit(operation, table_name, body.sql, remote_ip=remote, affected_rows=affected_rows, duration_ms=duration_ms)
+
         if CACHE_TTL > 0:
-            if _is_select(body.sql):
+            if not is_write:
                 _cache_set(key, result, ttl=body.ttl)
             else:
                 # Clear cache after writes so fresh reads don't get stale data
                 _cache_clear_all()
+
+        log.debug(f"{operation} on {table_name}: {duration_ms:.1f}ms from {remote}")
         return {"result": result, "error": None, "cached": False}
     except Exception as e:
-        log.error(f"Query error: {e} | SQL: {body.sql[:120]}")
-        return JSONResponse(content={"result": None, "error": str(e)}, status_code=500)
+        duration_ms = (time.time() - start_time) * 1000
+        error_id = log_exception(e, source="api_exec", remote_ip=remote)
+        log.error(f"Query error (ID:{error_id}): {e} | SQL: {body.sql[:120]}")
+
+        # Log failed audit
+        if is_write:
+            log_audit(operation, table_name, body.sql, remote_ip=remote, status="error", error_msg=str(e), duration_ms=duration_ms)
+
+        return JSONResponse(content={"result": None, "error": str(e), "error_id": error_id}, status_code=500)
 
 
 @app.post("/api/exec_safe")

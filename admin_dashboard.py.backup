@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QScrollArea, QFrame, QFileDialog, QDialog, QTableWidget, QTableWidgetItem, QHeaderView,
     QApplication, QSizePolicy, QCheckBox, QGridLayout
 )
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QDoubleValidator, QFont, QIntValidator
 from PyQt5.QtCore import Qt, QDate, pyqtSignal, QTimer
 from api_db_manager import db_manager
 from security import SessionManager
@@ -15,9 +15,6 @@ import re
 
 logger = logging.getLogger(__name__)
 import sys
-
-from constants import COLORS, FONT_SIZES, CONFIG, MESSAGES
-from widgets_util import MoneyInput, LotesInput, DisplayField
 
 from palawan_page import PalawanPage
 from mc_page import MCPage
@@ -157,9 +154,12 @@ class AdminDashboard(QWidget):
         self.setup_styles()
         self.build_ui()
 
-
+        # Capture base fonts after UI is built (no DB needed)
         self._capture_base_fonts()
 
+        # Defer all DB-touching startup work until after the window is shown.
+        # QTimer.singleShot(0) fires on the very next event-loop tick — the
+        # window is painted first, then these run, so users see the UI immediately.
         QTimer.singleShot(0,   self.load_corporations)     # populates corp/group selectors
         QTimer.singleShot(200, self._ensure_review_table)  # DDL check; not time-critical
         
@@ -170,7 +170,7 @@ class AdminDashboard(QWidget):
             check_update_success(parent=self)
     
     def _capture_base_fonts(self):
-
+        """Capture base font sizes for zoom-target widgets only."""
         for w in self._get_zoom_target_widgets():
             font = w.font()
             point_size = font.pointSize()
@@ -1634,21 +1634,24 @@ class AdminDashboard(QWidget):
         return container
 
     def create_money_input(self):
-        """Create a currency input using reusable MoneyInput widget."""
-        field = MoneyInput(placeholder="0.00")
+        field = QLineEdit()
+        field.setValidator(QDoubleValidator(0.0, 1e12, 2))
         field.setProperty("class", "money")
+        field.setPlaceholderText("0.00")
         return field
 
     def create_display_field(self):
-        """Create a read-only display field using reusable DisplayField widget."""
-        field = DisplayField()
+        field = QLineEdit()
+        field.setReadOnly(True)
         field.setProperty("class", "result")
         return field
 
     def create_lotes_input(self, read_only=False):
-        """Create an integer lotes input using reusable LotesInput widget."""
-        field = LotesInput(read_only=read_only)
+        field = QLineEdit()
+        field.setValidator(QIntValidator(0, 999999))
+        field.setPlaceholderText("0")
         field.setMaximumWidth(70)
+        field.setReadOnly(bool(read_only))
         return field
 
     # ── Palawan Details collapsible ───────────────────────────────────────────
@@ -1720,7 +1723,9 @@ class AdminDashboard(QWidget):
                 ("SC",        f"palawan_{section_key}_sc"),
                 ("Commission",f"palawan_{section_key}_commission"),
             ]:
-                inp = MoneyInput(placeholder="0.00")
+                inp = QLineEdit()
+                inp.setValidator(QDoubleValidator(0.0, 1e12, 2))
+                inp.setPlaceholderText("0.00")
                 self.palawan_inputs[db_col] = inp
                 lbl = QLabel(sub_label + ":")
                 lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #334155;")
@@ -1728,7 +1733,9 @@ class AdminDashboard(QWidget):
 
             # Lotes
             lotes_col = f"palawan_{section_key}_lotes_total"
-            lotes_inp = LotesInput(read_only=False)
+            lotes_inp = QLineEdit()
+            lotes_inp.setValidator(QIntValidator(0, 999999))
+            lotes_inp.setPlaceholderText("0")
             self.palawan_inputs[lotes_col] = lotes_inp
             lotes_lbl = QLabel("Lotes:")
             lotes_lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #334155;")
@@ -1736,7 +1743,9 @@ class AdminDashboard(QWidget):
 
             # Total (auto-calc)
             total_col = f"palawan_{section_key}_regular_total"
-            total_disp = DisplayField()
+            total_disp = QLineEdit()
+            total_disp.setReadOnly(True)
+            total_disp.setPlaceholderText("0.00")
             total_disp.setStyleSheet(
                 f"font-weight: 800; font-size: 13px; color: {color}; "
                 "background-color: #F0F9FF; border: 1px solid #BAE6FD; "
@@ -1815,10 +1824,9 @@ class AdminDashboard(QWidget):
 
         def _make_adj_sync(db_col):
             cf_label = _adj_credit_label.get(db_col)
-            def _sync(value):
-                # value is float from MoneyInput.valueChanged signal
+            def _sync(text):
                 if cf_label and cf_label in self.credit_inputs:
-                    self.credit_inputs[cf_label].setText(f"{value:.2f}")
+                    self.credit_inputs[cf_label].setText(text)
             return _sync
 
         for adj_label, adj_col in [
@@ -1827,9 +1835,11 @@ class AdminDashboard(QWidget):
             ("Suki Rebates",       "palawan_suki_rebates"),
             ("Cancel",             "palawan_cancel"),
         ]:
-            inp = MoneyInput(placeholder="0.00")
+            inp = QLineEdit()
+            inp.setValidator(QDoubleValidator(0.0, 1e12, 2))
+            inp.setPlaceholderText("0.00")
             self.palawan_inputs[adj_col] = inp
-            inp.valueChanged.connect(_make_adj_sync(adj_col))
+            inp.textChanged.connect(_make_adj_sync(adj_col))
             lbl = QLabel(adj_label + ":")
             lbl.setStyleSheet("font-size: 13px; font-weight: 600; color: #92400E;")
             adj_form.addRow(lbl, inp)
@@ -3023,6 +3033,1142 @@ class AdminDashboard(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Export Error", f"Error exporting to Excel: {str(e)}")
 
+    def show_generate_report_dialog(self):
+        """Show dialog to choose between generating report by OS or by Corporation"""
+        from PyQt5.QtWidgets import QDialog, QRadioButton, QButtonGroup
+        
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Generate Daily Cash Count Report")
+        dialog.setMinimumWidth(400)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Report Type Selection
+        type_group = QGroupBox("Report Type")
+        type_layout = QVBoxLayout(type_group)
+        
+        self.report_by_corp_radio = QRadioButton("By Corporation")
+        self.report_by_os_radio = QRadioButton("By Group")
+        self.report_by_corp_radio.setChecked(True)
+        
+        type_layout.addWidget(self.report_by_corp_radio)
+        type_layout.addWidget(self.report_by_os_radio)
+        layout.addWidget(type_group)
+        
+        # Selection Group
+        selection_group = QGroupBox("Select")
+        selection_layout = QVBoxLayout(selection_group)
+        
+        # Corporation selector
+        self.report_corp_label = QLabel("Corporation:")
+        self.report_corp_combo = QComboBox()
+        self.load_report_corporations()
+        
+        # OS selector
+        self.report_os_label = QLabel("Group:")
+        self.report_os_combo = QComboBox()
+        self.load_report_os_list()
+        self.report_os_label.setVisible(False)
+        self.report_os_combo.setVisible(False)
+        
+        selection_layout.addWidget(self.report_corp_label)
+        selection_layout.addWidget(self.report_corp_combo)
+        selection_layout.addWidget(self.report_os_label)
+        selection_layout.addWidget(self.report_os_combo)
+        
+        # Date selector
+        date_label = QLabel("Date:")
+        self.report_date_picker = QDateEdit()
+        self.report_date_picker.setDisplayFormat("dd MMM yyyy")
+        self.report_date_picker.setCalendarPopup(True)
+        self.report_date_picker.setDate(QDate.currentDate())
+        selection_layout.addWidget(date_label)
+        selection_layout.addWidget(self.report_date_picker)
+        
+        layout.addWidget(selection_group)
+        
+        # Connect radio buttons to toggle visibility
+        self.report_by_corp_radio.toggled.connect(self.toggle_report_selection)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        generate_btn = QPushButton("Generate Report")
+        generate_btn.setStyleSheet("background-color: #217346; color: white; padding: 8px 16px;")
+        cancel_btn = QPushButton("Cancel")
+        
+        generate_btn.clicked.connect(lambda: self.generate_daily_cash_report(dialog))
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(generate_btn)
+        layout.addLayout(button_layout)
+        
+        dialog.exec_()
+
+    def toggle_report_selection(self):
+        """Toggle between Corporation and OS selection"""
+        by_corp = self.report_by_corp_radio.isChecked()
+        self.report_corp_label.setVisible(by_corp)
+        self.report_corp_combo.setVisible(by_corp)
+        self.report_os_label.setVisible(not by_corp)
+        self.report_os_combo.setVisible(not by_corp)
+
+    def load_report_corporations(self):
+        """Load corporations for report dialog (batch with OS list)"""
+        try:
+            # Use batch queries to load both in one round-trip
+            results = db_manager.execute_batch([
+                {
+                    "sql": "SELECT name as corporation FROM corporations ORDER BY name",
+                    "params": None,
+                    "ttl": 300  # Cache for 5 minutes (rarely changes)
+                },
+                {
+                    "sql": "SELECT DISTINCT os_name FROM branches WHERE os_name IS NOT NULL AND os_name != '' ORDER BY os_name",
+                    "params": None,
+                    "ttl": 300
+                }
+            ])
+
+            if results and len(results) >= 2:
+                # Load corporations
+                corps_result = results[0].get("result", [])
+                if corps_result:
+                    for row in corps_result:
+                        corp_name = row['corporation'] if isinstance(row, dict) else row[0]
+                        self.report_corp_combo.addItem(corp_name)
+
+                # Load OS list (while we're at it)
+                os_result = results[1].get("result", [])
+                if os_result:
+                    for row in os_result:
+                        os_name = row['os_name'] if isinstance(row, dict) else row[0]
+                        self.report_os_combo.addItem(os_name)
+        except Exception as e:
+            logger.error("Error loading corporations and OS list: %s", e)
+
+    def load_report_os_list(self):
+        """Load OS list for report dialog (called by load_report_corporations via batch)"""
+        # Already loaded by load_report_corporations, so nothing to do here
+        pass
+
+    def generate_daily_cash_report(self, dialog):
+        """Generate Daily Cash Count report by Corporation or OS with all debit/credit fields"""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            QMessageBox.critical(self, "Missing Dependency",
+                "The openpyxl package is required.\nInstall with: pip install openpyxl")
+            return
+
+        # Create a progress dialog to show loading spinner
+        from PyQt5.QtWidgets import QProgressDialog
+        progress = QProgressDialog("Generating report...", None, 0, 0, self)
+        progress.setWindowTitle("Generating Daily Cash Count Report")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setStyleSheet("""
+            QProgressDialog { background-color: white; }
+            QLabel { color: #333; font-size: 12px; }
+        """)
+        progress.setCancelButton(None)  # No cancel button
+        progress.show()
+
+        by_corp = self.report_by_corp_radio.isChecked()
+        selected_date = self.report_date_picker.date().toString("yyyy-MM-dd")
+        
+        # Build list of all columns to select
+        debit_columns = list(self.debit_fields.values())
+        credit_columns = list(self.credit_fields.values())
+
+        by_corp = self.report_by_corp_radio.isChecked()
+        filter_value = self.report_corp_combo.currentText() if by_corp else self.report_os_combo.currentText()
+        filter_label = "Corporation" if by_corp else "Group"
+
+        if not filter_value:
+            progress.close()
+            QMessageBox.warning(self, "Selection Required", f"Please select a {filter_label}.")
+            return
+
+        # Update progress: Loading data
+        progress.setLabelText("📊 Loading data from database...")
+        QApplication.processEvents()
+
+        # BATCH OPTIMIZATION: Fetch columns and report data in ONE round-trip
+        batch_queries = [
+            {
+                "sql": "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                "params": [self.daily_table],
+                "ttl": 3600  # Cache for 1 hour (schema doesn't change often)
+            }
+        ]
+
+        # Add main report query to batch
+        if by_corp:
+            batch_queries.append({
+                "sql": f"""
+                    SELECT branch, beginning_balance, {', '.join(debit_columns)},
+                           debit_total, {', '.join(credit_columns)},
+                           credit_total, ending_balance, cash_count, cash_result
+                    FROM {self.daily_table}
+                    WHERE corporation = %s AND date = %s
+                    ORDER BY branch
+                """,
+                "params": [filter_value, selected_date],
+                "ttl": 0  # Don't cache report data
+            })
+        else:
+            batch_queries.append({
+                "sql": f"""
+                    SELECT dr.branch, dr.beginning_balance, {', '.join(['dr.' + c for c in debit_columns])},
+                           dr.debit_total, {', '.join(['dr.' + c for c in credit_columns])},
+                           dr.credit_total, dr.ending_balance, dr.cash_count, dr.cash_result
+                    FROM {self.daily_table} dr
+                    INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                    WHERE b.os_name = %s AND dr.date = %s
+                    ORDER BY dr.branch
+                """,
+                "params": [filter_value, selected_date],
+                "ttl": 0
+            })
+
+        # Execute batch query (1 HTTP call instead of 2+)
+        batch_results = db_manager.execute_batch(batch_queries)
+
+        if not batch_results or len(batch_results) < 2:
+            progress.close()
+            QMessageBox.warning(self, "Error", "Failed to load report data.")
+            return
+
+        # Extract column info
+        col_rows = batch_results[0].get("result", [])
+        existing_cols = {r['COLUMN_NAME'] for r in col_rows} if col_rows else set()
+
+        if existing_cols:
+            debit_columns = [c for c in debit_columns if c in existing_cols]
+            credit_columns = [c for c in credit_columns if c in existing_cols]
+
+        # Extract report results
+        results = batch_results[1].get("result")
+
+        if not results:
+            progress.close()
+            QMessageBox.warning(self, "No Data", f"No data found for {filter_value} on {selected_date}.")
+            return
+        
+        # File dialog
+        default_filename = f"DailyCashCount_{filter_label}_{filter_value}_{selected_date}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", default_filename, "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            progress.close()
+            return
+
+        # Update progress: Building Excel file
+        progress.setLabelText("📄 Building Excel spreadsheet...")
+        QApplication.processEvents()
+
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Daily Cash Count"
+            
+            # Styles
+            title_font = Font(bold=True, size=14)
+            header_font = Font(bold=True, size=9, color="FFFFFF")
+            debit_fill = PatternFill(start_color="27AE60", end_color="27AE60", fill_type="solid")
+            credit_fill = PatternFill(start_color="E74C3C", end_color="E74C3C", fill_type="solid")
+            summary_fill = PatternFill(start_color="F39C12", end_color="F39C12", fill_type="solid")
+            total_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+            thin = Side(style='thin')
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            
+            # Title
+            ws['A1'] = "Daily Cash Count Report"
+            ws['A1'].font = title_font
+            
+            # Info
+            ws['A3'] = f"{filter_label}:"
+            ws['B3'] = filter_value
+            ws['A4'] = "Date:"
+            ws['B4'] = selected_date
+            ws['A3'].font = Font(bold=True)
+            ws['A4'].font = Font(bold=True)
+            
+            # Build headers
+            header_row = 6
+            headers = ["Branch", "Beg. Balance"]
+            
+            # Debit headers
+            for label in self.debit_fields.keys():
+                headers.append(label)
+            headers.append("Debit Total")
+            
+            # Credit headers
+            for label in self.credit_fields.keys():
+                headers.append(label)
+            headers.append("Credit Total")
+            
+            # Summary headers
+            headers.extend(["Ending Balance", "Cash Count", "Short/Over"])
+            
+            # Calculate column positions for coloring
+            debit_start = 3  # Column C
+            debit_end = debit_start + len(self.debit_fields)  # Includes Debit Total
+            credit_start = debit_end + 1
+            credit_end = credit_start + len(self.credit_fields)  # Includes Credit Total
+            summary_start = credit_end + 1
+            
+            # Write headers with appropriate colors
+            for col_idx, header in enumerate(headers, 1):
+                cell = ws.cell(row=header_row, column=col_idx, value=header)
+                cell.font = header_font
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                
+                if col_idx >= debit_start and col_idx <= debit_end:
+                    cell.fill = debit_fill
+                elif col_idx >= credit_start and col_idx <= credit_end:
+                    cell.fill = credit_fill
+                elif col_idx >= summary_start:
+                    cell.fill = summary_fill
+                else:
+                    cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+            
+            # Initialize totals
+            totals = {col: 0.0 for col in all_columns if col != 'branch'}
+            
+            # Write data rows
+            for row_idx, row_data in enumerate(results, header_row + 1):
+                col_idx = 1
+                
+                # Branch
+                ws.cell(row=row_idx, column=col_idx, value=row_data['branch']).border = border
+                col_idx += 1
+                
+                # Beginning Balance
+                val = float(row_data.get('beginning_balance', 0) or 0)
+                cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                totals['beginning_balance'] = totals.get('beginning_balance', 0) + val
+                col_idx += 1
+                
+                # Debit fields
+                for db_col in debit_columns:
+                    val = float(row_data.get(db_col, 0) or 0)
+                    cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    totals[db_col] = totals.get(db_col, 0) + val
+                    col_idx += 1
+                
+                # Debit Total — recalculated from actual fields
+                row_beginning = float(row_data.get('beginning_balance', 0) or 0)
+                row_debit_sum = sum(float(row_data.get(c, 0) or 0) for c in debit_columns)
+                row_debit_total = row_beginning + row_debit_sum
+                cell = ws.cell(row=row_idx, column=col_idx, value=row_debit_total)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True)
+                totals['debit_total'] = totals.get('debit_total', 0) + row_debit_total
+                col_idx += 1
+
+                # Credit fields
+                for db_col in credit_columns:
+                    val = float(row_data.get(db_col, 0) or 0)
+                    cell = ws.cell(row=row_idx, column=col_idx, value=val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    totals[db_col] = totals.get(db_col, 0) + val
+                    col_idx += 1
+
+                # Credit Total — recalculated from actual fields
+                row_credit_total = sum(float(row_data.get(c, 0) or 0) for c in credit_columns)
+                cell = ws.cell(row=row_idx, column=col_idx, value=row_credit_total)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True)
+                totals['credit_total'] = totals.get('credit_total', 0) + row_credit_total
+                col_idx += 1
+
+                # Summary fields — ending_balance and cash_result recalculated
+                row_ending = row_debit_total - row_credit_total
+                row_cash_count = float(row_data.get('cash_count', 0) or 0)
+                row_cash_result = row_cash_count - row_ending
+                for summary_col, summary_val in [
+                    ('ending_balance', row_ending),
+                    ('cash_count',     row_cash_count),
+                    ('cash_result',    row_cash_result),
+                ]:
+                    cell = ws.cell(row=row_idx, column=col_idx, value=summary_val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    totals[summary_col] = totals.get(summary_col, 0) + summary_val
+                    col_idx += 1
+            
+            # Total row
+            total_row = header_row + len(results) + 1
+            col_idx = 1
+            
+            cell = ws.cell(row=total_row, column=col_idx, value="TOTAL")
+            cell.font = Font(bold=True)
+            cell.fill = total_fill
+            cell.border = border
+            col_idx += 1
+            
+            # Write totals for all numeric columns
+            for col_key in ['beginning_balance'] + debit_columns + ['debit_total'] + credit_columns + ['credit_total', 'ending_balance', 'cash_count', 'cash_result']:
+                cell = ws.cell(row=total_row, column=col_idx, value=totals.get(col_key, 0))
+                cell.number_format = '#,##0.00'
+                cell.font = Font(bold=True)
+                cell.fill = total_fill
+                cell.border = border
+                col_idx += 1
+            
+            # Auto-adjust column widths
+            for col_idx in range(1, len(headers) + 1):
+                col_letter = get_column_letter(col_idx)
+                if col_idx == 1:
+                    ws.column_dimensions[col_letter].width = 20
+                else:
+                    ws.column_dimensions[col_letter].width = 12
+
+            # Update progress: Saving file
+            progress.setLabelText("💾 Saving file to disk...")
+            QApplication.processEvents()
+
+            wb.save(file_path)
+            dialog.accept()
+
+            # Close progress and show success
+            progress.close()
+            QMessageBox.information(self, "Export Successful", f"Report exported to:\n{file_path}")
+
+        except Exception as e:
+            progress.close()
+            QMessageBox.critical(self, "Export Error", f"Error exporting: {str(e)}")
+
+    def show_date_range_report_dialog(self):
+        """Show dialog to generate a date range report for Daily Cash Count"""
+        from PyQt5.QtWidgets import QDialog, QRadioButton, QButtonGroup
+        
+        brand_label = "Brand A" if self.account_type == 1 else "Brand B"
+        dialog = QDialog(self)
+        dialog.setWindowTitle(f"Generate Date Range Report - {brand_label}")
+        dialog.setMinimumWidth(450)
+        
+        layout = QVBoxLayout(dialog)
+        
+        # Report Type Selection
+        type_group = QGroupBox("Report Type")
+        type_layout = QVBoxLayout(type_group)
+        
+        self.range_by_corp_radio = QRadioButton("By Corporation")
+        self.range_by_os_radio = QRadioButton("By Group")
+        self.range_by_corp_radio.setChecked(True)
+        
+        type_layout.addWidget(self.range_by_corp_radio)
+        type_layout.addWidget(self.range_by_os_radio)
+        layout.addWidget(type_group)
+        
+        # Selection Group
+        selection_group = QGroupBox("Filter Selection")
+        selection_layout = QVBoxLayout(selection_group)
+        
+        # Corporation selector
+        self.range_corp_label = QLabel("Corporation:")
+        self.range_corp_combo = QComboBox()
+        self._load_range_corporations()
+        
+        # OS selector
+        self.range_os_label = QLabel("Group:")
+        self.range_os_combo = QComboBox()
+        self._load_range_os_list()
+        self.range_os_label.setVisible(False)
+        self.range_os_combo.setVisible(False)
+        
+        selection_layout.addWidget(self.range_corp_label)
+        selection_layout.addWidget(self.range_corp_combo)
+        selection_layout.addWidget(self.range_os_label)
+        selection_layout.addWidget(self.range_os_combo)
+        layout.addWidget(selection_group)
+        
+        # Date Range Group
+        date_group = QGroupBox("Date Range")
+        date_layout = QHBoxLayout(date_group)
+        
+        date_layout.addWidget(QLabel("From:"))
+        self.range_start_date = QDateEdit()
+        self.range_start_date.setDisplayFormat("dd MMM yyyy")
+        self.range_start_date.setCalendarPopup(True)
+        self.range_start_date.setDate(QDate.currentDate().addDays(-7))
+        date_layout.addWidget(self.range_start_date)
+        
+        date_layout.addWidget(QLabel("To:"))
+        self.range_end_date = QDateEdit()
+        self.range_end_date.setDisplayFormat("dd MMM yyyy")
+        self.range_end_date.setCalendarPopup(True)
+        self.range_end_date.setDate(QDate.currentDate())
+        date_layout.addWidget(self.range_end_date)
+        
+        layout.addWidget(date_group)
+        
+        # Connect radio buttons to toggle visibility
+        self.range_by_corp_radio.toggled.connect(self._toggle_range_selection)
+        self.range_by_os_radio.toggled.connect(self._toggle_range_selection)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        generate_btn = QPushButton("Generate Report")
+        generate_btn.setStyleSheet("background-color: #8E44AD; color: white; padding: 8px 16px;")
+        cancel_btn = QPushButton("Cancel")
+        
+        generate_btn.clicked.connect(lambda: self._generate_date_range_report(dialog))
+        cancel_btn.clicked.connect(dialog.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_btn)
+        button_layout.addWidget(generate_btn)
+        layout.addLayout(button_layout)
+        
+        dialog.exec_()
+
+    def _toggle_range_selection(self):
+        """Toggle between Corporation and OS selection for date range report"""
+        by_corp = self.range_by_corp_radio.isChecked()
+        by_os = self.range_by_os_radio.isChecked()
+        
+        self.range_corp_label.setVisible(by_corp)
+        self.range_corp_combo.setVisible(by_corp)
+        self.range_os_label.setVisible(by_os)
+        self.range_os_combo.setVisible(by_os)
+
+    def _load_range_corporations(self):
+        """Load corporations for date range report dialog"""
+        try:
+            query = "SELECT name as corporation FROM corporations ORDER BY name"
+            result = db_manager.execute_query(query)
+            if result:
+                for row in result:
+                    self.range_corp_combo.addItem(row['corporation'])
+        except Exception as e:
+            logger.error("Error loading corporations: %s", e)
+
+    def _load_range_os_list(self):
+        """Load OS list for date range report dialog"""
+        try:
+            query = """
+                SELECT DISTINCT os_name FROM branches 
+                WHERE os_name IS NOT NULL AND os_name != '' 
+                ORDER BY os_name
+            """
+            result = db_manager.execute_query(query)
+            if result:
+                for row in result:
+                    os_name = row['os_name'] if isinstance(row, dict) else row[0]
+                    self.range_os_combo.addItem(os_name)
+        except Exception as e:
+            logger.error("Error loading OS list: %s", e)
+
+    def _generate_date_range_report(self, dialog):
+        """Generate Date Range Report for Brand A with daily breakdown and grand totals"""
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+            from openpyxl.utils import get_column_letter
+        except ImportError:
+            QMessageBox.critical(self, "Missing Dependency", 
+                "The openpyxl package is required.\nInstall with: pip install openpyxl")
+            return
+        
+        # Determine filter type and value
+        if self.range_by_corp_radio.isChecked():
+            filter_type = "corporation"
+            filter_value = self.range_corp_combo.currentText()
+            filter_label = "Corporation"
+        else:
+            filter_type = "os"
+            filter_value = self.range_os_combo.currentText()
+            filter_label = "Group"
+        
+        start_date = self.range_start_date.date().toString("yyyy-MM-dd")
+        end_date = self.range_end_date.date().toString("yyyy-MM-dd")
+        
+        if not filter_value:
+            QMessageBox.warning(self, "Selection Required", f"Please select a {filter_label}.")
+            return
+        
+        if start_date > end_date:
+            QMessageBox.warning(self, "Invalid Date Range", "Start date must be before or equal to end date.")
+            return
+        
+        # Build list of all columns to select
+        debit_columns = list(self.debit_fields.values())
+        credit_columns = list(self.credit_fields.values())
+        
+        # Get actual columns in the table to avoid querying non-existent fields
+        try:
+            col_rows = db_manager.execute_query(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s",
+                (self.daily_table,)
+            )
+            existing_cols = {r['COLUMN_NAME'] for r in col_rows} if col_rows else set()
+        except Exception:
+            existing_cols = set()
+        
+        if existing_cols:
+            debit_columns = [c for c in debit_columns if c in existing_cols]
+            credit_columns = [c for c in credit_columns if c in existing_cols]
+        
+        # Build SELECT clause - include both amount and lotes columns
+        select_parts = ["dr.date", "dr.branch", "COALESCE(dr.beginning_balance, 0) as beginning_balance"]
+        for col in debit_columns:
+            select_parts.append(f"COALESCE(dr.{col}, 0) as {col}")
+            select_parts.append(f"COALESCE(dr.{col}_lotes, 0) as {col}_lotes")
+        select_parts.append("COALESCE(dr.debit_total, 0) as debit_total")
+        for col in credit_columns:
+            select_parts.append(f"COALESCE(dr.{col}, 0) as {col}")
+            select_parts.append(f"COALESCE(dr.{col}_lotes, 0) as {col}_lotes")
+        select_parts.extend([
+            "COALESCE(dr.credit_total, 0) as credit_total",
+            "COALESCE(dr.ending_balance, 0) as ending_balance",
+            "COALESCE(dr.cash_count, 0) as cash_count",
+            "COALESCE(dr.cash_result, 0) as cash_result"
+        ])
+        select_clause = ", ".join(select_parts)
+        
+        # Build query based on filter type - order by branch first for grouping
+        if filter_type == "corporation":
+            query = f"""
+                SELECT {select_clause}
+                FROM {self.daily_table} dr
+                WHERE dr.corporation = %s AND dr.date BETWEEN %s AND %s
+                ORDER BY dr.branch, dr.date
+            """
+            params = (filter_value, start_date, end_date)
+        else:  # os/group
+            query = f"""
+                SELECT {select_clause}
+                FROM {self.daily_table} dr
+                INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
+                WHERE b.os_name = %s AND dr.date BETWEEN %s AND %s
+                ORDER BY dr.branch, dr.date
+            """
+            params = (filter_value, start_date, end_date)
+        
+        results = db_manager.execute_query(query, params)
+        
+        if not results:
+            QMessageBox.warning(self, "No Data", f"No data found for {filter_value} between {start_date} and {end_date}.")
+            return
+        
+        # File dialog
+        default_filename = f"DateRangeReport_{filter_label}_{filter_value}_{start_date}_to_{end_date}.xlsx"
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Excel File", default_filename, "Excel Files (*.xlsx);;All Files (*)"
+        )
+        
+        if not file_path:
+            return
+        
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Date Range Report"
+            
+            # Styles
+            title_font = Font(bold=True, size=14)
+            header_font = Font(bold=True, size=9, color="FFFFFF")
+            date_fill = PatternFill(start_color="9B59B6", end_color="9B59B6", fill_type="solid")
+            debit_fill = PatternFill(start_color="27AE60", end_color="27AE60", fill_type="solid")
+            credit_fill = PatternFill(start_color="E74C3C", end_color="E74C3C", fill_type="solid")
+            summary_fill = PatternFill(start_color="F39C12", end_color="F39C12", fill_type="solid")
+            total_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+            grand_total_fill = PatternFill(start_color="D5A6BD", end_color="D5A6BD", fill_type="solid")
+            thin = Side(style='thin')
+            border = Border(left=thin, right=thin, top=thin, bottom=thin)
+            
+            # Title
+            brand_title = "Brand A" if self.account_type == 1 else "Brand B"
+            ws['A1'] = f"{brand_title} - Date Range Report"
+            ws['A1'].font = title_font
+            
+            # Info
+            ws['A3'] = f"{filter_label}:"
+            ws['B3'] = filter_value
+            ws['A4'] = "Date Range:"
+            ws['B4'] = f"{start_date} to {end_date}"
+            ws['A3'].font = Font(bold=True)
+            ws['A4'].font = Font(bold=True)
+            
+            # Define PC fields for calculating totals
+            salary_fields = ['pc_salary']
+            pc_fields_no_salary = [
+                'pc_inc_emp', 'pc_inc_motor', 'pc_inc_suki_card', 'pc_inc_insurance', 'pc_inc_mc',
+                'pc_rental', 'pc_electric', 'pc_water', 'pc_internet',
+                'pc_lbc_jrs_jnt', 'pc_permits_bir_payments', 'pc_supplies_xerox_maintenance', 'pc_transpo'
+            ]
+            
+            # Aggregate data by branch
+            branch_totals = {}
+            branches_list = []
+            for row_data in results:
+                branch_name = row_data.get('branch', 'Unknown')
+                if branch_name not in branch_totals:
+                    branch_totals[branch_name] = {}
+                    branches_list.append(branch_name)
+                
+                # Aggregate amounts and lotes
+                for col in ['beginning_balance'] + debit_columns + ['debit_total'] + credit_columns + ['credit_total', 'ending_balance', 'cash_count', 'cash_result']:
+                    val = float(row_data.get(col, 0) or 0)
+                    branch_totals[branch_name][col] = branch_totals[branch_name].get(col, 0) + val
+                
+                # Aggregate lotes
+                for col in debit_columns + credit_columns:
+                    lotes_col = f"{col}_lotes"
+                    val = int(row_data.get(lotes_col, 0) or 0)
+                    branch_totals[branch_name][lotes_col] = branch_totals[branch_name].get(lotes_col, 0) + val
+                
+                for pc_col in salary_fields:
+                    val = float(row_data.get(pc_col, 0) or 0)
+                    branch_totals[branch_name]['salary'] = branch_totals[branch_name].get('salary', 0) + val
+                
+                for pc_col in pc_fields_no_salary:
+                    val = float(row_data.get(pc_col, 0) or 0)
+                    branch_totals[branch_name]['total_pc'] = branch_totals[branch_name].get('total_pc', 0) + val
+            
+            # Build vertical layout headers: Field | Branch1(Amount/Lotes) | Branch2(Amount/Lotes) | ... | Total(Amount/Lotes)
+            header_row = 6
+            branches_sorted = sorted(branches_list)
+            
+            # Build header structure
+            # Row 1: Field names
+            ws.cell(row=header_row, column=1, value="Field")
+            cell = ws.cell(row=header_row, column=1)
+            cell.font = header_font
+            cell.fill = date_fill
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center', wrap_text=True)
+            
+            col_idx = 2
+            for branch_name in branches_sorted:
+                # Merge cells for branch name
+                ws.merge_cells(start_row=header_row, start_column=col_idx, end_row=header_row, end_column=col_idx+1)
+                cell = ws.cell(row=header_row, column=col_idx, value=branch_name)
+                cell.font = header_font
+                cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                col_idx += 2
+            
+            # Merge cells for Total
+            ws.merge_cells(start_row=header_row, start_column=col_idx, end_row=header_row, end_column=col_idx+1)
+            cell = ws.cell(row=header_row, column=col_idx, value="TOTAL")
+            cell.font = header_font
+            cell.fill = grand_total_fill
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center', wrap_text=True)
+            
+            # Row 2: Amount / Lotes sub-headers
+            sub_header_row = header_row + 1
+            ws.cell(row=sub_header_row, column=1, value="")
+            cell = ws.cell(row=sub_header_row, column=1)
+            cell.font = header_font
+            cell.fill = date_fill
+            cell.border = border
+            
+            col_idx = 2
+            for branch_name in branches_sorted:
+                # Lotes header
+                cell = ws.cell(row=sub_header_row, column=col_idx, value="Lotes")
+                cell.font = Font(bold=True, size=8, color="FFFFFF")
+                cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                col_idx += 1
+                
+                # Amount header
+                cell = ws.cell(row=sub_header_row, column=col_idx, value="Amount")
+                cell.font = Font(bold=True, size=8, color="FFFFFF")
+                cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center', wrap_text=True)
+                col_idx += 1
+            
+            # Total Lotes header
+            cell = ws.cell(row=sub_header_row, column=col_idx, value="Lotes")
+            cell.font = Font(bold=True, size=8, color="FFFFFF")
+            cell.fill = grand_total_fill
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center', wrap_text=True)
+            col_idx += 1
+            
+            # Total Amount header
+            cell = ws.cell(row=sub_header_row, column=col_idx, value="Amount")
+            cell.font = Font(bold=True, size=8, color="FFFFFF")
+            cell.fill = grand_total_fill
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center', wrap_text=True)
+            
+            # Write data rows by field
+            current_row = sub_header_row + 1
+            total_col_start = 2 + len(branches_sorted) * 2
+            
+            # Beginning Balance
+            ws.cell(row=current_row, column=1, value="Beginning Balance")
+            ws.cell(row=current_row, column=1).font = Font(bold=True)
+            ws.cell(row=current_row, column=1).fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
+            ws.cell(row=current_row, column=1).border = border
+            
+            total_amount = 0.0
+            col_idx = 2
+            for branch_name in branches_sorted:
+                val = float(branch_totals[branch_name].get('beginning_balance', 0))
+                # Lotes column (leave blank for beginning balance)
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.alignment = Alignment(horizontal='right')
+                total_amount += val
+                col_idx += 1
+            
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+            cell.number_format = '#,##0.00'
+            cell.border = border
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='right')
+            cell.fill = total_fill
+            current_row += 1
+            
+            # Debit fields
+            ws.cell(row=current_row, column=1, value="CASH RECEIPT (DEBIT)")
+            ws.cell(row=current_row, column=1).font = Font(bold=True, color="FFFFFF")
+            ws.cell(row=current_row, column=1).fill = debit_fill
+            ws.cell(row=current_row, column=1).border = border
+            current_row += 1
+            
+            for label in self.debit_fields.keys():
+                db_col = self.debit_fields[label]
+                if db_col in debit_columns:
+                    ws.cell(row=current_row, column=1, value=label)
+                    ws.cell(row=current_row, column=1).border = border
+                    
+                    total_amount = 0.0
+                    total_lotes = 0
+                    col_idx = 2
+                    for branch_name in branches_sorted:
+                        # Lotes
+                        lotes_val = int(branch_totals[branch_name].get(f"{db_col}_lotes", 0))
+                        cell = ws.cell(row=current_row, column=col_idx, value=lotes_val)
+                        cell.border = border
+                        cell.alignment = Alignment(horizontal='center')
+                        total_lotes += lotes_val
+                        col_idx += 1
+                        
+                        # Amount
+                        val = float(branch_totals[branch_name].get(db_col, 0))
+                        cell = ws.cell(row=current_row, column=col_idx, value=val)
+                        cell.number_format = '#,##0.00'
+                        cell.border = border
+                        cell.alignment = Alignment(horizontal='right')
+                        total_amount += val
+                        col_idx += 1
+                    
+                    # Total lotes
+                    cell = ws.cell(row=current_row, column=total_col_start, value=total_lotes)
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
+                    cell.fill = total_fill
+                    
+                    # Total amount
+                    cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='right')
+                    cell.fill = total_fill
+                    current_row += 1
+            
+            # Total Cash Receipt
+            ws.cell(row=current_row, column=1, value="Total Cash Receipt")
+            ws.cell(row=current_row, column=1).font = Font(bold=True)
+            ws.cell(row=current_row, column=1).border = border
+            ws.cell(row=current_row, column=1).fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
+            
+            total_amount = 0.0
+            col_idx = 2
+            for branch_name in branches_sorted:
+                val = float(branch_totals[branch_name].get('debit_total', 0))
+                # Lotes column (leave blank for totals)
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='right')
+                total_amount += val
+                col_idx += 1
+            
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+            cell.number_format = '#,##0.00'
+            cell.border = border
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='right')
+            cell.fill = total_fill
+            current_row += 2
+            
+            # Credit fields
+            ws.cell(row=current_row, column=1, value="CASH OUT (CREDIT)")
+            ws.cell(row=current_row, column=1).font = Font(bold=True, color="FFFFFF")
+            ws.cell(row=current_row, column=1).fill = credit_fill
+            ws.cell(row=current_row, column=1).border = border
+            current_row += 1
+            
+            for label in self.credit_fields.keys():
+                db_col = self.credit_fields[label]
+                # Show all configured credit fields; fields whose DB column doesn't
+                # exist in this table will simply display 0 (data not available).
+                ws.cell(row=current_row, column=1, value=label)
+                ws.cell(row=current_row, column=1).border = border
+
+                total_amount = 0.0
+                total_lotes = 0
+                col_idx = 2
+                for branch_name in branches_sorted:
+                    # Lotes
+                    lotes_val = int(branch_totals[branch_name].get(f"{db_col}_lotes", 0))
+                    cell = ws.cell(row=current_row, column=col_idx, value=lotes_val)
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
+                    total_lotes += lotes_val
+                    col_idx += 1
+
+                    # Amount
+                    val = float(branch_totals[branch_name].get(db_col, 0))
+                    cell = ws.cell(row=current_row, column=col_idx, value=val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='right')
+                    total_amount += val
+                    col_idx += 1
+
+                # Total lotes
+                cell = ws.cell(row=current_row, column=total_col_start, value=total_lotes)
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                cell.fill = total_fill
+
+                # Total amount
+                cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.alignment = Alignment(horizontal='right')
+                cell.fill = total_fill
+                current_row += 1
+            
+            # Total Cash Out
+            ws.cell(row=current_row, column=1, value="Total Cash Out")
+            ws.cell(row=current_row, column=1).font = Font(bold=True)
+            ws.cell(row=current_row, column=1).border = border
+            ws.cell(row=current_row, column=1).fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
+            
+            total_amount = 0.0
+            col_idx = 2
+            for branch_name in branches_sorted:
+                val = float(branch_totals[branch_name].get('credit_total', 0))
+                # Lotes column (leave blank for totals)
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='right')
+                total_amount += val
+                col_idx += 1
+            
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+            cell.number_format = '#,##0.00'
+            cell.border = border
+            cell.font = Font(bold=True)
+            cell.alignment = Alignment(horizontal='right')
+            cell.fill = total_fill
+            current_row += 2
+            
+            # Summary fields
+            summary_fields = [
+                ("Ending Balance", "ending_balance"),
+                ("Cash Count", "cash_count"),
+                ("Variance", "cash_result")
+            ]
+            
+            ws.cell(row=current_row, column=1, value="SUMMARY")
+            ws.cell(row=current_row, column=1).font = Font(bold=True, color="FFFFFF")
+            ws.cell(row=current_row, column=1).fill = summary_fill
+            ws.cell(row=current_row, column=1).border = border
+            current_row += 1
+            
+            for label, db_col in summary_fields:
+                ws.cell(row=current_row, column=1, value=label)
+                ws.cell(row=current_row, column=1).border = border
+                
+                total_amount = 0.0
+                col_idx = 2
+                for branch_name in branches_sorted:
+                    val = float(branch_totals[branch_name].get(db_col, 0))
+                    # Lotes column (leave blank)
+                    cell = ws.cell(row=current_row, column=col_idx, value="")
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='center')
+                    col_idx += 1
+                    
+                    cell = ws.cell(row=current_row, column=col_idx, value=val)
+                    cell.number_format = '#,##0.00'
+                    cell.border = border
+                    cell.alignment = Alignment(horizontal='right')
+                    total_amount += val
+                    col_idx += 1
+                
+                cell = ws.cell(row=current_row, column=total_col_start, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                
+                cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.alignment = Alignment(horizontal='right')
+                cell.fill = total_fill
+                current_row += 1
+            
+            # PC fields
+            ws.cell(row=current_row, column=1, value="SALARY")
+            ws.cell(row=current_row, column=1).font = Font(bold=True)
+            ws.cell(row=current_row, column=1).border = border
+            ws.cell(row=current_row, column=1).fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
+            
+            total_amount = 0.0
+            col_idx = 2
+            for branch_name in branches_sorted:
+                val = float(branch_totals[branch_name].get('salary', 0))
+                # Lotes column
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True, color="9B59B6")
+                cell.alignment = Alignment(horizontal='right')
+                total_amount += val
+                col_idx += 1
+            
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+            cell.number_format = '#,##0.00'
+            cell.border = border
+            cell.font = Font(bold=True, color="9B59B6")
+            cell.alignment = Alignment(horizontal='right')
+            cell.fill = total_fill
+            current_row += 1
+            
+            ws.cell(row=current_row, column=1, value="Total PC")
+            ws.cell(row=current_row, column=1).font = Font(bold=True)
+            ws.cell(row=current_row, column=1).border = border
+            ws.cell(row=current_row, column=1).fill = PatternFill(start_color="E8F4F8", end_color="E8F4F8", fill_type="solid")
+            
+            total_amount = 0.0
+            col_idx = 2
+            for branch_name in branches_sorted:
+                val = float(branch_totals[branch_name].get('total_pc', 0))
+                # Lotes column
+                cell = ws.cell(row=current_row, column=col_idx, value="")
+                cell.border = border
+                cell.alignment = Alignment(horizontal='center')
+                col_idx += 1
+                
+                cell = ws.cell(row=current_row, column=col_idx, value=val)
+                cell.number_format = '#,##0.00'
+                cell.border = border
+                cell.font = Font(bold=True, color="9B59B6")
+                cell.alignment = Alignment(horizontal='right')
+                total_amount += val
+                col_idx += 1
+            
+            cell = ws.cell(row=current_row, column=total_col_start, value="")
+            cell.border = border
+            cell.alignment = Alignment(horizontal='center')
+            
+            cell = ws.cell(row=current_row, column=total_col_start + 1, value=total_amount)
+            cell.number_format = '#,##0.00'
+            cell.border = border
+            cell.font = Font(bold=True, color="9B59B6")
+            cell.alignment = Alignment(horizontal='right')
+            cell.fill = total_fill
+            
+            # Auto-adjust column widths
+            ws.column_dimensions['A'].width = 25
+            col_idx = 2
+            for branch_name in branches_sorted:
+                col_letter = get_column_letter(col_idx)
+                ws.column_dimensions[col_letter].width = 10  # Lotes column
+                col_idx += 1
+                col_letter = get_column_letter(col_idx)
+                ws.column_dimensions[col_letter].width = 12  # Amount column
+                col_idx += 1
+            
+            # Total columns
+            col_letter = get_column_letter(total_col_start)
+            ws.column_dimensions[col_letter].width = 10
+            col_letter = get_column_letter(total_col_start + 1)
+            ws.column_dimensions[col_letter].width = 12
+            
+            ws.freeze_panes = 'B8'
+            
+            wb.save(file_path)
+            dialog.accept()
+            QMessageBox.information(self, "Export Successful", f"Date Range Report exported to:\n{file_path}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Export Error", f"Error exporting: {str(e)}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Full Brand Report  (all branches, all modules, one workbook)
+    # ─────────────────────────────────────────────────────────────────────────
+
     def show_full_brand_report_dialog(self):
         """Dialog to generate a multi-sheet Full Brand Report for all modules."""
         brand_label = "Brand A" if self.account_type == 1 else "Brand B"
@@ -3202,6 +4348,7 @@ class AdminDashboard(QWidget):
         if not file_path:
             return
 
+        # ── Import column group definitions from daily_transaction_page ──────
         try:
             from daily_transaction_page import (
                 COLUMN_GROUPS          as DT_COLUMN_GROUPS,
@@ -3288,6 +4435,7 @@ class AdminDashboard(QWidget):
                     ws.cell(row=r, column=1).fill = INFO_FILL
                     ws.cell(row=r, column=2).fill = INFO_FILL
 
+            # ── Per-table column cache (avoids repeated INFORMATION_SCHEMA hits) ──
             _table_cols_cache = {}
 
             def _get_table_cols(tbl):
@@ -3303,12 +4451,16 @@ class AdminDashboard(QWidget):
                         _table_cols_cache[tbl] = set()
                 return _table_cols_cache[tbl]
 
+            # ── Core sheet writer ─────────────────────────────────────────────
+            # col_groups: list of (group_name, [(sub_label, [db_cols], is_lotes)])
+            # db_cols with multiple items → their values are summed into one column
             def _write_grouped_sheet(ws, col_groups, table, use_branch_join=False, category_filter=None, show_lotes_total=False, show_amt_total=True):
                 _write_info(ws)
 
                 table_cols = _get_table_cols(table)
 
-                flat = []   
+                # Flatten columns, filtering out any that don't exist in the table
+                flat = []      # (display_label, primary_db_key, is_lotes, group_name, all_db_cols)
                 needed = set()
                 for grp, subs in col_groups:
                     for sub_label, db_cols, is_lotes in subs:
@@ -3466,65 +4618,26 @@ class AdminDashboard(QWidget):
                             f"GROUP BY b.name ORDER BY b.name"
                         )
                     elif use_branch_join:
-                        # ── Branches-first approach to include branches without entries ──
-                        # Start from branches, move date condition into LEFT JOIN ON so
-                        # every branch appears (even those with no submission for the date).
+                        branch_join = (
+                            "INNER JOIN branches b "
+                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci"
+                        )
                         sql = (
-                            f"SELECT b.name AS branch, {', '.join(select_parts)} "
-                            f"FROM branches b "
-                            f"LEFT JOIN `{table}` dr "
-                            f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                            f"  AND dr.date = %s "
-                            f"WHERE 1=1 {where_clause} "
-                            f"GROUP BY b.name ORDER BY b.name"
+                            f"SELECT dr.branch, {', '.join(select_parts)} "
+                            f"FROM `{table}` dr {branch_join} "
+                            f"WHERE dr.date = %s {where_clause} "
+                            f"GROUP BY dr.branch ORDER BY dr.branch"
                         )
                         # sql_params already set correctly above
                     else:
-                        # ── Branches-first approach for corporation filter without category ──
-                        # Include branches even if they have no entries for the selected date.
-                        if filter_type == "corporation":
-                            # For corporation filter, join corporations to filter by name
-                            if table == "payable_tbl_brand_a":
-                                sql = (
-                                    f"SELECT b.name AS branch, {', '.join(select_parts)} "
-                                    f"FROM branches b "
-                                    f"INNER JOIN corporations c "
-                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
-                                    f"LEFT JOIN `{table}` dr "
-                                    f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                                    f"  AND dr.date = %s "
-                                    f"WHERE 1=1 "
-                                    f"GROUP BY b.name ORDER BY b.name"
-                                )
-                            else:
-                                sql = (
-                                    f"SELECT b.name AS branch, {', '.join(select_parts)} "
-                                    f"FROM branches b "
-                                    f"INNER JOIN corporations c "
-                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
-                                    f"  AND c.name COLLATE utf8mb4_general_ci = %s "
-                                    f"LEFT JOIN `{table}` dr "
-                                    f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                                    f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
-                                    f"  AND dr.date = %s "
-                                    f"WHERE 1=1 "
-                                    f"GROUP BY b.name ORDER BY b.name"
-                                )
-                            sql_params = (filter_value, selected_date)
-                        else:
-                            # Fallback for non-corporation filters (shouldn't normally reach here)
-                            sql = (
-                                f"SELECT dr.branch, {', '.join(select_parts)} "
-                                f"FROM `{table}` dr {cat_join} "
-                                f"WHERE dr.date = %s {where_clause} "
-                                f"GROUP BY dr.branch ORDER BY dr.branch"
-                            )
-                            # sql_params already set from earlier (line 3367 or 3370)
-                    logger.debug(f"Report query: {sql[:200]}... | Params: {sql_params}")
+                        sql = (
+                            f"SELECT dr.branch, {', '.join(select_parts)} "
+                            f"FROM `{table}` dr {cat_join} "
+                            f"WHERE dr.date = %s {where_clause} "
+                            f"GROUP BY dr.branch ORDER BY dr.branch"
+                        )
                     results = db_manager.execute_query(sql, sql_params) or []
                 except Exception as ex:
-                    logger.error(f"Report query failed: {ex} | SQL: {sql} | Params: {sql_params}")
                     ws['A7'] = f"Error loading data: {ex}"
                     return
 
@@ -5701,7 +6814,7 @@ class AdminDashboard(QWidget):
             
             rows_affected = self.db.execute_query(update_query, values)
 
-          
+            # Brand A: upsert palawan sendout/payout/international to payable_tbl_brand_a
             if self.account_type == 1 and payable_a_vals:
                 _col_map = {
                     'palawan_sendout_principal':           'sendout_capital',
@@ -5781,7 +6894,9 @@ class AdminDashboard(QWidget):
                         "font-weight: bold; font-size: 12px; padding: 5px 10px; border-radius: 4px; background-color: #c8e6c9; color: #2e7d32;"
                     )
                 
-           
+                # NOTE: Supplementary tables are no longer used. All data is now in the canonical tables:
+                # daily_reports_brand_a (Brand A) and daily_reports (Brand B)
+                # _update_supplementary_tables(selected_date, update_data)
 
                 QMessageBox.information(
                     self,
@@ -5800,7 +6915,14 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to save entry: {e}")
 
     def _update_supplementary_tables(self, selected_date, all_vals: dict):
-     
+        """DEPRECATED: Supplementary tables are no longer used.
+        
+        All data is now stored in canonical tables:
+        - daily_reports_brand_a (Brand A)
+        - daily_reports (Brand B)
+        
+        This method is kept for backward compatibility but does nothing.
+        """
         logger.info("_update_supplementary_tables() called but skipped - data is in canonical tables only")
         pass
 

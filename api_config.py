@@ -17,7 +17,7 @@ import os
 API_MODE = os.environ.get("ORS_API_MODE", "true").lower() == "true"
 
 # The IP address and port of the machine running api_server.py
-API_URL  = os.environ.get("ORS_API_URL", "http://222.127.90.218")
+API_URL  = os.environ.get("ORS_API_URL", "http://222.127.90.218:5000")
 
 # ── API key: read from encrypted config (single source of truth) ──────────────
 # The key is stored inside db_config.enc alongside DB credentials.

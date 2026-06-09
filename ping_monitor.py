@@ -75,27 +75,49 @@ class PingMonitor(QObject):
         self._session_id = None
 
     def log_event(self, event_type: str, username: str, details: str = '', db=None):
-        """Log a login or post event. Fire-and-forget — never raises.
+        """Log a login or post event. Fire-and-forget in background — NEVER blocks.
 
         event_type examples: 'login_success', 'login_failed',
                              'post_success', 'post_failed'
         Pass db= explicitly when self._db is not yet set (e.g. login failures).
+
+        Uses QThreadPool to avoid blocking main thread when internet is slow.
         """
+        from PyQt5.QtCore import QThreadPool, QRunnable, pyqtSlot
+
         _db = db or self._db
         if not _db:
             return
-        try:
-            self._ensure_activity_table(_db)
-            now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            _db.execute_query(
-                "INSERT INTO activity_log "
-                "(event_time, event_type, username, ip_address, hostname, details) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (now, event_type, username, self._ip_address, self._hostname,
-                 details or None)
-            )
-        except Exception as e:
-            logger.error("PingMonitor log_event failed: %s", e)
+
+        class _LogWorker(QRunnable):
+            def __init__(self, db, event_type, username, ip, hostname, details):
+                super().__init__()
+                self.db = db
+                self.event_type = event_type
+                self.username = username
+                self.ip = ip
+                self.hostname = hostname
+                self.details = details
+                self.setAutoDelete(True)
+
+            @pyqtSlot()
+            def run(self):
+                try:
+                    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    self.db.execute_query(
+                        "INSERT INTO activity_log "
+                        "(event_time, event_type, username, ip_address, hostname, details) "
+                        "VALUES (%s, %s, %s, %s, %s, %s)",
+                        (now, self.event_type, self.username, self.ip, self.hostname,
+                         self.details or None),
+                        timeout=3  # Short timeout for logging
+                    )
+                except Exception as e:
+                    logger.debug(f"PingMonitor log_event failed (background): {e}")
+
+        worker = _LogWorker(_db, event_type, username, self._ip_address,
+                           self._hostname, details)
+        QThreadPool.globalInstance().start(worker)
 
     def _ensure_activity_table(self, db):
         if self._activity_table_ok or not db:

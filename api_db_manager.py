@@ -12,7 +12,7 @@ log = logging.getLogger("APIDbManager")
 class APIDbManager:
 
 
-    def __init__(self, base_url: str = None, api_key: str = None, timeout: int = 30):
+    def __init__(self, base_url: str = None, api_key: str = None, timeout: int = 1):
         import requests as _requests
         try:
             from api_config import API_URL, API_KEY
@@ -30,10 +30,10 @@ class APIDbManager:
         self._token   = None
         self._session = _requests.Session()
         retry = Retry(
-            total=2,
-            connect=2,
-            read=2,
-            backoff_factor=0.5,
+            total=1,
+            connect=1,
+            read=1,
+            backoff_factor=0.3,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["GET", "POST"],
         )
