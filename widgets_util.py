@@ -81,6 +81,9 @@ class MoneyInput(QWidget):
     def setValidator(self, validator):
         self.input.setValidator(validator)
 
+    def validator(self):
+        return self.input.validator()
+
     def setStyleSheet(self, stylesheet):
         self.input.setStyleSheet(stylesheet)
 
@@ -89,6 +92,24 @@ class MoneyInput(QWidget):
 
     def property(self, name):
         return self.input.property(name)
+
+    def setFocus(self):
+        self.input.setFocus()
+
+    def hasFocus(self):
+        return self.input.hasFocus()
+
+    def selectAll(self):
+        self.input.selectAll()
+
+    def hasAcceptableInput(self):
+        return self.input.hasAcceptableInput()
+
+    def font(self):
+        return self.input.font()
+
+    def setFont(self, font):
+        self.input.setFont(font)
 
 
 class LotesInput(QSpinBox):
