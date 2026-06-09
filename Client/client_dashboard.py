@@ -3056,35 +3056,46 @@ class ClientDashboard(QWidget):
             debit_fields_only = cf_tab.get_debit_total()  # This is just fields sum
             displayed_credit = cf_tab.get_credit_total()
             
+            # HIGH FIX #6: Use adaptive tolerance based on number of fields
+            num_debit_fields = len([k for k in cf_data.get('debit', {}).keys() if not k.endswith('_lotes')])
+            num_credit_fields = len([k for k in cf_data.get('credit', {}).keys() if not k.endswith('_lotes')])
+            tolerance_debit = calculate_adaptive_tolerance(num_debit_fields)
+            tolerance_credit = calculate_adaptive_tolerance(num_credit_fields)
+
             # STRICT VALIDATION #1: Verify debit fields sum matches
-            if abs(debit_fields_only - debit_field_sum) > 0.01:
+            if abs(debit_fields_only - debit_field_sum) > tolerance_debit:
                 errors.append(f"Brand {brand_char} DEBIT FIELDS SUM: Calculation Error!\n"
                             f"  Should be: {debit_field_sum:.2f}\n"
                             f"  Shows: {debit_fields_only:.2f}\n"
-                            f"  Difference: {abs(debit_fields_only - debit_field_sum):.2f}")
-            
+                            f"  Difference: {abs(debit_fields_only - debit_field_sum):.2f}\n"
+                            f"  Tolerance: {tolerance_debit:.4f}")
+
             # STRICT VALIDATION #2: Verify credit fields sum matches
-            if abs(displayed_credit - credit_field_sum) > 0.01:
+            if abs(displayed_credit - credit_field_sum) > tolerance_credit:
                 errors.append(f"Brand {brand_char} CREDIT FIELDS SUM: Calculation Error!\n"
                             f"  Should be: {credit_field_sum:.2f}\n"
                             f"  Shows: {displayed_credit:.2f}\n"
-                            f"  Difference: {abs(displayed_credit - credit_field_sum):.2f}")
-            
+                            f"  Difference: {abs(displayed_credit - credit_field_sum):.2f}\n"
+                            f"  Tolerance: {tolerance_credit:.4f}")
+
             # STRICT VALIDATION #3: Verify debit total = beginning + fields
             displayed_debit = beginning + debit_fields_only
-            if abs(displayed_debit - calculated_debit_total) > 0.01:
+            if abs(displayed_debit - calculated_debit_total) > tolerance_debit:
                 errors.append(f"Brand {brand_char} DEBIT TOTAL: Calculation Error!\n"
                             f"  Formula: Beginning ({beginning:.2f}) + Fields ({debit_field_sum:.2f})\n"
                             f"  Should be: {calculated_debit_total:.2f}\n"
+                            f"  Tolerance: {tolerance_debit:.4f}\n"
                             f"  Error detected!")
-            
+
             # STRICT VALIDATION #4: Verify ending balance calculation
             displayed_ending = displayed_debit - displayed_credit
-            if abs(displayed_ending - calculated_ending) > 0.01:
+            tolerance_total = tolerance_debit + tolerance_credit  # Combined tolerance for ending balance
+            if abs(displayed_ending - calculated_ending) > tolerance_total:
                 errors.append(f"Brand {brand_char} ENDING BALANCE: Calculation Error!\n"
                             f"  Formula: Debit ({displayed_debit:.2f}) - Credit ({displayed_credit:.2f})\n"
                             f"  Should be: {calculated_ending:.2f}\n"
-                            f"  Shows: {displayed_ending:.2f}")
+                            f"  Shows: {displayed_ending:.2f}\n"
+                            f"  Tolerance: {tolerance_total:.4f}")
         
         if errors:
             error_text = "🚫 VALIDATION FAILED - DATABASE SAVE BLOCKED 🚫\n\n"
