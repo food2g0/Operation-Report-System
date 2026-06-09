@@ -4637,8 +4637,9 @@ class AdminDashboard(QWidget):
                 ws5b = wb.create_sheet(title="Palawan 30%")
                 _write_grouped_sheet(ws5b, _payable_groups_a, "payable_tbl_brand_a", category_filter="30", show_amt_total=False)
             else:
+                # Brand B: apply 60% filter to match Brand A Palawan 60% behavior
                 ws5 = wb.create_sheet(title="Payable")
-                _write_grouped_sheet(ws5, _payable_groups_a, "payable_tbl_brand_a", show_amt_total=False)
+                _write_grouped_sheet(ws5, _payable_groups_a, "payable_tbl_brand_a", category_filter="60", show_amt_total=False)
 
             # ════════════════════════════════════════════════════════════════
             # Sheet 6+ – Brand-specific sheets
