@@ -154,6 +154,10 @@ class LotesInput(QSpinBox):
         """Set maximum width (for consistent API)."""
         super().setMaximumWidth(width)
 
+    def validator(self):
+        """Return validator for compatibility (QSpinBox doesn't use validators like QLineEdit)."""
+        return None
+
 
 class DisplayField(QLineEdit):
     """Read-only display field with styling."""
