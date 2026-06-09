@@ -3260,6 +3260,73 @@ class ClientDashboard(QWidget):
             logger.error("Could not verify database save: %s", e)
             return True  # Don't fail hard, just log it
 
+    def _save_palawan_to_payable(self, date_str, brand_full, palawan_data):
+        """FIX #13: Save palawan data to payable_tbl_brand_a so 30%/60% sheets can display it.
+
+        The report's 30%/60% palawan sheets query payable_tbl_brand_a, but the main report posting
+        only saves to daily_reports. This method syncs the palawan data to the payable table.
+        """
+        try:
+            # Extract palawan values from the data dict
+            so_lotes = int(palawan_data.get('so_lotes', 0) or 0)
+            so_principal = float(palawan_data.get('so_principal', 0) or 0)
+            so_sc = float(palawan_data.get('so_sc', 0) or 0)
+            so_commission = float(palawan_data.get('so_commission', 0) or 0)
+            so_total = float(palawan_data.get('so_total', 0) or 0)
+
+            po_lotes = int(palawan_data.get('po_lotes', 0) or 0)
+            po_principal = float(palawan_data.get('po_principal', 0) or 0)
+            po_sc = float(palawan_data.get('po_sc', 0) or 0)
+            po_commission = float(palawan_data.get('po_commission', 0) or 0)
+            po_total = float(palawan_data.get('po_total', 0) or 0)
+
+            int_lotes = int(palawan_data.get('int_lotes', 0) or 0)
+            int_principal = float(palawan_data.get('int_principal', 0) or 0)
+            int_sc = float(palawan_data.get('int_sc', 0) or 0)
+            int_commission = float(palawan_data.get('int_commission', 0) or 0)
+            int_total = float(palawan_data.get('int_total', 0) or 0)
+
+            # Insert or update payable_tbl_brand_a with palawan data
+            # Only insert if there's actual palawan data to save
+            if any([so_principal, so_sc, so_commission, po_principal, po_sc, po_commission,
+                    int_principal, int_sc, int_commission]):
+
+                self.db_manager.execute_query(
+                    """INSERT INTO payable_tbl_brand_a
+                       (corporation, branch, date,
+                        sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
+                        payout_lotes, payout_capital, payout_sc, payout_commission, payout_total,
+                        international_lotes, international_capital, international_sc, international_commission, international_total)
+                       VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s)
+                       ON DUPLICATE KEY UPDATE
+                        sendout_lotes=VALUES(sendout_lotes),
+                        sendout_capital=VALUES(sendout_capital),
+                        sendout_sc=VALUES(sendout_sc),
+                        sendout_commission=VALUES(sendout_commission),
+                        sendout_total=VALUES(sendout_total),
+                        payout_lotes=VALUES(payout_lotes),
+                        payout_capital=VALUES(payout_capital),
+                        payout_sc=VALUES(payout_sc),
+                        payout_commission=VALUES(payout_commission),
+                        payout_total=VALUES(payout_total),
+                        international_lotes=VALUES(international_lotes),
+                        international_capital=VALUES(international_capital),
+                        international_sc=VALUES(international_sc),
+                        international_commission=VALUES(international_commission),
+                        international_total=VALUES(international_total),
+                        updated_at=CURRENT_TIMESTAMP
+                    """,
+                    (
+                        self.corporation, self.branch, date_str,
+                        so_lotes, so_principal, so_sc, so_commission, so_total,
+                        po_lotes, po_principal, po_sc, po_commission, po_total,
+                        int_lotes, int_principal, int_sc, int_commission, int_total,
+                    )
+                )
+                logger.info(f"Saved palawan data to payable_tbl_brand_a for {self.branch} on {date_str}")
+        except Exception as e:
+            logger.warning(f"Could not save palawan to payable table: {e}")
+
     def _propagate_opening_balance_to_following_days(self, date_str, brand_full, ending_balance):
         table_name = "daily_reports_brand_a" if brand_full == "Brand A" else "daily_reports"
         # CRITICAL FIX: Validate table name to prevent SQL injection
@@ -3626,6 +3693,15 @@ class ClientDashboard(QWidget):
                                       "Please check your values and try again."))
                     else:
                         results.append((brand_full, "success", None))
+
+                        # FIX #13: Save palawan data to payable_tbl_brand_a for 30%/60% report sheets
+                        # The 30%/60% palawan sheets query payable_tbl_brand_a, so we need to populate it
+                        # when the report is posted successfully
+                        try:
+                            self._save_palawan_to_payable(sd, brand_full, pal)
+                        except Exception as payable_err:
+                            logger.warning(f"Could not save palawan to payable table: {payable_err}")
+                            # Non-critical error - don't fail the entire post operation
 
                     if OFFLINE_SUPPORT and offline_manager:
                         offline_manager.cache_ending_balance(
