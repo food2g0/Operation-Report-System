@@ -286,25 +286,29 @@ class ReportPage(QWidget):
                 corp_params = (corp,)
 
             # Build query based on registration filter
-            # All palawan columns come from payable_tbl_brand_a (both brands).
-            # daily_reports is still used as the driving table so date/corp/branch context
-            # is anchored to actual submissions; palawan data is LEFT JOINed from payable_tbl_brand_a.
+            # Fallback approach: Try payable_tbl_brand_a first, then fall back to daily_reports
+            # This supports both new clients (uploading to payable_tbl_brand_a) and old clients (daily_reports)
             _pal_select = """
-                           SUM(COALESCE(p.sendout_capital, 0))        AS total_sendout_capital,
-                           SUM(COALESCE(p.sendout_commission, 0))     AS total_sendout_commission,
-                           SUM(COALESCE(p.sendout_sc, 0))             AS total_sendout_sc,
-                           SUM(COALESCE(p.payout_capital, 0))         AS total_payout_capital,
-                           SUM(COALESCE(p.payout_commission, 0))      AS total_payout_commission,
-                           SUM(COALESCE(p.payout_sc, 0))              AS total_payout_sc,
-                           SUM(COALESCE(p.international_commission, 0)) AS total_international_commission,
-                           SUM(COALESCE(p.skid, 0))                   AS total_skid,
-                           SUM(COALESCE(p.skir, 0))                   AS total_skir,
-                           SUM(COALESCE(p.cancellation, 0))           AS total_cancellation,
-                           SUM(COALESCE(p.inc, 0))                    AS total_inc"""
+                           SUM(COALESCE(COALESCE(p.sendout_capital, d_pal.palawan_sendout_principal), 0))        AS total_sendout_capital,
+                           SUM(COALESCE(COALESCE(p.sendout_commission, d_pal.palawan_sendout_commission), 0))     AS total_sendout_commission,
+                           SUM(COALESCE(COALESCE(p.sendout_sc, d_pal.palawan_sendout_sc), 0))             AS total_sendout_sc,
+                           SUM(COALESCE(COALESCE(p.payout_capital, d_pal.palawan_payout_principal), 0))         AS total_payout_capital,
+                           SUM(COALESCE(COALESCE(p.payout_commission, d_pal.palawan_payout_commission), 0))      AS total_payout_commission,
+                           SUM(COALESCE(COALESCE(p.payout_sc, d_pal.palawan_payout_sc), 0))              AS total_payout_sc,
+                           SUM(COALESCE(COALESCE(p.international_commission, d_pal.palawan_international_commission), 0)) AS total_international_commission,
+                           SUM(COALESCE(COALESCE(p.skid, d_pal.palawan_suki_discounts), 0))                   AS total_skid,
+                           SUM(COALESCE(COALESCE(p.skir, d_pal.palawan_suki_rebates), 0))                   AS total_skir,
+                           SUM(COALESCE(COALESCE(p.cancellation, d_pal.palawan_cancel), 0))           AS total_cancellation,
+                           SUM(COALESCE(COALESCE(p.inc, d_pal.palawan_pay_out_incentives), 0))                    AS total_inc"""
             _pal_join = (f"LEFT JOIN payable_tbl_brand_a p "
                          f"ON dr.corporation COLLATE utf8mb4_general_ci = p.corporation COLLATE utf8mb4_general_ci "
                          f"AND dr.branch COLLATE utf8mb4_general_ci = p.branch COLLATE utf8mb4_general_ci "
-                         f"AND dr.date = p.date")
+                         f"AND dr.date = p.date "
+                         f"LEFT JOIN {self.daily_table} d_pal "
+                         f"ON dr.corporation COLLATE utf8mb4_general_ci = d_pal.corporation COLLATE utf8mb4_general_ci "
+                         f"AND dr.branch COLLATE utf8mb4_general_ci = d_pal.branch COLLATE utf8mb4_general_ci "
+                         f"AND dr.date = d_pal.date "
+                         f"AND p.id IS NULL")
             if reg_filter == "registered":
                 result = db_manager.execute_query(f"""
                     SELECT {_pal_select}
