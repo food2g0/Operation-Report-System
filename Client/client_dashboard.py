@@ -93,10 +93,17 @@ import math
 # ════════════════════════════════════════════════════════════════════════════════
 
 # Whitelist of allowed table names to prevent SQL injection
+# ⚠️ IMPORTANT: Keep this list up-to-date with all tables used in SQL queries
 ALLOWED_TABLES = {
-    "daily_reports",
-    "daily_reports_brand_a",
-    "daily_reports_brand_b",
+    # Daily reporting tables
+    "daily_reports",                # Brand B
+    "daily_reports_brand_a",        # Brand A
+
+    # Payable/Financial tables
+    "payable_tbl_brand_a",          # Payable records
+
+    # Cash flow tables
+    "cash_float_tbl",               # Cash float tracking
 }
 
 def validate_table_name(table_name):
