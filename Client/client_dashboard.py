@@ -3385,10 +3385,39 @@ class ClientDashboard(QWidget):
                     if v != 0 or k not in all_vals:
                         all_vals[k] = v
 
+                # FIX #12: Calculate aggregate palawan columns for report generation
+                # The report queries for palawan_send_out, palawan_sc, palawan_pay_out, etc.
+                # but we save breakdown columns (so_principal, so_sc, so_commission).
+                # Calculate and save the aggregate columns the report expects.
+                all_vals['palawan_send_out'] = (
+                    all_vals.get('palawan_sendout_principal', 0) or 0
+                )
+                all_vals['palawan_sc'] = (
+                    all_vals.get('palawan_sendout_sc', 0) or 0
+                )
+                all_vals['palawan_pay_out'] = (
+                    all_vals.get('palawan_payout_principal', 0) or 0
+                )
+                all_vals['palawan_pay_out_incentives'] = (
+                    all_vals.get('palawan_pay_out_incentives', 0) or 0
+                )
+                all_vals['palawan_send_out_lotes'] = int(
+                    all_vals.get('palawan_sendout_lotes_total', 0) or 0
+                )
+                all_vals['palawan_sc_lotes'] = int(
+                    all_vals.get('palawan_sendout_lotes_total', 0) or 0
+                )
+                all_vals['palawan_pay_out_lotes'] = int(
+                    all_vals.get('palawan_payout_lotes_total', 0) or 0
+                )
+                all_vals['palawan_pay_out_incentives_lotes'] = int(
+                    all_vals.get('palawan_pay_out_incentives_lotes', 0) or 0
+                )
+
                 if hasattr(cf_tab, 'selected_bank_account') and cf_tab.selected_bank_account:
                     all_vals['fund_transfer_bank_account'] = cf_tab.selected_bank_account
-                
-   
+
+
                 # CRITICAL FIX #3: Safely serialize JSON with size limits
                 if hasattr(self, '_ft_ho_breakdowns'):
                     bd = self._ft_ho_breakdowns.get(brand_full)
