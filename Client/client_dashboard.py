@@ -3286,18 +3286,26 @@ class ClientDashboard(QWidget):
             int_commission = float(palawan_data.get('int_commission', 0) or 0)
             int_total = float(palawan_data.get('int_total', 0) or 0)
 
+            # Extract adjustment values (FIX #14: Include adjustments)
+            # Map palawan adjustment columns to payable table abbreviated names
+            inc = float(palawan_data.get('palawan_pay_out_incentives', 0) or 0)  # inc in payable table
+            skid = float(palawan_data.get('palawan_suki_discounts', 0) or 0)  # skid in payable table
+            skir = float(palawan_data.get('palawan_suki_rebates', 0) or 0)  # skir in payable table
+            cancellation = float(palawan_data.get('palawan_cancel', 0) or 0)  # cancellation in payable table
+
             # Insert or update payable_tbl_brand_a with palawan data
             # Only insert if there's actual palawan data to save
             if any([so_principal, so_sc, so_commission, po_principal, po_sc, po_commission,
-                    int_principal, int_sc, int_commission]):
+                    int_principal, int_sc, int_commission, inc, skid, skir, cancellation]):
 
                 self.db_manager.execute_query(
                     """INSERT INTO payable_tbl_brand_a
                        (corporation, branch, date,
                         sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
                         payout_lotes, payout_capital, payout_sc, payout_commission, payout_total,
-                        international_lotes, international_capital, international_sc, international_commission, international_total)
-                       VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s)
+                        international_lotes, international_capital, international_sc, international_commission, international_total,
+                        inc, skid, skir, cancellation)
+                       VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s)
                        ON DUPLICATE KEY UPDATE
                         sendout_lotes=VALUES(sendout_lotes),
                         sendout_capital=VALUES(sendout_capital),
@@ -3314,6 +3322,10 @@ class ClientDashboard(QWidget):
                         international_sc=VALUES(international_sc),
                         international_commission=VALUES(international_commission),
                         international_total=VALUES(international_total),
+                        inc=VALUES(inc),
+                        skid=VALUES(skid),
+                        skir=VALUES(skir),
+                        cancellation=VALUES(cancellation),
                         updated_at=CURRENT_TIMESTAMP
                     """,
                     (
@@ -3321,9 +3333,10 @@ class ClientDashboard(QWidget):
                         so_lotes, so_principal, so_sc, so_commission, so_total,
                         po_lotes, po_principal, po_sc, po_commission, po_total,
                         int_lotes, int_principal, int_sc, int_commission, int_total,
+                        inc, skid, skir, cancellation,
                     )
                 )
-                logger.info(f"Saved palawan data to payable_tbl_brand_a for {self.branch} on {date_str}")
+                logger.info(f"Saved palawan data (including adjustments) to payable_tbl_brand_a for {self.branch} on {date_str}")
         except Exception as e:
             logger.warning(f"Could not save palawan to payable table: {e}")
 
