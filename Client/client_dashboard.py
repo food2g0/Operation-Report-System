@@ -3294,11 +3294,16 @@ class ClientDashboard(QWidget):
             cancellation = float(palawan_data.get('palawan_cancel', 0) or 0)  # cancellation in payable table
 
             # Insert or update payable_tbl_brand_a with palawan data
-            # Only insert if there's actual palawan data to save
-            if any([so_principal, so_sc, so_commission, po_principal, po_sc, po_commission,
-                    int_principal, int_sc, int_commission, inc, skid, skir, cancellation]):
+            # Only insert if there's actual palawan data to save (including lotes)
+            has_data = any([so_lotes, so_principal, so_sc, so_commission,
+                            po_lotes, po_principal, po_sc, po_commission,
+                            int_lotes, int_principal, int_sc, int_commission,
+                            inc, skid, skir, cancellation])
 
-                self.db_manager.execute_query(
+            if has_data:
+                logger.debug(f"Saving palawan data: SO={so_principal}, PO={po_principal}, INT={int_principal}, Adj={inc}/{skid}/{skir}/{cancellation}")
+
+                result = self.db_manager.execute_query(
                     """INSERT INTO payable_tbl_brand_a
                        (corporation, branch, date,
                         sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
@@ -3336,7 +3341,9 @@ class ClientDashboard(QWidget):
                         inc, skid, skir, cancellation,
                     )
                 )
-                logger.info(f"Saved palawan data (including adjustments) to payable_tbl_brand_a for {self.branch} on {date_str}")
+                logger.info(f"FIX #13: Saved palawan data to payable_tbl_brand_a for {self.branch} on {date_str} (result: {result})")
+            else:
+                logger.info(f"FIX #13: No palawan data to save for {self.branch} on {date_str} (all values are zero)")
         except Exception as e:
             logger.warning(f"Could not save palawan to payable table: {e}")
 
@@ -3712,6 +3719,7 @@ class ClientDashboard(QWidget):
                         # when the report is posted successfully
                         try:
                             self._save_palawan_to_payable(sd, brand_full, pal)
+                            logger.info(f"FIX #13: Palawan data save completed for {self.branch} on {sd}")
                         except Exception as payable_err:
                             logger.warning(f"Could not save palawan to payable table: {payable_err}")
                             # Non-critical error - don't fail the entire post operation
