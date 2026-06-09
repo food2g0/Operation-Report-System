@@ -131,6 +131,12 @@ class LotesInput(QSpinBox):
                 outline: none;
             }
         """)
+        # Disable mouse wheel to prevent accidental value changes while scrolling
+        self.setFocusPolicy(2)  # Qt.ClickFocus - only change on click, not hover
+
+    def wheelEvent(self, event):
+        """Ignore mouse wheel events to prevent accidental value changes."""
+        event.ignore()
 
     def setText(self, text):
         """Set value from text (for QLineEdit compatibility)."""
