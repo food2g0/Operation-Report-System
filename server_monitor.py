@@ -1,31 +1,3 @@
-"""
-server_monitor.py — Real-time server metrics dashboard during load tests.
-
-Monitors:
-  System  : CPU %, RAM %, Disk I/O (MB/s read/write, IOPS)
-  API     : RPS, error rate, P50/P95/P99 latency, cache hit rate
-  Database: Connections, running threads, slow queries, InnoDB buffer hit rate
-
-Two modes (auto-detected):
-  LOCAL  — run ON the Ubuntu server (full psutil + MySQL + API metrics)
-  REMOTE — run from Windows (API metrics only via /api/stats polling)
-
-Usage:
-    # On the server:
-    python server_monitor.py
-
-    # From Windows against the remote server:
-    python server_monitor.py --host http://222.127.90.218:5000
-
-    # Custom interval / log to CSV:
-    python server_monitor.py --interval 2 --log monitor_log.csv
-
-    # Stop after N seconds:
-    python server_monitor.py --duration 300
-
-Requires (server): pip install psutil pymysql rich requests
-Requires (Windows): pip install rich requests
-"""
 
 import argparse
 import collections
