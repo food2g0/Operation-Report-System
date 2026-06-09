@@ -3870,12 +3870,25 @@ class AdminDashboard(QWidget):
                         )
                         rows = db_manager.execute_query(sql, (selected_date, filter_value)) or []
                     else:
+                        # Corporation filter – use branches-first approach to include all branches
+                        if reg_filter == "registered":
+                            reg_clause_dcc = "AND b.is_registered = 1"
+                        elif reg_filter == "not_registered":
+                            reg_clause_dcc = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                        else:
+                            reg_clause_dcc = ""
+                        dcc_sel_clause = sel_clause.replace("dr.branch", "b.name AS branch", 1)
                         sql = (
-                            f"SELECT {sel_clause} FROM `{self.daily_table}` dr "
-                            "WHERE dr.corporation = %s AND dr.date = %s "
-                            "GROUP BY dr.branch ORDER BY dr.branch"
+                            f"SELECT {dcc_sel_clause} FROM branches b "
+                            f"INNER JOIN corporations c "
+                            f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                            f"LEFT JOIN `{self.daily_table}` dr "
+                            "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
+                            "AND dr.date = %s "
+                            f"WHERE c.name COLLATE utf8mb4_general_ci = %s {reg_clause_dcc} "
+                            "GROUP BY b.name ORDER BY b.name"
                         )
-                        rows = db_manager.execute_query(sql, (filter_value, selected_date)) or []
+                        rows = db_manager.execute_query(sql, (selected_date, filter_value)) or []
                 except Exception as ex:
                     ws.cell(row=8, column=1, value=f"Error loading data: {ex}")
                     return
@@ -4425,15 +4438,27 @@ class AdminDashboard(QWidget):
                         ft_rows = db_manager.execute_query(
                             sql_ft, (selected_date, filter_value)) or []
                     else:
+                        # Corporation filter – use branches-first approach to include all branches
+                        if reg_filter == "registered":
+                            reg_clause_ft = "AND b.is_registered = 1"
+                        elif reg_filter == "not_registered":
+                            reg_clause_ft = "AND (b.is_registered = 0 OR b.is_registered IS NULL)"
+                        else:
+                            reg_clause_ft = ""
+                        sel_ft_corp = sel_ft.replace("dr.branch AS branch", "b.name AS branch", 1)
+                        grp_corp    = grp.replace("dr.branch", "b.name")
                         sql_ft = (
-                            f"SELECT {sel_ft} FROM `{self.daily_table}` dr "
-                            "LEFT JOIN branches b "
+                            f"SELECT {sel_ft_corp} FROM branches b "
+                            f"INNER JOIN corporations c "
+                            f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                            f"LEFT JOIN `{self.daily_table}` dr "
                             "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
-                            f"{join_c} {join_cf} "
-                            f"WHERE dr.corporation = %s AND dr.date = %s {grp}"
+                            "AND dr.date = %s "
+                            f"{join_cf} "
+                            f"WHERE c.name COLLATE utf8mb4_general_ci = %s {reg_clause_ft} {grp_corp}"
                         )
                         ft_rows = db_manager.execute_query(
-                            sql_ft, (filter_value, selected_date)) or []
+                            sql_ft, (selected_date, filter_value)) or []
                 except Exception as ex:
                     ws['A7'] = f"Error loading fund transfer data: {ex}"
                     return
