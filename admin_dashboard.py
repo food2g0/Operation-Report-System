@@ -3432,7 +3432,7 @@ class AdminDashboard(QWidget):
                                     f"SELECT b.name AS branch, MAX(b.global_tag) AS global_tag, {', '.join(select_parts)} "
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
-                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                    f"  ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id) "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
@@ -3444,7 +3444,7 @@ class AdminDashboard(QWidget):
                                     f"SELECT b.name AS branch, MAX(b.global_tag) AS global_tag, {', '.join(select_parts)} "
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
-                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                    f"  ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id) "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
@@ -3503,7 +3503,7 @@ class AdminDashboard(QWidget):
                                     f"SELECT b.name AS branch, {', '.join(select_parts)} "
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
-                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                    f"  ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id) "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.date = %s "
@@ -3515,7 +3515,7 @@ class AdminDashboard(QWidget):
                                     f"SELECT b.name AS branch, {', '.join(select_parts)} "
                                     f"FROM branches b "
                                     f"INNER JOIN corporations c "
-                                    f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                                    f"  ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id) "
                                     f"LEFT JOIN `{table}` dr "
                                     f"  ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                                     f"  AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci "
@@ -3881,7 +3881,7 @@ class AdminDashboard(QWidget):
                         sql = (
                             f"SELECT {dcc_sel_clause} FROM branches b "
                             f"INNER JOIN corporations c "
-                            f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                            f"  ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id) "
                             f"LEFT JOIN `{self.daily_table}` dr "
                             "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                             "AND dr.date = %s "
@@ -4409,7 +4409,7 @@ class AdminDashboard(QWidget):
                     f"{_cf_select}"
                 )
                 join_c  = ("LEFT JOIN corporations c "
-                           "ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)")
+                           "ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id)")
                 join_cf = ("" if _is_brand_b else
                            "LEFT JOIN cash_float_tbl cf "
                            "ON cf.branch COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
@@ -4450,7 +4450,7 @@ class AdminDashboard(QWidget):
                         sql_ft = (
                             f"SELECT {sel_ft_corp} FROM branches b "
                             f"INNER JOIN corporations c "
-                            f"  ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id) "
+                            f"  ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id) "
                             f"LEFT JOIN `{self.daily_table}` dr "
                             "ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci "
                             "AND dr.date = %s "
@@ -4773,7 +4773,7 @@ class AdminDashboard(QWidget):
                                        COALESCE(dr.fund_transfer_to_branch_dest, '')     AS ct_branch_name
                                 FROM branches b
                                 INNER JOIN corporations c
-                                    ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                    ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id)
                                     AND c.name = %s
                                 LEFT JOIN `{self.daily_table}` dr
                                     ON b.name COLLATE utf8mb4_general_ci
@@ -4979,7 +4979,7 @@ class AdminDashboard(QWidget):
                                        SUM(COALESCE(p.inc, 0))                    AS total_inc
                                 FROM {payable_tbl} p
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                                INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                INNER JOIN corporations c ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id)
                                                           AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                                 WHERE b.os_name = %s AND p.date = %s {reg_clause_payable}
                             """, (filter_value, selected_date))
@@ -4998,7 +4998,7 @@ class AdminDashboard(QWidget):
                                        SUM(COALESCE(p.inc, 0))                    AS total_inc
                                 FROM {payable_tbl} p
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                                INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                INNER JOIN corporations c ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id)
                                                           AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                                 WHERE b.global_tag = 'GLOBAL' AND p.date = %s {reg_clause_payable}
                             """, (selected_date,))
@@ -5017,7 +5017,7 @@ class AdminDashboard(QWidget):
                                        SUM(COALESCE(p.inc, 0))                    AS total_inc
                                 FROM {payable_tbl} p
                                 INNER JOIN branches b ON p.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                                INNER JOIN corporations c ON c.id = COALESCE(b.sub_corporation_id, b.corporation_id)
+                                INNER JOIN corporations c ON (c.id = b.corporation_id OR c.id = b.sub_corporation_id)
                                                           AND p.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                                 WHERE p.corporation = %s AND p.date = %s {reg_clause_payable}
                             """, (filter_value, selected_date))
