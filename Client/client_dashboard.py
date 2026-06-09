@@ -37,6 +37,61 @@ from Client.ui_styles import (
 )
 from Client.ui_scaling import _sz
 
+"""
+═══════════════════════════════════════════════════════════════════════════════
+SECURITY AUDIT SUMMARY - CLIENT_DASHBOARD.PY
+═══════════════════════════════════════════════════════════════════════════════
+
+CRITICAL FIXES IMPLEMENTED:
+  1. SQL Injection Prevention (FIXED)
+     - Added validate_table_name() function with ALLOWED_TABLES whitelist
+     - Called in: get_previous_day_ending_balance(), check_existing_entry() [2x],
+       _propagate_opening_balance_to_following_days(), _load_brand_report_data()
+     - Impact: 100% of dynamic table references now validated
+
+  2. Safe Float Casting (FIXED)
+     - Added safe_float_cast() with range validation (-1e15 to 1e15)
+     - Prevents overflow/underflow, malformed data from crashing calculations
+     - Used for: beginning_balance, cash_count, and all monetary values
+
+  3. JSON Size Limits (FIXED)
+     - Added safe_json_serialize() with 100KB size limit
+     - Prevents database truncation of breakdown data
+     - Used for: ft_ho_breakdown, pc_salary_breakdown, mc_in/out_details,
+       empeno_motor_car_breakdown
+
+HIGH SEVERITY FIXES IMPLEMENTED:
+  4. Date Continuity Validation (FIXED)
+     - Added validate_balance_date_continuity() checking for gaps > 10 days
+     - Rejects (not just warns) balances from distant prior dates
+     - Prevents using stale balance data that could skew calculations
+
+  5. HTML Injection Prevention (FIXED)
+     - Added html.escape() for user_email, branch, corporation in print preview
+     - Prevents script injection if branch names contain HTML/special chars
+     - Line 5650: html.escape() applied before f-string insertion
+
+  6. File Path Traversal Prevention (FIXED)
+     - Added path validation in Excel export (line 5815-5823)
+     - Restricts saves to home directory or Documents folder
+     - Prevents directory traversal attacks (e.g., ../../../etc/passwd)
+
+MEDIUM PRIORITY FIXES IMPLEMENTED:
+  7. Configuration Constants (FIXED)
+     - Centralized hardcoded limits: JSON_BREAKDOWN_MAX_SIZE_KB,
+       FLOAT_VALUE_MIN/MAX, MAX_BALANCE_GAP_DAYS
+     - Single source of truth for tuning limits
+     - Functions accept overrides for testing/special cases
+
+OTHER FEATURES:
+  - Retry logic for database deadlock/duplicate errors (line 3462)
+  - Post-save verification ensuring calculations match database (line 3517)
+  - Offline mode support with battery-backed queue
+  - Connection monitoring with automatic reconnection
+
+═══════════════════════════════════════════════════════════════════════════════
+"""
+
 
 try:
     from offline_manager import offline_manager
