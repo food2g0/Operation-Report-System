@@ -90,6 +90,21 @@ import math
 
 
 # ════════════════════════════════════════════════════════════════════════════════
+# CONFIGURATION CONSTANTS
+# ════════════════════════════════════════════════════════════════════════════════
+
+# MEDIUM FIX #11: Centralized size limit configuration
+JSON_BREAKDOWN_MAX_SIZE_KB = 100
+
+# MEDIUM FIX #11: Centralized float value limit configuration
+FLOAT_VALUE_MAX = 1e15
+FLOAT_VALUE_MIN = -1e15
+
+# MEDIUM FIX #11: Date continuity tolerance (max gap in days before requiring confirmation)
+MAX_BALANCE_GAP_DAYS = 10
+
+
+# ════════════════════════════════════════════════════════════════════════════════
 # SECURITY & SAFETY HELPER FUNCTIONS (Critical & High Severity Fixes)
 # ════════════════════════════════════════════════════════════════════════════════
 
@@ -114,8 +129,10 @@ def validate_table_name(table_name):
     return table_name
 
 
-def safe_json_serialize(data, max_size_kb=100, field_name="data"):
+def safe_json_serialize(data, max_size_kb=None, field_name="data"):
     """CRITICAL FIX #3: Serialize JSON with size limits to prevent truncation."""
+    if max_size_kb is None:
+        max_size_kb = JSON_BREAKDOWN_MAX_SIZE_KB
     try:
         json_str = json.dumps(data)
         size_kb = len(json_str.encode('utf-8')) / 1024
@@ -128,16 +145,20 @@ def safe_json_serialize(data, max_size_kb=100, field_name="data"):
         raise
 
 
-def safe_float_cast(value, field_name="value", min_val=None, max_val=1e15):
+def safe_float_cast(value, field_name="value", min_val=None, max_val=None):
     """CRITICAL FIX #2: Safely cast to float with validation."""
+    if min_val is None:
+        min_val = FLOAT_VALUE_MIN
+    if max_val is None:
+        max_val = FLOAT_VALUE_MAX
     try:
         if value is None:
             return None
         val = float(value)
 
         # Sanity check for reasonable range
-        if val < (min_val or -1e15) or val > max_val:
-            logger.error(f"{field_name} out of range: {val} (expected {min_val or '-inf'} to {max_val})")
+        if val < min_val or val > max_val:
+            logger.error(f"{field_name} out of range: {val} (expected {min_val} to {max_val})")
             return None
         return val
     except (ValueError, TypeError) as e:
@@ -145,13 +166,15 @@ def safe_float_cast(value, field_name="value", min_val=None, max_val=1e15):
         return None
 
 
-def validate_balance_date_continuity(current_date, returned_date):
+def validate_balance_date_continuity(current_date, returned_date, max_gap_days=None):
     """HIGH FIX #8: Validate that returned date is reasonably close to current date."""
+    if max_gap_days is None:
+        max_gap_days = MAX_BALANCE_GAP_DAYS
     if returned_date is None:
         return True  # OK if no prior balance
 
     gap_days = (current_date - returned_date).days
-    if gap_days > 10:
+    if gap_days > max_gap_days:
         logger.warning(f"Large gap in balance history: {gap_days} days from {returned_date} to {current_date}")
         return False  # Caller should ask for confirmation
     return True
