@@ -3389,6 +3389,9 @@ class ClientDashboard(QWidget):
                 # The report queries for palawan_send_out, palawan_sc, palawan_pay_out, etc.
                 # but we save breakdown columns (so_principal, so_sc, so_commission).
                 # Calculate and save the aggregate columns the report expects.
+                so_lotes = safe_float_cast(all_vals.get('so_lotes', 0)) or 0
+                po_lotes = safe_float_cast(all_vals.get('po_lotes', 0)) or 0
+
                 all_vals['palawan_send_out'] = (
                     all_vals.get('palawan_sendout_principal', 0) or 0
                 )
@@ -3401,18 +3404,12 @@ class ClientDashboard(QWidget):
                 all_vals['palawan_pay_out_incentives'] = (
                     all_vals.get('palawan_pay_out_incentives', 0) or 0
                 )
-                all_vals['palawan_send_out_lotes'] = int(
-                    all_vals.get('palawan_sendout_lotes_total', 0) or 0
-                )
-                all_vals['palawan_sc_lotes'] = int(
-                    all_vals.get('palawan_sendout_lotes_total', 0) or 0
-                )
-                all_vals['palawan_pay_out_lotes'] = int(
-                    all_vals.get('palawan_payout_lotes_total', 0) or 0
-                )
-                all_vals['palawan_pay_out_incentives_lotes'] = int(
-                    all_vals.get('palawan_pay_out_incentives_lotes', 0) or 0
-                )
+                # Lotes: Send-Out section and SC use the same lotes count (SC is part of Send-Out)
+                # Pay-Out section uses its own lotes count
+                all_vals['palawan_send_out_lotes'] = int(so_lotes)
+                all_vals['palawan_sc_lotes'] = int(so_lotes)  # SC is part of Send-Out section
+                all_vals['palawan_pay_out_lotes'] = int(po_lotes)
+                all_vals['palawan_pay_out_incentives_lotes'] = 0  # No separate lotes for incentives
 
                 if hasattr(cf_tab, 'selected_bank_account') and cf_tab.selected_bank_account:
                     all_vals['fund_transfer_bank_account'] = cf_tab.selected_bank_account
