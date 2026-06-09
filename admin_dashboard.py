@@ -3533,8 +3533,10 @@ class AdminDashboard(QWidget):
                                 f"GROUP BY dr.branch ORDER BY dr.branch"
                             )
                             # sql_params already set from earlier (line 3367 or 3370)
-                    logger.debug(f"Report sheet: {ws.title} | Table: {table} | Filter: {filter_type}={filter_value if filter_type=='corporation' else filter_value}")
-                    logger.debug(f"Query: {sql[:300]}... | Params: {sql_params}")
+                    logger.debug(f"Report sheet: {ws.title} | Table: {table} | Filter: {filter_type}={filter_value}")
+                    logger.debug(f"  Reg Filter: {reg_filter} | Category: {category_filter} | Use Branch Join: {use_branch_join}")
+                    logger.debug(f"Query: {sql[:400]}...")
+                    logger.debug(f"Params: {sql_params}")
                     results = db_manager.execute_query(sql, sql_params) or []
                     logger.debug(f"Results: {len(results)} rows returned for {ws.title}")
 
