@@ -3537,10 +3537,34 @@ class AdminDashboard(QWidget):
                                 f"GROUP BY dr.branch ORDER BY dr.branch"
                             )
                             # sql_params already set from earlier (line 3367 or 3370)
-                    logger.debug(f"Report query: {sql[:200]}... | Params: {sql_params}")
+                    logger.debug(f"Report sheet: {ws.title} | Table: {table} | Filter: {filter_type}={filter_value if filter_type=='corporation' else filter_value}")
+                    logger.debug(f"Query: {sql[:300]}... | Params: {sql_params}")
                     results = db_manager.execute_query(sql, sql_params) or []
+                    logger.debug(f"Results: {len(results)} rows returned for {ws.title}")
+
+                    # If no results for corporation filter, debug why
+                    if not results and filter_type == "corporation":
+                        logger.warning(f"No branches found for corporation '{filter_value}'. Debugging...")
+                        corp_check = db_manager.execute_query(
+                            "SELECT COUNT(*) as count FROM corporations WHERE name COLLATE utf8mb4_general_ci = %s",
+                            (filter_value,)
+                        )
+                        if corp_check and corp_check[0]['count'] > 0:
+                            logger.warning(f"  → Corporation '{filter_value}' exists")
+                            branch_check = db_manager.execute_query(
+                                "SELECT COUNT(*) as count FROM branches b WHERE "
+                                "COALESCE(b.sub_corporation_id, b.corporation_id) = "
+                                "(SELECT id FROM corporations WHERE name COLLATE utf8mb4_general_ci = %s)",
+                                (filter_value,)
+                            )
+                            if branch_check:
+                                logger.warning(f"  → {branch_check[0]['count']} branches found for this corporation")
+                        else:
+                            logger.warning(f"  → Corporation '{filter_value}' NOT FOUND in database")
                 except Exception as ex:
-                    logger.error(f"Report query failed: {ex} | SQL: {sql} | Params: {sql_params}")
+                    logger.error(f"Report query failed for sheet {ws.title}: {ex}")
+                    logger.error(f"SQL: {sql}")
+                    logger.error(f"Params: {sql_params}")
                     ws['A7'] = f"Error loading data: {ex}"
                     return
 
