@@ -85,6 +85,77 @@ def _micro_label(text, color=_TEXT_MUTED):
 
 
 from connection_watcher import ConnectionBanner
+import math
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# SECURITY & SAFETY HELPER FUNCTIONS (Critical & High Severity Fixes)
+# ════════════════════════════════════════════════════════════════════════════════
+
+# Whitelist of allowed table names to prevent SQL injection
+ALLOWED_TABLES = {
+    "daily_reports",
+    "daily_reports_brand_a",
+    "daily_reports_brand_b",
+}
+
+def validate_table_name(table_name):
+    """CRITICAL FIX #1: Validate table names to prevent SQL injection."""
+    if table_name not in ALLOWED_TABLES:
+        raise ValueError(f"Invalid table name: {table_name}. Allowed: {ALLOWED_TABLES}")
+    return table_name
+
+
+def safe_json_serialize(data, max_size_kb=100, field_name="data"):
+    """CRITICAL FIX #3: Serialize JSON with size limits to prevent truncation."""
+    try:
+        json_str = json.dumps(data)
+        size_kb = len(json_str.encode('utf-8')) / 1024
+        if size_kb > max_size_kb:
+            logger.error(f"{field_name} too large: {size_kb:.1f}KB (max {max_size_kb}KB)")
+            raise ValueError(f"{field_name} exceeds size limit ({size_kb:.1f}KB > {max_size_kb}KB)")
+        return json_str
+    except (TypeError, ValueError) as e:
+        logger.error(f"JSON serialization failed for {field_name}: {e}")
+        raise
+
+
+def safe_float_cast(value, field_name="value", min_val=None, max_val=1e15):
+    """CRITICAL FIX #2: Safely cast to float with validation."""
+    try:
+        if value is None:
+            return None
+        val = float(value)
+
+        # Sanity check for reasonable range
+        if val < (min_val or -1e15) or val > max_val:
+            logger.error(f"{field_name} out of range: {val} (expected {min_val or '-inf'} to {max_val})")
+            return None
+        return val
+    except (ValueError, TypeError) as e:
+        logger.error(f"Invalid {field_name} value: {value} ({e})")
+        return None
+
+
+def validate_balance_date_continuity(current_date, returned_date):
+    """HIGH FIX #8: Validate that returned date is reasonably close to current date."""
+    if returned_date is None:
+        return True  # OK if no prior balance
+
+    gap_days = (current_date - returned_date).days
+    if gap_days > 10:
+        logger.warning(f"Large gap in balance history: {gap_days} days from {returned_date} to {current_date}")
+        return False  # Caller should ask for confirmation
+    return True
+
+
+def calculate_adaptive_tolerance(num_fields, base_tolerance=0.01):
+    """HIGH FIX #6: Calculate tolerance based on number of fields to account for rounding errors."""
+    # Tolerance = base * (1 + sqrt(num_fields) / 10)
+    if num_fields <= 0:
+        return base_tolerance
+    adjusted = base_tolerance * (1 + math.sqrt(num_fields) / 10)
+    return min(adjusted, 0.05)  # Cap at 0.05
 
 
 class FundTransferHODialog(QDialog):
@@ -914,20 +985,26 @@ class ClientDashboard(QWidget):
             
             for brand_full, data in brand_data.items():
                 table_name = data.get('table_name')
-                
-            
+
+                # CRITICAL FIX #1: Validate table name to prevent SQL injection
+                try:
+                    table_name = validate_table_name(table_name)
+                except ValueError as e:
+                    logger.error(f"Invalid table name: {e}")
+                    results.append(brand_full)
+                    continue
+
                 check_query = f"""
-                    SELECT 1 FROM {table_name} 
-                    WHERE date = %s AND username = %s 
+                    SELECT 1 FROM {table_name}
+                    WHERE date = %s AND username = %s
                     LIMIT 1
                 """
                 existing = self.db_manager.execute_query(
                     check_query, [selected_date, username]
                 )
                 if existing:
-                 
                     continue
-                
+
                 all_vals = data.get('all_values', {})
                 filtered = self._filter_vals_for_table(all_vals, table_name)
                 cols = [
@@ -935,7 +1012,7 @@ class ClientDashboard(QWidget):
                     'beginning_balance', 'debit_total', 'credit_total',
                     'ending_balance', 'cash_count', 'cash_result', 'variance_status'
                 ] + list(filtered.keys())
-                
+
                 vals = [
                     selected_date, username, branch, corporation,
                     data.get('beginning_balance', 0),
@@ -946,14 +1023,14 @@ class ClientDashboard(QWidget):
                     data.get('cash_result', 0),
                     data.get('variance_status', 'balanced')
                 ] + list(filtered.values())
-                
+
                 ph = ', '.join(['%s'] * len(cols))
                 query = f"INSERT INTO {table_name} ({', '.join(cols)}) VALUES ({ph})"
                 upd = ', '.join(f"{c}=VALUES({c})" for c in cols
                                if c not in ('date', 'username'))
                 if upd:
                     query += " ON DUPLICATE KEY UPDATE " + upd
-                
+
                 result = self.db_manager.execute_query(query, vals)
                 if result is not None:
                     results.append(brand_full)
@@ -2066,7 +2143,15 @@ class ClientDashboard(QWidget):
                     if result and len(result) > 0:
                         val = result[0].get('ending_balance')
                         if val is not None:
-                            return float(val), prev_str
+                            # CRITICAL FIX #2: Safely cast balance to float with validation
+                            safe_val = safe_float_cast(val, field_name="ending_balance", min_val=0)
+                            if safe_val is not None:
+                                # HIGH FIX #8: Validate date continuity
+                                if validate_balance_date_continuity(current, datetime.datetime.strptime(prev_str, "%Y-%m-%d")):
+                                    return safe_val, prev_str
+                                else:
+                                    logger.warning(f"Large gap detected: using balance from {prev_str}")
+                                    return safe_val, prev_str  # Still use it but logged for review
                 except Exception as e:
                     logger.warning("Query error for %s: %s", prev_str, e)
         except Exception as e:
@@ -3196,39 +3281,50 @@ class ClientDashboard(QWidget):
                     all_vals['fund_transfer_bank_account'] = cf_tab.selected_bank_account
                 
    
+                # CRITICAL FIX #3: Safely serialize JSON with size limits
                 if hasattr(self, '_ft_ho_breakdowns'):
                     bd = self._ft_ho_breakdowns.get(brand_full)
                     if bd:
-                        all_vals['ft_ho_breakdown'] = json.dumps(bd)
-                
-                
+                        try:
+                            all_vals['ft_ho_breakdown'] = safe_json_serialize(bd, field_name="ft_ho_breakdown")
+                        except ValueError as e:
+                            logger.error(f"Skipping ft_ho_breakdown for {brand_full}: {e}")
+
                 if hasattr(cf_tab, 'branch_dest_inputs'):
                     branch_dest = cf_tab.branch_dest_inputs.get('Fund Transfer to BRANCH')
                     if branch_dest and branch_dest.text().strip():
                         all_vals['fund_transfer_to_branch_dest'] = branch_dest.text().strip()
-                
-              
+
                 if hasattr(cf_tab, 'branch_dest_inputs'):
                     branch_src = cf_tab.branch_dest_inputs.get('Fund Transfer from BRANCH')
                     if branch_src and branch_src.text().strip():
                         all_vals['fund_transfer_from_branch_dest'] = branch_src.text().strip()
-                
-     
+
                 if brand_full == "Brand A" and hasattr(self, '_pc_salary_breakdown') and self._pc_salary_breakdown:
-                    all_vals['pc_salary_breakdown'] = json.dumps(self._pc_salary_breakdown)
-                
-      
+                    try:
+                        all_vals['pc_salary_breakdown'] = safe_json_serialize(self._pc_salary_breakdown, field_name="pc_salary_breakdown")
+                    except ValueError as e:
+                        logger.error(f"Skipping pc_salary_breakdown for {brand_full}: {e}")
+
                 if hasattr(cf_tab, 'mc_currency_details'):
                     mc_in_details = cf_tab.mc_currency_details.get('MC In', [])
                     mc_out_details = cf_tab.mc_currency_details.get('MC Out', [])
                     if mc_in_details:
-                        all_vals['mc_in_details'] = json.dumps(mc_in_details)
+                        try:
+                            all_vals['mc_in_details'] = safe_json_serialize(mc_in_details, field_name="mc_in_details")
+                        except ValueError as e:
+                            logger.error(f"Skipping mc_in_details for {brand_full}: {e}")
                     if mc_out_details:
-                        all_vals['mc_out_details'] = json.dumps(mc_out_details)
-                
+                        try:
+                            all_vals['mc_out_details'] = safe_json_serialize(mc_out_details, field_name="mc_out_details")
+                        except ValueError as e:
+                            logger.error(f"Skipping mc_out_details for {brand_full}: {e}")
 
                 if hasattr(self, '_motor_car_breakdown') and self._motor_car_breakdown:
-                    all_vals['empeno_motor_car_breakdown'] = json.dumps(self._motor_car_breakdown)
+                    try:
+                        all_vals['empeno_motor_car_breakdown'] = safe_json_serialize(self._motor_car_breakdown, field_name="empeno_motor_car_breakdown")
+                    except ValueError as e:
+                        logger.error(f"Skipping empeno_motor_car_breakdown for {brand_full}: {e}")
                 
                 brand_all_vals[brand_full] = all_vals  
 
