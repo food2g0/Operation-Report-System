@@ -2875,6 +2875,7 @@ class ClientDashboard(QWidget):
     def _restore_palawan_payable(self, date_str):
         """Load Palawan adjustment fields from payable_tbl_brand_a (new) or daily_reports (legacy).
         Fallback: Try payable_tbl_brand_a first, then fall back to daily_reports tables if empty."""
+        print(f"🔵 DEBUG: _restore_palawan_payable called for {date_str}, branch={self.branch}, corp={self.corporation}")
         _ADJ_MAPPING = {
             'palawan_suki_discounts': 'skid',
             'palawan_suki_rebates': 'skir',
@@ -2951,12 +2952,14 @@ class ClientDashboard(QWidget):
 
         if mapped:
             try:
-                logger.info(f"[_restore_palawan_payable] Loading adjustments: {mapped}")
+                print(f"🔵 DEBUG: Loading adjustments into palawan_tab: {mapped}")
                 self.palawan_tab.load_data(mapped)
+                print(f"🔵 DEBUG: load_data() called successfully")
             except Exception as e:
+                print(f"❌ ERROR in load_data: {e}")
                 logger.error("[_restore_palawan_payable] load_data error: %s", e)
         else:
-            logger.info(f"[_restore_palawan_payable] No adjustments found for {date_str} {self.branch} {self.corporation}")
+            print(f"⚠️  WARNING: No adjustments found for {date_str} {self.branch} {self.corporation}")
 
     def _set_status(self, text, color, bold=False):
         self._set_status_brand("A", text, color, bold)
@@ -3899,7 +3902,8 @@ class ClientDashboard(QWidget):
             
             
             pal = self.palawan_tab.get_data()
-            logger.info(f"🔵 Collected palawan data from UI: {pal}")
+            print(f"🔵 DEBUG: Collected palawan data from UI: {pal}")
+            print(f"   - Adjustments: inc={pal.get('palawan_pay_out_incentives', 0)}, skid={pal.get('palawan_suki_discounts', 0)}, skir={pal.get('palawan_suki_rebates', 0)}, cancel={pal.get('palawan_cancel', 0)}")
             brand_data = {}
             # SKID/SKIR/CANCEL/INC will be injected after brand_data is built
             for brand_full, cf_tab, bb_input, cc_input, table_name in [
