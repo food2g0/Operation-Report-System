@@ -28,6 +28,13 @@ except ImportError:
     CURRENT_VERSION = "1.0.0"
     GITHUB_REPO = "food2g0/Operation-Report-System"
 
+# Import paths configuration
+try:
+    from paths import UPDATE_STATE_FILE
+except ImportError:
+    # Fallback if paths.py not available
+    UPDATE_STATE_FILE = None
+
 CHECK_UPDATE_ON_STARTUP = True
 UPDATE_CHECK_INTERVAL = 86400  # 24 hours in seconds
 
@@ -157,12 +164,17 @@ def _get_version_file_path():
     (writing it before the installer runs) and the new version (reading it on
     first launch) resolve the exact same path.
 
-    Storing next to the exe in Program Files would fail silently because
-    Program Files requires admin rights — the write would be blocked and the
-    "Updated successfully" popup would never appear.
+    Storing in AppData allows write access without admin rights.
+    File location: %APPDATA%\OperationReportSystem\update\ors_update_state.json
     """
+    # Use paths.py configuration if available, otherwise fallback
+    if UPDATE_STATE_FILE:
+        UPDATE_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        return str(UPDATE_STATE_FILE)
+
+    # Fallback (if paths.py not available)
     appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
-    base = os.path.join(appdata, 'OperationReportSystem')
+    base = os.path.join(appdata, 'OperationReportSystem', 'update')
     os.makedirs(base, exist_ok=True)
     return os.path.join(base, 'ors_update_state.json')
 
