@@ -96,7 +96,6 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludedimports=[],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=None,
@@ -105,6 +104,8 @@ a = Analysis(
 # ========================================================================
 # BUILD CONFIGURATION
 # ========================================================================
+
+cipher = None  # No encryption for open source project
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=cipher)
 
