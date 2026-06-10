@@ -2874,6 +2874,8 @@ class ClientDashboard(QWidget):
                 if adj_data:
                     data.update(adj_data)  # Merge adjustments into main data
                 self.palawan_tab.load_data(data)
+        except Exception as e:
+            logger.error("[_restore_palawan_tab] %s", e)
 
     def _get_palawan_adjustments(self, date_str):
         """Fetch palawan adjustments from payable_tbl_brand_a or daily_reports.
@@ -2948,8 +2950,6 @@ class ClientDashboard(QWidget):
             logger.debug(f"[_get_palawan_adjustments] Brand B fallback: {e}")
 
         return mapped
-        except Exception as e:
-            logger.error("[_restore_palawan_tab] %s", e)
 
     def _restore_palawan_payable(self, date_str):
         """DEPRECATED: Adjustments are now loaded as part of _restore_palawan_tab().
