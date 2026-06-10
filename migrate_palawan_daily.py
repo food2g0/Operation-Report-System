@@ -12,6 +12,7 @@ This script:
 """
 
 from api_db_manager import db_manager
+from device_trust import get_device_fingerprint, is_device_trusted, check_operation_allowed, audit_operation
 import logging
 from datetime import datetime
 import os
@@ -303,6 +304,28 @@ if __name__ == "__main__":
         logger.info(f"DAILY PALAWAN MIGRATION STARTED at {datetime.now()}")
         logger.info("=" * 100)
 
+        # Step 0: Check device trust
+        device_info = get_device_fingerprint()
+        if not device_info:
+            logger.error("✗ CRITICAL: Could not identify device. Migration BLOCKED.")
+            logger.error("Cannot proceed without device identification.")
+            exit(1)
+
+        logger.info(f"Device: {device_info['hostname']} (User: {device_info['username']})")
+
+        # Verify device is trusted
+        allowed, reason = check_operation_allowed('MIGRATE', device_info)
+        if not allowed:
+            logger.error(f"✗ CRITICAL: {reason}")
+            logger.error("Migration BLOCKED - only trusted devices can perform migrations.")
+            logger.error(f"\nTo add this device as trusted, run:")
+            logger.error(f"  python device_trust.py add 'MyDeviceName'")
+            audit_operation('MIGRATE', device_info, 'BLOCKED', reason)
+            exit(1)
+
+        logger.info(f"✓ Device is trusted. Proceeding with migration...")
+        audit_operation('MIGRATE', device_info, 'STARTED', 'Daily migration process started')
+
         # Step 1: Migrate from daily_reports (Brand B)
         brand_b_migrated, brand_b_skipped = migrate_from_daily_reports()
 
@@ -313,7 +336,8 @@ if __name__ == "__main__":
         logger.info("\n" + "=" * 100)
         logger.info("DAILY MIGRATION SUMMARY")
         logger.info("=" * 100)
-        logger.info(f"Brand B (daily_reports):")
+        logger.info(f"Device: {device_info['hostname']} (User: {device_info['username']})")
+        logger.info(f"\nBrand B (daily_reports):")
         logger.info(f"  - Migrated & Deleted: {brand_b_migrated}")
         logger.info(f"  - Skipped (duplicates): {brand_b_skipped}")
         logger.info(f"\nBrand A (daily_reports_brand_a):")
@@ -323,7 +347,9 @@ if __name__ == "__main__":
         logger.info(f"  - Migrated & Deleted: {brand_b_migrated + brand_a_migrated}")
         logger.info(f"  - Skipped (duplicates): {brand_b_skipped + brand_a_skipped}")
         logger.info(f"Completed at {datetime.now()}")
-        logger.info("=" * 100 + "\n")
+        logger.info("=" * 100)
+        audit_operation('MIGRATE', device_info, 'COMPLETED', f"Migrated {brand_b_migrated + brand_a_migrated} records")
+        logger.info("")
 
     except Exception as e:
         logger.error(f"CRITICAL ERROR: Migration failed: {e}", exc_info=True)
