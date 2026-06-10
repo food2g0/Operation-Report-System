@@ -375,6 +375,59 @@ def _exec_rate_check(ip: str) -> None:
             )
 
 
+def _cleanup_stale_rate_limit_entries():
+    """Remove stale rate-limit entries older than 1 hour (prevents memory leak)."""
+    now = time.monotonic()
+    cutoff = now - 3600  # 1 hour
+
+    try:
+        # Clean token rate-limit entries
+        with _token_rl_lock:
+            for ip in list(_token_attempts.keys()):
+                hits = _token_attempts[ip]
+                # Remove old entries from deque
+                while hits and hits[0] < cutoff:
+                    hits.popleft()
+                # Remove empty deques
+                if not hits:
+                    del _token_attempts[ip]
+
+        # Clean exec rate-limit entries
+        with _exec_rl_lock:
+            for ip in list(_exec_hits.keys()):
+                hits = _exec_hits[ip]
+                # Remove old entries from deque
+                while hits and hits[0] < cutoff:
+                    hits.popleft()
+                # Remove empty deques and expired bans
+                if not hits:
+                    del _exec_hits[ip]
+                    _exec_banned_until.pop(ip, None)
+
+            # Also remove expired bans
+            for ip in list(_exec_banned_until.keys()):
+                if _exec_banned_until[ip] < now:
+                    del _exec_banned_until[ip]
+    except Exception as e:
+        log.error(f"Error in cleanup_stale_rate_limit_entries: {e}")
+
+
+def _cleanup_old_tasks():
+    """Remove completed tasks older than 1 hour (prevents memory leak)."""
+    now = time.monotonic()
+    cutoff = now - 3600  # 1 hour
+
+    try:
+        with _task_lock:
+            for task_id in list(_task_results.keys()):
+                task_info = _task_results[task_id]
+                finished_at = task_info.get('finished_at')
+                if finished_at and finished_at < cutoff:
+                    del _task_results[task_id]
+    except Exception as e:
+        log.error(f"Error in cleanup_old_tasks: {e}")
+
+
 # ── Bot-blocker state ─────────────────────────────────────────────────────────
 # IPs in this set are whitelisted and never blocked (loopback + internal nets).
 _BOT_WHITELIST_PREFIXES = ("127.", "::1", "10.", "172.16.", "172.17.",
@@ -541,6 +594,22 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+def _start_background_cleanup():
+    """Start background cleanup thread for memory leak prevention."""
+    def cleanup_loop():
+        while True:
+            try:
+                time.sleep(300)  # Run every 5 minutes
+                _cleanup_stale_rate_limit_entries()
+                _cleanup_old_tasks()
+            except Exception as e:
+                log.error(f"Background cleanup error: {e}")
+
+    cleanup_thread = threading.Thread(target=cleanup_loop, daemon=True, name="ors-cleanup")
+    cleanup_thread.start()
+    log.info("Background cleanup thread started (runs every 5 minutes)")
+
+
 @app.on_event("startup")
 async def _raise_thread_limiter():
     """Raise anyio's default thread pool cap (40) so 400+ concurrent sync
@@ -552,6 +621,9 @@ async def _raise_thread_limiter():
         log.info(f"anyio thread limiter set to {limiter.total_tokens}")
     except Exception as exc:
         log.warning(f"Could not raise thread limiter: {exc}")
+
+    # Start background cleanup (memory leak prevention)
+    _start_background_cleanup()
 
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
@@ -873,6 +945,8 @@ def exec_query_safe(body: ExecRequest, request: Request, _: None = Depends(_requ
 
     params = tuple(body.params) if body.params else None
 
+    # FIX: Define key outside conditional to avoid NameError
+    key = None
     if CACHE_TTL > 0 and _is_select(body.sql):
         key = _make_cache_key(body.sql, params)
         hit, cached = _cache_get(key)
@@ -880,7 +954,7 @@ def exec_query_safe(body: ExecRequest, request: Request, _: None = Depends(_requ
             return {"result": cached, "exec_error": None, "error_type": None, "error_code": None, "cached": True}
 
     result, err = _db.execute_query_with_exception(body.sql, params)
-    if CACHE_TTL > 0:
+    if CACHE_TTL > 0 and key is not None:
         if _is_select(body.sql) and not err:
             _cache_set(key, result, ttl=body.ttl)
         elif not _is_select(body.sql) and not err:

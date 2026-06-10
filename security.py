@@ -31,19 +31,25 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     """
     Verify a password against a bcrypt hash.
-    Also supports legacy plaintext comparison for migration period.
+    Supports legacy plaintext passwords for backward compatibility (logs for audit).
+
+    For security, all new passwords should be bcrypt-hashed.
     """
     if not password or not hashed:
         return False
-    
+
     try:
-        # Try bcrypt verification first
+        # Modern: bcrypt verification
         if hashed.startswith('$2b$') or hashed.startswith('$2a$'):
             return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
         else:
-            # Legacy: plaintext comparison (for existing users before migration)
-            # This allows old users to login and their password will be updated
-            return password == hashed
+            # Legacy: plaintext comparison for backward compatibility
+            # All new passwords use bcrypt; this is only for existing accounts
+            if password == hashed:
+                # Log legacy plaintext logins for security audit trail
+                logger.warning("Legacy plaintext password used - consider upgrading to bcrypt")
+                return True
+            return False
     except Exception as e:
         logger.error("Password verification error: %s", e)
         return False

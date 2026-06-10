@@ -100,14 +100,32 @@ def load_whitelist():
 
 
 def save_whitelist(whitelist):
-    """Save trusted device whitelist to file"""
+    """Save trusted device whitelist to file (atomic write prevents corruption)"""
     try:
-        with open(WHITELIST_FILE, 'w') as f:
-            json.dump(whitelist, f, indent=2)
+        import tempfile
+        # Write to temp file first
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            dir=os.path.dirname(WHITELIST_FILE),
+            delete=False,
+            suffix='.tmp'
+        ) as tmp:
+            json.dump(whitelist, tmp, indent=2)
+            tmp.flush()
+            os.fsync(tmp.fileno())  # Force to disk
+            tmp_path = tmp.name
+
+        # Atomic rename (overwrites atomically on all platforms)
+        os.replace(tmp_path, WHITELIST_FILE)
         logger.info(f"Whitelist saved with {len(whitelist['trusted_devices'])} trusted devices")
         return True
     except Exception as e:
         logger.error(f"Failed to save whitelist: {e}")
+        try:
+            if 'tmp_path' in locals():
+                os.remove(tmp_path)
+        except:
+            pass
         return False
 
 

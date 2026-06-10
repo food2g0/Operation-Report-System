@@ -42,6 +42,23 @@ class APIDbManager:
         self._session.mount("https://", adapter)
         self._session.headers.update({"Content-Type": "application/json"})
 
+    def __del__(self):
+        """Clean up HTTP session when object is garbage collected."""
+        try:
+            if self._session:
+                self._session.close()
+        except Exception:
+            pass  # Ignore errors during cleanup
+
+    def close(self):
+        """Explicitly close the HTTP session."""
+        try:
+            if self._session:
+                self._session.close()
+                self._session = None
+        except Exception:
+            pass
+
     # ── Authentication ────────────────────────────────────────────────────────
 
     def connect(self) -> bool:
