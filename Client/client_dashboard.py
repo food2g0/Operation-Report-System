@@ -2905,8 +2905,11 @@ class ClientDashboard(QWidget):
                         val_float = float(val)
                     except (TypeError, ValueError):
                         val_float = 0.0
-                    mapped[daily_col] = val_float
-                return mapped
+                    if val_float != 0:  # Only include non-zero values
+                        mapped[daily_col] = val_float
+                # Only return if we found non-zero adjustments; otherwise fall through to legacy fallback
+                if mapped:
+                    return mapped
         except Exception as e:
             logger.debug(f"[_get_palawan_adjustments] payable_tbl_brand_a query: {e}")
 
