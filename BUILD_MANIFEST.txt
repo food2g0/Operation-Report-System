@@ -1,0 +1,178 @@
+================================================================================
+CLEAN CLIENT BUILD MANIFEST
+Operation Report System - Client-Only Executable
+================================================================================
+
+✅ INCLUDE IN .EXE (Client-side code)
+================================================================================
+
+ENTRY POINT:
+- main.py
+
+CLIENT CORE:
+- login.py
+- app_logging.py
+- auto_updater.py
+- update_launcher.py
+- version.py
+- security.py
+- offline_manager.py
+- network_safety.py
+- connection_watcher.py
+- ping_monitor.py
+- config.py
+- constants.py
+
+API CLIENT (communicates with server):
+- api_db_manager.py (CRITICAL - HTTP client to server API)
+- api_client.py (if used by client)
+
+UI DASHBOARDS:
+- admin_dashboard.py
+- super_admin_dashboard.py
+- user_management_page.py
+
+CLIENT PAGES (report/data entry pages):
+- Client/ (entire directory)
+- daily_transaction_page.py
+- depo_br_page.py
+- ft_ho_page.py
+- global_other_services_page.py
+- global_payable_page.py
+- mc_page.py
+- new_renew_page.py
+- new_sanla_page.py
+- palawan_page.py
+- payable_page.py
+- report_page.py
+- review_summary_page.py
+- variance_review_page.py
+- admin_manage.py
+
+UTILITIES:
+- currency.py
+- currency_manager.py
+- date_range_widget.py
+- fund_transfer.py
+- performance_utils.py
+- widgets_util.py
+- logging_config.py
+
+PYTHON DEPENDENCIES (auto-included):
+- PyQt5
+- requests
+- python-dotenv
+- PyJWT
+- bcrypt
+- (all others needed by above files)
+
+================================================================================
+❌ EXCLUDE FROM .EXE (Server-side code)
+================================================================================
+
+SERVER/API:
+- api_server.py (FastAPI server)
+- run_api_server.py
+- db_connect_pooled.py
+- db_manager.py
+- error_tracker.py
+- secure_config.py
+- api_config.py
+
+DATABASE/MIGRATION:
+- migrate_palawan_daily.py
+- migrate_palawan_complete.py
+- backfill_palawan_to_payable.py
+- setup_database_indexes.py
+- device_trust.py
+
+TESTING/DEBUGGING:
+- load_test.py
+- locustfile.py
+- test_connection.py
+- test_corp_filter.py
+- debug_audit_single_report.py
+- debug_corp_branches.py
+- find_report_b.py
+- fix_missing_branches.py
+- inspect_daily_reports.py
+- refresh_summary.py
+- verify_api_setup.py
+- update_field_config_db.py
+- clear_all_data.py
+- analyze_credit_total.py
+
+BUILD SCRIPTS:
+- build_secure.py
+
+================================================================================
+❌ EXCLUDE FROM .EXE (Documentation & Config)
+================================================================================
+
+- PERFORMANCE_OPTIMIZATION.md
+- DEVICE_TRUST_README.md
+- PALAWAN_MIGRATION_README.md
+- CODE_REVIEW_REPORT_20260610.md
+- *.sql (SQL scripts)
+- *.bat (batch scripts)
+- *.ps1 (PowerShell scripts)
+- logs/ (directory)
+- backups/ (directory)
+
+================================================================================
+BUILD SUMMARY
+================================================================================
+
+Total Client Files: ~40 Python files
+Total Excluded: ~30+ files (server, debug, migration, docs)
+
+Resulting .EXE Size: ~50-80 MB (estimated)
+  - PyQt5: ~30 MB
+  - All client code: ~5-10 MB
+  - Dependencies: ~15-30 MB
+
+Benefits:
+✅ Clean executable - only client code
+✅ Smaller file size
+✅ Better security - no server code exposed
+✅ Faster downloads
+✅ Easier to distribute to users
+✅ Clear separation of client/server
+
+================================================================================
+HOW TO BUILD
+================================================================================
+
+Option A: PyInstaller (Recommended)
+-----------
+pyinstaller --windowed \
+  --icon=icon.ico \
+  --exclude-module api_server \
+  --exclude-module db_connect_pooled \
+  --exclude-module db_manager \
+  --exclude-module error_tracker \
+  --exclude-module migrate_palawan_daily \
+  --exclude-module device_trust \
+  --exclude-module load_test \
+  --exclude-module locustfile \
+  main.py
+
+Option B: Create .spec file for PyInstaller
+-----------
+Create pyinstaller_client.spec with hidden imports and exclude modules
+
+Option C: Manual exclusion in .spec file
+-----------
+See next section for detailed .spec file configuration
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. Determine your current build method
+2. Create build configuration to exclude server files
+3. Test build produces working executable
+4. Verify no server modules are imported
+5. Check .exe doesn't contain api_server.py code
+
+================================================================================
