@@ -15,9 +15,9 @@ Write-Host ""
 # Check if PyInstaller is installed
 try {
     $pyinstaller = Get-Command pyinstaller -ErrorAction Stop
-    Write-Host "[✓] PyInstaller found: $($pyinstaller.Source)" -ForegroundColor Green
+    Write-Host "[OK] PyInstaller found: $($pyinstaller.Source)" -ForegroundColor Green
 } catch {
-    Write-Host "[✗] ERROR: PyInstaller is not installed!" -ForegroundColor Red
+    Write-Host "[ERROR] PyInstaller is not installed!" -ForegroundColor Red
     Write-Host ""
     Write-Host "Install it with:" -ForegroundColor Yellow
     Write-Host "  pip install pyinstaller" -ForegroundColor White
@@ -27,12 +27,12 @@ try {
 
 # Check if spec file exists
 if (-not (Test-Path "build_client.spec")) {
-    Write-Host "[✗] ERROR: build_client.spec not found!" -ForegroundColor Red
+    Write-Host "[ERROR] build_client.spec not found!" -ForegroundColor Red
     Write-Host "Please create the spec file first." -ForegroundColor Yellow
     exit 1
 }
 
-Write-Host "[✓] Spec file found: build_client.spec" -ForegroundColor Green
+Write-Host "[OK] Spec file found: build_client.spec" -ForegroundColor Green
 Write-Host ""
 
 # Clean previous builds
@@ -40,12 +40,12 @@ Write-Host "Cleaning previous build artifacts..." -ForegroundColor Yellow
 
 if (Test-Path "build") {
     Remove-Item -Recurse -Force "build" -ErrorAction SilentlyContinue
-    Write-Host "  [✓] Removed ./build" -ForegroundColor Green
+    Write-Host "  [OK] Removed ./build" -ForegroundColor Green
 }
 
 if (Test-Path "dist") {
     Remove-Item -Recurse -Force "dist" -ErrorAction SilentlyContinue
-    Write-Host "  [✓] Removed ./dist" -ForegroundColor Green
+    Write-Host "  [OK] Removed ./dist" -ForegroundColor Green
 }
 
 Write-Host ""
@@ -72,7 +72,7 @@ Write-Host ""
 $exePath = "dist\OperationReportSystem.exe"
 
 if (Test-Path $exePath) {
-    Write-Host "[✓] Executable created successfully!" -ForegroundColor Green
+    Write-Host "[OK] Executable created successfully!" -ForegroundColor Green
     Write-Host ""
 
     # Get file size
@@ -84,16 +84,16 @@ if (Test-Path $exePath) {
     Write-Host ""
 
     Write-Host "WHAT'S INCLUDED:" -ForegroundColor Green
-    Write-Host "  [✓] Client UI (admin_dashboard, report_page, etc.)" -ForegroundColor Green
-    Write-Host "  [✓] API Client (api_db_manager.py)" -ForegroundColor Green
-    Write-Host "  [✓] Security (login, authentication)" -ForegroundColor Green
-    Write-Host "  [✓] All PyQt5 dependencies" -ForegroundColor Green
+    Write-Host "  [OK] Client UI (admin_dashboard, report_page, etc.)" -ForegroundColor Green
+    Write-Host "  [OK] API Client (api_db_manager.py)" -ForegroundColor Green
+    Write-Host "  [OK] Security (login, authentication)" -ForegroundColor Green
+    Write-Host "  [OK] All PyQt5 dependencies" -ForegroundColor Green
     Write-Host ""
 
     Write-Host "WHAT'S EXCLUDED:" -ForegroundColor Yellow
-    Write-Host "  [✓] api_server.py (not included)" -ForegroundColor Yellow
-    Write-Host "  [✓] Database migrations (not included)" -ForegroundColor Yellow
-    Write-Host "  [✓] Debug/testing tools (not included)" -ForegroundColor Yellow
+    Write-Host "  [OK] api_server.py (not included)" -ForegroundColor Yellow
+    Write-Host "  [OK] Database migrations (not included)" -ForegroundColor Yellow
+    Write-Host "  [OK] Debug/testing tools (not included)" -ForegroundColor Yellow
     Write-Host ""
 
     Write-Host "READY TO DEPLOY!" -ForegroundColor Green
@@ -101,7 +101,7 @@ if (Test-Path $exePath) {
     Write-Host ""
 
 } else {
-    Write-Host "[✗] ERROR: Build completed but executable not found!" -ForegroundColor Red
+    Write-Host "[ERROR] Build completed but executable not found!" -ForegroundColor Red
     exit 1
 }
 
