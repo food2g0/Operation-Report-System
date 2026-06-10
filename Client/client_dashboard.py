@@ -2779,10 +2779,9 @@ class ClientDashboard(QWidget):
             self.loading_overlay.hide()
 
     def _restore_palawan_tab(self, date_str):
-        """Load palawan data from both Brand A and Brand B tables.
-        Brand A is the canonical source; Brand B values take precedence for
-        all palawan payable and lotes columns when non-zero (needed because
-        daily_reports_brand_a may not have the palawan payable columns)."""
+        """Load palawan data from payable_tbl_brand_a (new) or daily_reports (legacy).
+        Fallback: Try payable_tbl_brand_a first for recently saved data, then fall back
+        to daily_reports tables for backward compatibility with older reports."""
         _PALAWAN_COLS = (
             'palawan_sendout_principal', 'palawan_sendout_sc',
             'palawan_sendout_commission', 'palawan_sendout_regular_total',
@@ -2794,85 +2793,157 @@ class ClientDashboard(QWidget):
             'palawan_international_commission', 'palawan_international_regular_total',
             'palawan_international_lotes_total',
         )
+
+        _PAYABLE_COL_MAPPING = {
+            'palawan_sendout_principal': 'sendout_capital',
+            'palawan_sendout_sc': 'sendout_sc',
+            'palawan_sendout_commission': 'sendout_commission',
+            'palawan_sendout_regular_total': 'sendout_total',
+            'palawan_sendout_lotes_total': 'sendout_lotes',
+            'palawan_payout_principal': 'payout_capital',
+            'palawan_payout_sc': 'payout_sc',
+            'palawan_payout_commission': 'payout_commission',
+            'palawan_payout_regular_total': 'payout_total',
+            'palawan_payout_lotes_total': 'payout_lotes',
+            'palawan_international_principal': 'international_capital',
+            'palawan_international_sc': 'international_sc',
+            'palawan_international_commission': 'international_commission',
+            'palawan_international_regular_total': 'international_total',
+            'palawan_international_lotes_total': 'international_lotes',
+        }
+
         try:
             params = (date_str, self.branch, self.corporation)
-            result_a = self.db_manager.execute_query(
-                "SELECT * FROM daily_reports_brand_a "
-                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
-            )
-            result_b = self.db_manager.execute_query(
-                "SELECT * FROM daily_reports "
-                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
-            )
-            if not result_b:
+            data = {}
+
+            # STEP 1: Try payable_tbl_brand_a (NEW SOURCE - recently saved data)
+            try:
+                payable_result = self.db_manager.execute_query(
+                    "SELECT sendout_capital, sendout_sc, sendout_commission, sendout_total, sendout_lotes, "
+                    "payout_capital, payout_sc, payout_commission, payout_total, payout_lotes, "
+                    "international_capital, international_sc, international_commission, international_total, international_lotes "
+                    "FROM payable_tbl_brand_a "
+                    "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
+                )
+                if payable_result:
+                    payable_row = payable_result[0]
+                    for daily_col, payable_col in _PAYABLE_COL_MAPPING.items():
+                        val = payable_row.get(payable_col) or 0
+                        try:
+                            val_float = float(val)
+                        except (TypeError, ValueError):
+                            val_float = 0.0
+                        if val_float != 0:
+                            data[daily_col] = val
+            except Exception as e:
+                logger.debug(f"[_restore_palawan_tab] payable_tbl_brand_a fallback: {e}")
+
+            # STEP 2: Fallback to daily_reports (LEGACY SOURCE - older reports)
+            if not data:
+                result_a = self.db_manager.execute_query(
+                    "SELECT * FROM daily_reports_brand_a "
+                    "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
+                )
                 result_b = self.db_manager.execute_query(
                     "SELECT * FROM daily_reports "
-                    "WHERE date=%s AND branch=%s LIMIT 1",
-                    (date_str, self.branch)
+                    "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1", params
                 )
+                if not result_b:
+                    result_b = self.db_manager.execute_query(
+                        "SELECT * FROM daily_reports "
+                        "WHERE date=%s AND branch=%s LIMIT 1",
+                        (date_str, self.branch)
+                    )
 
-            if not result_a and not result_b:
-                return
+                data = dict(result_a[0]) if result_a else {}
+                if result_b:
+                    data_b = result_b[0]
+                    for col in _PALAWAN_COLS:
+                        b_val = data_b.get(col) or 0
+                        try:
+                            b_float = float(b_val)
+                        except (TypeError, ValueError):
+                            b_float = 0.0
+                        if b_float != 0:
+                            data[col] = b_val
 
-            data = dict(result_a[0]) if result_a else {}
-            if result_b:
-                data_b = result_b[0]
-                for col in _PALAWAN_COLS:
-                    b_val = data_b.get(col) or 0
-                    try:
-                        b_float = float(b_val)
-                    except (TypeError, ValueError):
-                        b_float = 0.0
-                    if b_float != 0:
-                        data[col] = b_val
-
-            self.palawan_tab.load_data(data)
+            if data:
+                self.palawan_tab.load_data(data)
         except Exception as e:
             logger.error("[_restore_palawan_tab] %s", e)
 
     def _restore_palawan_payable(self, date_str):
-        """Load Palawan adjustment fields from the daily_reports tables.
-        Adjustment fields (Skid, Skir, Cancel, Inc) can be stored for BOTH brands.
-        Brand B values take precedence when non-zero."""
+        """Load Palawan adjustment fields from payable_tbl_brand_a (new) or daily_reports (legacy).
+        Fallback: Try payable_tbl_brand_a first, then fall back to daily_reports tables."""
+        _ADJ_MAPPING = {
+            'palawan_suki_discounts': 'skid',
+            'palawan_suki_rebates': 'skir',
+            'palawan_cancel': 'cancellation',
+            'palawan_pay_out_incentives': 'inc',
+        }
+
         mapped = {}
 
-        # Load adjustments from Brand A (daily_reports_brand_a)
+        # STEP 1: Try payable_tbl_brand_a (NEW SOURCE - recently saved adjustments)
         try:
-            result_a = self.db_manager.execute_query(
-                "SELECT palawan_suki_discounts, palawan_suki_rebates, "
-                "palawan_cancel, palawan_pay_out_incentives "
-                "FROM daily_reports_brand_a "
+            result_payable = self.db_manager.execute_query(
+                "SELECT skid, skir, cancellation, inc "
+                "FROM payable_tbl_brand_a "
                 "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
                 (date_str, self.branch, self.corporation)
             )
-            if result_a:
-                row = dict(result_a[0])
-                for col in ("palawan_suki_discounts", "palawan_suki_rebates",
-                            "palawan_cancel", "palawan_pay_out_incentives"):
-                    val = row.get(col) or 0
-                    if float(val) != 0:
-                        mapped[col] = val
+            if result_payable:
+                row = result_payable[0]
+                for daily_col, payable_col in _ADJ_MAPPING.items():
+                    val = row.get(payable_col) or 0
+                    try:
+                        val_float = float(val)
+                    except (TypeError, ValueError):
+                        val_float = 0.0
+                    if val_float != 0:
+                        mapped[daily_col] = val
         except Exception as e:
-            logger.error("[_restore_palawan_payable] Brand A query error: %s", e)
+            logger.debug(f"[_restore_palawan_payable] payable_tbl_brand_a fallback: {e}")
 
-        # Load adjustments from Brand B (daily_reports — no brand column, exclusively Brand B)
-        try:
-            result_b = self.db_manager.execute_query(
-                "SELECT palawan_suki_discounts, palawan_suki_rebates, "
-                "palawan_cancel, palawan_pay_out_incentives "
-                "FROM daily_reports "
-                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
-                (date_str, self.branch, self.corporation)
-            )
-            if result_b:
-                row = dict(result_b[0])
-                for col in ("palawan_suki_discounts", "palawan_suki_rebates",
-                            "palawan_cancel", "palawan_pay_out_incentives"):
-                    val = row.get(col) or 0
-                    if float(val) != 0:
-                        mapped[col] = val  # Brand B value takes precedence
-        except Exception as e:
-            logger.error("[_restore_palawan_payable] Brand B query error: %s", e)
+        # STEP 2: Fallback to daily_reports (LEGACY SOURCE - older reports)
+        if not mapped:
+            # Load adjustments from Brand A (daily_reports_brand_a)
+            try:
+                result_a = self.db_manager.execute_query(
+                    "SELECT palawan_suki_discounts, palawan_suki_rebates, "
+                    "palawan_cancel, palawan_pay_out_incentives "
+                    "FROM daily_reports_brand_a "
+                    "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                    (date_str, self.branch, self.corporation)
+                )
+                if result_a:
+                    row = dict(result_a[0])
+                    for col in ("palawan_suki_discounts", "palawan_suki_rebates",
+                                "palawan_cancel", "palawan_pay_out_incentives"):
+                        val = row.get(col) or 0
+                        if float(val) != 0:
+                            mapped[col] = val
+            except Exception as e:
+                logger.debug(f"[_restore_palawan_payable] Brand A fallback: {e}")
+
+            # Load adjustments from Brand B (daily_reports — no brand column, exclusively Brand B)
+            try:
+                result_b = self.db_manager.execute_query(
+                    "SELECT palawan_suki_discounts, palawan_suki_rebates, "
+                    "palawan_cancel, palawan_pay_out_incentives "
+                    "FROM daily_reports "
+                    "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                    (date_str, self.branch, self.corporation)
+                )
+                if result_b:
+                    row = dict(result_b[0])
+                    for col in ("palawan_suki_discounts", "palawan_suki_rebates",
+                                "palawan_cancel", "palawan_pay_out_incentives"):
+                        val = row.get(col) or 0
+                        if float(val) != 0:
+                            mapped[col] = val  # Brand B value takes precedence
+            except Exception as e:
+                logger.debug(f"[_restore_palawan_payable] Brand B fallback: {e}")
 
         if mapped:
             try:
