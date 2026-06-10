@@ -3379,7 +3379,7 @@ class ClientDashboard(QWidget):
                             inc, skid, skir, cancellation])
 
             if has_data:
-                logger.debug(f"Saving palawan data: SO={so_principal}, PO={po_principal}, INT={int_principal}, Adj={inc}/{skid}/{skir}/{cancellation}")
+                logger.info(f"🔵 _save_palawan_to_payable: branch={self.branch}, date={date_str}, SO={so_principal}, PO={po_principal}, INT={int_principal}, Adj: inc={inc}, skid={skid}, skir={skir}, cancel={cancellation}")
 
                 result = self.db_manager.execute_query(
                     """INSERT INTO payable_tbl_brand_a
@@ -3899,6 +3899,7 @@ class ClientDashboard(QWidget):
             
             
             pal = self.palawan_tab.get_data()
+            logger.info(f"🔵 Collected palawan data from UI: {pal}")
             brand_data = {}
             # SKID/SKIR/CANCEL/INC will be injected after brand_data is built
             for brand_full, cf_tab, bb_input, cc_input, table_name in [
