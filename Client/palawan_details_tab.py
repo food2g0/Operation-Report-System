@@ -327,6 +327,18 @@ class PalawanDetailsTab(QWidget):
         result["palawan_international_regular_total"] = result["int_total"]
         result["palawan_international_lotes_total"]   = result["int_lotes"]
 
+        # Debug: Log adjustment values being collected from UI
+        import logging
+        logger = logging.getLogger(__name__)
+        adj_inc = result.get("palawan_pay_out_incentives", 0)
+        adj_skid = result.get("palawan_suki_discounts", 0)
+        adj_skir = result.get("palawan_suki_rebates", 0)
+        adj_cancel = result.get("palawan_cancel", 0)
+        if adj_inc or adj_skid or adj_skir or adj_cancel:
+            logger.info(f"🔵 PalawanDetailsTab.get_data() adjustments: inc={adj_inc}, skid={adj_skid}, skir={adj_skir}, cancel={adj_cancel}")
+        else:
+            logger.debug(f"PalawanDetailsTab.get_data() - no adjustments entered")
+
         return result
 
     def load_data(self, data: dict):
@@ -372,9 +384,17 @@ class PalawanDetailsTab(QWidget):
             "Palawan Suki Rebates":       "palawan_suki_rebates",
             "Palawan Cancel":             "palawan_cancel",
         }
+        print(f"🔵 DEBUG load_data: adjustments_inputs keys: {list(self.adjustments_inputs.keys())}")
+        print(f"🔵 DEBUG load_data: data dict keys: {list(data.keys())}")
         for label, db_key in adj_map.items():
+            val = data.get(db_key, 0)
+            in_dict = label in self.adjustments_inputs
+            print(f"🔵 DEBUG load_data: label='{label}', in_dict={in_dict}, db_key='{db_key}', value={val}")
             if label in self.adjustments_inputs:
-                _set_dec(self.adjustments_inputs[label], data.get(db_key, 0))
+                print(f"   ✅ Setting {label} = {val}")
+                _set_dec(self.adjustments_inputs[label], val)
+            else:
+                print(f"   ❌ {label} NOT found in adjustments_inputs!")
 
     def clear_fields(self):
         for fields in (self._so_fields, self._po_fields, self._int_fields):
