@@ -9,7 +9,8 @@ import sys
 import os
 
 # Add project root to path for imports
-project_root = os.path.dirname(os.path.abspath(__file__))
+# Use current working directory since __file__ may not be defined in spec context
+project_root = os.getcwd()
 
 a = Analysis(
     [os.path.join(project_root, 'main.py')],
@@ -89,8 +90,6 @@ a = Analysis(
     datas=[
         # Include Client directory with all UI files
         (os.path.join(project_root, 'Client'), 'Client'),
-        # Include config template if exists
-        (os.path.join(project_root, 'config.py'), '.') if os.path.exists(os.path.join(project_root, 'config.py')) else None,
     ],
 
     hookspath=[],
