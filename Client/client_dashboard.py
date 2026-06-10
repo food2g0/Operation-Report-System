@@ -2664,9 +2664,10 @@ class ClientDashboard(QWidget):
 
                 self._load_brand_report_data("Brand A", sd)
                 self._load_brand_report_data("Brand B", sd)
-                # Load Palawan tab data including adjustment fields from daily_reports
-                self._restore_palawan_payable(sd)
-                self._restore_palawan_tab(sd)
+                # Load Palawan tab data: main data first, then adjustments (order matters!)
+                # If _restore_palawan_payable is called first, _restore_palawan_tab will overwrite adjustments
+                self._restore_palawan_tab(sd)      # Load main palawan data (sendout, payout, international)
+                self._restore_palawan_payable(sd)  # Load adjustments AFTER main data so they aren't overwritten
             finally:
                 try:
                     if hasattr(self, 'loading_overlay'):
