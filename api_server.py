@@ -869,7 +869,7 @@ def exec_query_safe(body: ExecRequest, request: Request, _: None = Depends(_requ
 
     remote = request.client.host if request.client else "unknown"
     _exec_rate_check(remote)
-    _check_blocked(body.sql)
+    _check_blocked(body.sql, remote)  # SECURITY: Include remote IP for audit logging
 
     params = tuple(body.params) if body.params else None
 

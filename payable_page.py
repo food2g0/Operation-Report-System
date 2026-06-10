@@ -59,6 +59,13 @@ class PayablesPage(QWidget):
         self.daily_table = "daily_reports_brand_a" if account_type == 1 else "daily_reports"
         # Both brands use payable_tbl_brand_a
         self.payable_table = "payable_tbl_brand_a"
+
+        # Whitelist for table names (security: prevent SQL injection)
+        self._allowed_tables = {"daily_reports", "daily_reports_brand_a"}
+        if self.daily_table not in self._allowed_tables:
+            raise ValueError(f"Invalid table name: {self.daily_table}")
+        if self.payable_table not in self._allowed_tables and self.payable_table != "payable_tbl_brand_a":
+            raise ValueError(f"Invalid table name: {self.payable_table}")
         self.setWindowTitle("Palawan Transactions - Detailed View")
 
         self._is_loading = False  # ← FLAG: prevents auto-save during table population
