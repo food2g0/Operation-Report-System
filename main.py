@@ -89,6 +89,10 @@ def main():
 
     app = QApplication(sys.argv)
 
+    # Set application name and version for proper taskbar display
+    app.setApplicationName("Operation Report System")
+    app.setApplicationVersion(APP_VERSION)
+
     # ── Game-style update launcher ────────────────────────────────────────────
     from update_launcher import UpdateLauncherWindow
 

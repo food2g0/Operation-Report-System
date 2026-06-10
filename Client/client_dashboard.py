@@ -854,7 +854,7 @@ class ClientDashboard(QWidget):
         self.previous_day_balance_b = None
         self.previous_day_date_b    = None
 
-        self.setWindowTitle("Daily Cash Report")
+        self.setWindowTitle("Operation Report System - Daily Cash Report")
         self.setMinimumSize(960, 600)
         self.setStyleSheet(_build_global_qss())
 

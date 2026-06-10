@@ -58,7 +58,7 @@ class AdminDashboard(QWidget):
         self.os_group = os_group or ""   # assigned group; "" = no restriction
         brand_label = "Brand A" if account_type == 1 else "Brand B"
         group_label = f" — {self.os_group}" if self.os_group else ""
-        self.setWindowTitle(f"Admin Dashboard ({brand_label}){group_label} - Cash Management System")
+        self.setWindowTitle(f"Operation Report System - Admin Dashboard ({brand_label}){group_label}")
         self.db = db_manager
         self._update_checker_threads = []  
         
