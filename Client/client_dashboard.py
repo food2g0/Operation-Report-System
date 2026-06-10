@@ -2874,7 +2874,7 @@ class ClientDashboard(QWidget):
 
     def _restore_palawan_payable(self, date_str):
         """Load Palawan adjustment fields from payable_tbl_brand_a (new) or daily_reports (legacy).
-        Fallback: Try payable_tbl_brand_a first, then fall back to daily_reports tables."""
+        Fallback: Try payable_tbl_brand_a first, then fall back to daily_reports tables if empty."""
         _ADJ_MAPPING = {
             'palawan_suki_discounts': 'skid',
             'palawan_suki_rebates': 'skir',
@@ -2883,6 +2883,7 @@ class ClientDashboard(QWidget):
         }
 
         mapped = {}
+        has_payable_data = False
 
         # STEP 1: Try payable_tbl_brand_a (NEW SOURCE - recently saved adjustments)
         try:
@@ -2894,6 +2895,7 @@ class ClientDashboard(QWidget):
             )
             if result_payable:
                 row = result_payable[0]
+                # Check if ANY adjustment value is non-zero
                 for daily_col, payable_col in _ADJ_MAPPING.items():
                     val = row.get(payable_col) or 0
                     try:
@@ -2902,11 +2904,12 @@ class ClientDashboard(QWidget):
                         val_float = 0.0
                     if val_float != 0:
                         mapped[daily_col] = val
+                        has_payable_data = True
         except Exception as e:
             logger.debug(f"[_restore_palawan_payable] payable_tbl_brand_a fallback: {e}")
 
-        # STEP 2: Fallback to daily_reports (LEGACY SOURCE - older reports)
-        if not mapped:
+        # STEP 2: Fallback to daily_reports (LEGACY SOURCE - older reports) if payable has no adjustment data
+        if not has_payable_data and not mapped:
             # Load adjustments from Brand A (daily_reports_brand_a)
             try:
                 result_a = self.db_manager.execute_query(
