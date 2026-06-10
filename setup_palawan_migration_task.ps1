@@ -50,7 +50,7 @@ $action = New-ScheduledTaskAction -Execute $batchFile -WorkingDirectory $scriptD
 Write-Host "Task action created: Execute $batchFile" -ForegroundColor Green
 
 # Create task settings
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstancePolicy Parallel
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
 
 # Create the task
 try {
