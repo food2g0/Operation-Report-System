@@ -63,7 +63,7 @@ try {
                           -Force
 
     Write-Host ""
-    Write-Host "✓ Task created successfully!" -ForegroundColor Green
+    Write-Host "Task created successfully!" -ForegroundColor Green
     Write-Host ""
     Write-Host "Task Details:" -ForegroundColor Cyan
     Write-Host "  Name: $taskName" -ForegroundColor Green
@@ -77,11 +77,13 @@ try {
     Get-ScheduledTask -TaskName $taskName | Format-List -Property TaskName, Description, State
 
     Write-Host ""
-    Write-Host "Log files will be saved to: $scriptDir\logs\" -ForegroundColor Yellow
+    $logsPath = "$scriptDir\logs\"
+    Write-Host "Log files will be saved to: $logsPath" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "You can manually run the task anytime with:" -ForegroundColor Cyan
-    Write-Host "  Start-ScheduledTask -TaskName `"$taskName`"" -ForegroundColor White
+    Write-Host "  Start-ScheduledTask -TaskName '$taskName'" -ForegroundColor White
     Write-Host ""
+    Write-Host "Setup complete!" -ForegroundColor Green
 
 } catch {
     Write-Host ""
@@ -89,5 +91,3 @@ try {
     Write-Host "Error details: $_" -ForegroundColor Red
     exit 1
 }
-
-Write-Host "Setup complete!" -ForegroundColor Green
