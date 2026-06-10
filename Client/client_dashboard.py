@@ -2664,10 +2664,9 @@ class ClientDashboard(QWidget):
 
                 self._load_brand_report_data("Brand A", sd)
                 self._load_brand_report_data("Brand B", sd)
-                # Load Palawan tab data: main data first, then adjustments (order matters!)
-                # If _restore_palawan_payable is called first, _restore_palawan_tab will overwrite adjustments
-                self._restore_palawan_tab(sd)      # Load main palawan data (sendout, payout, international)
-                self._restore_palawan_payable(sd)  # Load adjustments AFTER main data so they aren't overwritten
+                # Load Palawan tab data (both main data and adjustments merged before UI update)
+                self._restore_palawan_tab(sd)      # Loads main palawan + adjustments (merged)
+                self._restore_palawan_payable(sd)  # DEPRECATED - adjustments now loaded in _restore_palawan_tab
             finally:
                 try:
                     if hasattr(self, 'loading_overlay'):
@@ -2868,15 +2867,17 @@ class ClientDashboard(QWidget):
                         if b_float != 0:
                             data[col] = b_val
 
+            # STEP 3: Also load adjustment data and merge it into the data dict
             if data:
+                # Now load adjustments from payable_tbl_brand_a or fallback
+                adj_data = self._get_palawan_adjustments(date_str)
+                if adj_data:
+                    data.update(adj_data)  # Merge adjustments into main data
                 self.palawan_tab.load_data(data)
-        except Exception as e:
-            logger.error("[_restore_palawan_tab] %s", e)
 
-    def _restore_palawan_payable(self, date_str):
-        """Load Palawan adjustment fields from payable_tbl_brand_a (new) or daily_reports (legacy).
-        Fallback: Try payable_tbl_brand_a first, then fall back to daily_reports tables if empty."""
-        print(f"🔵 DEBUG: _restore_palawan_payable called for {date_str}, branch={self.branch}, corp={self.corporation}")
+    def _get_palawan_adjustments(self, date_str):
+        """Fetch palawan adjustments from payable_tbl_brand_a or daily_reports.
+        Returns dict with adjustment keys (palawan_suki_discounts, etc.)"""
         _ADJ_MAPPING = {
             'palawan_suki_discounts': 'skid',
             'palawan_suki_rebates': 'skir',
@@ -2885,9 +2886,8 @@ class ClientDashboard(QWidget):
         }
 
         mapped = {}
-        payable_result = None
 
-        # STEP 1: Try payable_tbl_brand_a (NEW SOURCE - recently saved adjustments)
+        # STEP 1: Try payable_tbl_brand_a (NEW SOURCE)
         try:
             payable_result = self.db_manager.execute_query(
                 "SELECT skid, skir, cancellation, inc "
@@ -2895,72 +2895,66 @@ class ClientDashboard(QWidget):
                 "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
                 (date_str, self.branch, self.corporation)
             )
+            if payable_result:
+                row = payable_result[0]
+                for daily_col, payable_col in _ADJ_MAPPING.items():
+                    val = row.get(payable_col) or 0
+                    try:
+                        val_float = float(val)
+                    except (TypeError, ValueError):
+                        val_float = 0.0
+                    mapped[daily_col] = val_float
+                return mapped
         except Exception as e:
-            logger.debug(f"[_restore_palawan_payable] payable_tbl_brand_a query error: {e}")
+            logger.debug(f"[_get_palawan_adjustments] payable_tbl_brand_a query: {e}")
 
-        # If payable_tbl_brand_a has data, use it (including zero values)
-        if payable_result:
-            row = payable_result[0]
-            for daily_col, payable_col in _ADJ_MAPPING.items():
-                val = row.get(payable_col) or 0
-                try:
-                    val_float = float(val)
-                except (TypeError, ValueError):
-                    val_float = 0.0
-                # Include adjustment values so they display in UI (even if 0)
-                mapped[daily_col] = val_float
-            logger.debug(f"[_restore_palawan_payable] Loaded adjustments from payable_tbl_brand_a: {mapped}")
+        # STEP 2: Fallback to daily_reports (LEGACY SOURCE)
+        # Load adjustments from Brand A (daily_reports_brand_a)
+        try:
+            result_a = self.db_manager.execute_query(
+                "SELECT palawan_suki_discounts, palawan_suki_rebates, "
+                "palawan_cancel, palawan_pay_out_incentives "
+                "FROM daily_reports_brand_a "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                (date_str, self.branch, self.corporation)
+            )
+            if result_a:
+                row = dict(result_a[0])
+                for col in ("palawan_suki_discounts", "palawan_suki_rebates",
+                            "palawan_cancel", "palawan_pay_out_incentives"):
+                    val = row.get(col) or 0
+                    if float(val) != 0:
+                        mapped[col] = val
+        except Exception as e:
+            logger.debug(f"[_get_palawan_adjustments] Brand A fallback: {e}")
 
-        # STEP 2: Fallback to daily_reports (LEGACY SOURCE - older reports) if NO payable result found
-        if not payable_result:
-            # Load adjustments from Brand A (daily_reports_brand_a)
-            try:
-                result_a = self.db_manager.execute_query(
-                    "SELECT palawan_suki_discounts, palawan_suki_rebates, "
-                    "palawan_cancel, palawan_pay_out_incentives "
-                    "FROM daily_reports_brand_a "
-                    "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
-                    (date_str, self.branch, self.corporation)
-                )
-                if result_a:
-                    row = dict(result_a[0])
-                    for col in ("palawan_suki_discounts", "palawan_suki_rebates",
-                                "palawan_cancel", "palawan_pay_out_incentives"):
-                        val = row.get(col) or 0
-                        if float(val) != 0:
-                            mapped[col] = val
-            except Exception as e:
-                logger.debug(f"[_restore_palawan_payable] Brand A fallback: {e}")
+        # Load adjustments from Brand B (daily_reports — no brand column, exclusively Brand B)
+        try:
+            result_b = self.db_manager.execute_query(
+                "SELECT palawan_suki_discounts, palawan_suki_rebates, "
+                "palawan_cancel, palawan_pay_out_incentives "
+                "FROM daily_reports "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                (date_str, self.branch, self.corporation)
+            )
+            if result_b:
+                row = dict(result_b[0])
+                for col in ("palawan_suki_discounts", "palawan_suki_rebates",
+                            "palawan_cancel", "palawan_pay_out_incentives"):
+                    val = row.get(col) or 0
+                    if float(val) != 0:
+                        mapped[col] = val  # Brand B value takes precedence
+        except Exception as e:
+            logger.debug(f"[_get_palawan_adjustments] Brand B fallback: {e}")
 
-            # Load adjustments from Brand B (daily_reports — no brand column, exclusively Brand B)
-            try:
-                result_b = self.db_manager.execute_query(
-                    "SELECT palawan_suki_discounts, palawan_suki_rebates, "
-                    "palawan_cancel, palawan_pay_out_incentives "
-                    "FROM daily_reports "
-                    "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
-                    (date_str, self.branch, self.corporation)
-                )
-                if result_b:
-                    row = dict(result_b[0])
-                    for col in ("palawan_suki_discounts", "palawan_suki_rebates",
-                                "palawan_cancel", "palawan_pay_out_incentives"):
-                        val = row.get(col) or 0
-                        if float(val) != 0:
-                            mapped[col] = val  # Brand B value takes precedence
-            except Exception as e:
-                logger.debug(f"[_restore_palawan_payable] Brand B fallback: {e}")
+        return mapped
+        except Exception as e:
+            logger.error("[_restore_palawan_tab] %s", e)
 
-        if mapped:
-            try:
-                print(f"🔵 DEBUG: Loading adjustments into palawan_tab: {mapped}")
-                self.palawan_tab.load_data(mapped)
-                print(f"🔵 DEBUG: load_data() called successfully")
-            except Exception as e:
-                print(f"❌ ERROR in load_data: {e}")
-                logger.error("[_restore_palawan_payable] load_data error: %s", e)
-        else:
-            print(f"⚠️  WARNING: No adjustments found for {date_str} {self.branch} {self.corporation}")
+    def _restore_palawan_payable(self, date_str):
+        """DEPRECATED: Adjustments are now loaded as part of _restore_palawan_tab().
+        This method is kept for backward compatibility but does nothing."""
+        pass
 
     def _set_status(self, text, color, bold=False):
         self._set_status_brand("A", text, color, bold)
@@ -3901,10 +3895,8 @@ class ClientDashboard(QWidget):
                 self._msg("Error", "Offline support not available.", QMessageBox.Critical)
                 return
             
-            
+
             pal = self.palawan_tab.get_data()
-            print(f"🔵 DEBUG: Collected palawan data from UI: {pal}")
-            print(f"   - Adjustments: inc={pal.get('palawan_pay_out_incentives', 0)}, skid={pal.get('palawan_suki_discounts', 0)}, skir={pal.get('palawan_suki_rebates', 0)}, cancel={pal.get('palawan_cancel', 0)}")
             brand_data = {}
             # SKID/SKIR/CANCEL/INC will be injected after brand_data is built
             for brand_full, cf_tab, bb_input, cc_input, table_name in [
