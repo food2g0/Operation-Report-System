@@ -1,10 +1,12 @@
 [Setup]
-AppName=ORS
+AppName=Operation Report System
 AppVersion=1.0.0
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
-; Install to AppData\Local — no admin rights needed, no UAC prompt
-DefaultDirName={localappdata}\ORS
-DefaultGroupName=ORS
+
+; Install to D:\OperationReportSystem (main app on fast disk)
+; AppData\OperationReportSystem is used for cache/logs/updates only
+DefaultDirName=D:\OperationReportSystem
+DefaultGroupName=Operation Report System
 OutputDir=installer
 OutputBaseFilename=ORS_Setup
 Compression=lzma
@@ -12,15 +14,21 @@ SolidCompression=yes
 SetupIconFile=assets\logo.ico
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
-; Run without requesting elevation — this is the key to silent UAC-free install
+
+; No elevation needed — users can update without admin
 PrivilegesRequired=lowest
+
 ; Close running application before install
-; main.exe is already exited before the installer runs (batch relay handles timing)
 CloseApplications=no
+
 ; Uninstaller settings
 UninstallDisplayIcon={app}\main.exe
-UninstallDisplayName=ORS
+UninstallDisplayName=Operation Report System
 CreateUninstallRegKey=yes
+
+; Allow user to choose installation directory during setup
+AllowUNCPath=no
+WizardStyle=modern
 
 [Files]
 ; Include the single .exe - NO .env file (credentials are embedded in the exe)
