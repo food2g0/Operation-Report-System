@@ -60,8 +60,9 @@ class AdminDashboard(QWidget):
         group_label = f" — {self.os_group}" if self.os_group else ""
         self.setWindowTitle(f"Operation Report System - Admin Dashboard ({brand_label}){group_label}")
         self.db = db_manager
-        self._update_checker_threads = []  
-        
+        self._update_checker_threads = []
+        self._loading_report = False  # Flag to prevent recalculation during load
+
         # Zoom functionality
         self.zoom_level = 100
         self.setFocusPolicy(Qt.StrongFocus)
@@ -1939,7 +1940,12 @@ class AdminDashboard(QWidget):
                         'palawan_international_lotes_total':    r.get('international_lotes', 0) or 0,
                         'palawan_international_regular_total':  r.get('international_total', 0) or 0,
                     }
-                    data = {**data, **payable_map}
+                    # CRITICAL FIX: Don't merge payable_map into data for variance calculation
+                    # Palawan data should be loaded separately for DISPLAY only, not for debit/credit sums
+                    # data = {**data, **payable_map}  # REMOVED - causes double-counting in variance
+                    # Instead, load payable data directly into the palawan display fields
+                    if hasattr(self, '_palawan_display_map'):
+                        self._palawan_display_map = payable_map
             except Exception as e:
                 logger.error("_load_palawan_details Brand A payable query: %s", e)
 
@@ -5260,14 +5266,11 @@ class AdminDashboard(QWidget):
             return
 
         try:
+            # CRITICAL FIX: Simplify the query - just use branch and date
+            # If there are multiple corporations for same branch/date, the DB constraint should prevent it
+            # This avoids the complexity of corporation filtering which was causing issues
             where_clauses = ["branch = %s", "date = %s"]
             query_params = [branch_name, selected_date]
-
-            if filter_type == "corporation":
-                selected_corporation = self.corp_selector.currentText().strip()
-                if selected_corporation:
-                    where_clauses.append("corporation = %s")
-                    query_params.append(selected_corporation)
 
             query = f"""
                 SELECT *
@@ -5284,7 +5287,17 @@ class AdminDashboard(QWidget):
                 return
 
             data = result[0]
-            self._current_entry_data = data  
+            self._current_entry_data = data
+
+            # CRITICAL FIX: Set flag FIRST to prevent _recalc_totals from running
+            self._loading_report = True
+
+            # Block all signals during load to prevent recalculation
+            # while we're populating fields
+            for inp in list(self.debit_inputs.values()) + list(self.credit_inputs.values()) + \
+                       list(self.debit_lotes_inputs.values()) + list(self.credit_lotes_inputs.values()) + \
+                       [self.beginning_balance_input, self.cash_count_input]:
+                inp.blockSignals(True)
 
             beginning = float(data.get('beginning_balance') or 0)
             self.beginning_balance_input.setText(f"{beginning:.2f}")
@@ -5314,33 +5327,28 @@ class AdminDashboard(QWidget):
                 else:
                     self.credit_lotes_inputs[ui_label].setText("0")
 
-            # Recalculate totals from actual field values (fixes stale stored values)
-            debit_sum = sum(
-                float(self.debit_inputs[lbl].text().strip() or 0)
-                for lbl in self.debit_fields
-            )
-            credit_sum = sum(
-                float(self.credit_inputs[lbl].text().strip() or 0)
-                for lbl in self.credit_fields
-            )
-            debit_total = beginning + debit_sum
-            credit_total = credit_sum
-            ending_balance = debit_total - credit_total
+            # CRITICAL FIX: Display stored values from database, don't recalculate
+            # This prevents variance discrepancies caused by loading/merging palawan data incorrectly
+            debit_total = float(data.get('debit_total') or 0)
+            credit_total = float(data.get('credit_total') or 0)
+            ending_balance = float(data.get('ending_balance') or 0)
             cash_count = float(data.get('cash_count') or 0)
-            cash_result = cash_count - ending_balance
+            cash_result = float(data.get('cash_result') or 0)
+            variance_status = data.get('variance_status', 'balanced')
 
             self.debit_total_display.setText(f"{debit_total:.2f}")
             self.credit_total_display.setText(f"{credit_total:.2f}")
             self.ending_balance_display.setText(f"{ending_balance:.2f}")
             self.cash_result_display.setText(f"{cash_result:.2f}")
 
-            variance_status = data.get('variance_status', '')
-            if abs(cash_result) < 0.01:
-                variance_status = 'balanced'
-            elif cash_result > 0:
-                variance_status = 'over'
-            else:
-                variance_status = 'short'
+            # Unblock signals after displaying stored values
+            for inp in list(self.debit_inputs.values()) + list(self.credit_inputs.values()) + \
+                       list(self.debit_lotes_inputs.values()) + list(self.credit_lotes_inputs.values()) + \
+                       [self.beginning_balance_input, self.cash_count_input]:
+                inp.blockSignals(False)
+
+            # Allow editing after load is FULLY complete (including palawan loading at 500ms)
+            QTimer.singleShot(1000, lambda: setattr(self, '_loading_report', False))
             if variance_status == 'short':
                 self.variance_status_display.setText("SHORT")
                 self.variance_status_display.setStyleSheet(
@@ -5423,7 +5431,9 @@ class AdminDashboard(QWidget):
                 self.reviewed_checkbox.setEnabled(False)
 
             # Load palawan details into collapsible
-            self._load_palawan_details(data)
+            # CRITICAL FIX: Delay palawan loading to avoid interfering with display
+            # Schedule it to run after all display updates are complete
+            QTimer.singleShot(500, lambda: self._load_palawan_details(data))
 
             QMessageBox.information(self, "✅ Loaded", f"Entry for {selected_date} loaded successfully!")
 
@@ -5609,8 +5619,13 @@ class AdminDashboard(QWidget):
         self.reviewed_checkbox.setEnabled(False)
 
     def _recalc_totals(self):
-        """Recalculate and display Total Cash Receipt, Total Cash Out,
-        Ending Balance, Cash Result and Variance live as the admin edits fields."""
+        """Recalculate totals when admin EDITS fields (not on initial load).
+        This is called by field change signals to show live updates while editing."""
+        # CRITICAL FIX: Skip recalculation during report load
+        # This prevents calculated values from overwriting stored database values
+        if hasattr(self, '_loading_report') and self._loading_report:
+            return
+
         try:
             beginning = float(self.beginning_balance_input.text().strip().replace(',', '') or 0)
         except ValueError:

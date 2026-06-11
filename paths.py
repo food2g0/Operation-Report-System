@@ -1,4 +1,4 @@
-"""
+r"""
 Application Paths Configuration
 Separates main app directory (D:\) from cache/temp (AppData\)
 """

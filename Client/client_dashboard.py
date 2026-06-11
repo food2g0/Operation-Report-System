@@ -37,60 +37,7 @@ from Client.ui_styles import (
 )
 from Client.ui_scaling import _sz
 
-"""
-═══════════════════════════════════════════════════════════════════════════════
-SECURITY AUDIT SUMMARY - CLIENT_DASHBOARD.PY
-═══════════════════════════════════════════════════════════════════════════════
 
-CRITICAL FIXES IMPLEMENTED:
-  1. SQL Injection Prevention (FIXED)
-     - Added validate_table_name() function with ALLOWED_TABLES whitelist
-     - Called in: get_previous_day_ending_balance(), check_existing_entry() [2x],
-       _propagate_opening_balance_to_following_days(), _load_brand_report_data()
-     - Impact: 100% of dynamic table references now validated
-
-  2. Safe Float Casting (FIXED)
-     - Added safe_float_cast() with range validation (-1e15 to 1e15)
-     - Prevents overflow/underflow, malformed data from crashing calculations
-     - Used for: beginning_balance, cash_count, and all monetary values
-
-  3. JSON Size Limits (FIXED)
-     - Added safe_json_serialize() with 100KB size limit
-     - Prevents database truncation of breakdown data
-     - Used for: ft_ho_breakdown, pc_salary_breakdown, mc_in/out_details,
-       empeno_motor_car_breakdown
-
-HIGH SEVERITY FIXES IMPLEMENTED:
-  4. Date Continuity Validation (FIXED)
-     - Added validate_balance_date_continuity() checking for gaps > 10 days
-     - Rejects (not just warns) balances from distant prior dates
-     - Prevents using stale balance data that could skew calculations
-
-  5. HTML Injection Prevention (FIXED)
-     - Added html.escape() for user_email, branch, corporation in print preview
-     - Prevents script injection if branch names contain HTML/special chars
-     - Line 5650: html.escape() applied before f-string insertion
-
-  6. File Path Traversal Prevention (FIXED)
-     - Added path validation in Excel export (line 5815-5823)
-     - Restricts saves to home directory or Documents folder
-     - Prevents directory traversal attacks (e.g., ../../../etc/passwd)
-
-MEDIUM PRIORITY FIXES IMPLEMENTED:
-  7. Configuration Constants (FIXED)
-     - Centralized hardcoded limits: JSON_BREAKDOWN_MAX_SIZE_KB,
-       FLOAT_VALUE_MIN/MAX, MAX_BALANCE_GAP_DAYS
-     - Single source of truth for tuning limits
-     - Functions accept overrides for testing/special cases
-
-OTHER FEATURES:
-  - Retry logic for database deadlock/duplicate errors (line 3462)
-  - Post-save verification ensuring calculations match database (line 3517)
-  - Offline mode support with battery-backed queue
-  - Connection monitoring with automatic reconnection
-
-═══════════════════════════════════════════════════════════════════════════════
-"""
 
 
 try:
@@ -144,48 +91,34 @@ from connection_watcher import ConnectionBanner
 import math
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION CONSTANTS
-# ════════════════════════════════════════════════════════════════════════════════
 
-# MEDIUM FIX #11: Centralized size limit configuration
 JSON_BREAKDOWN_MAX_SIZE_KB = 100
 
-# MEDIUM FIX #11: Centralized float value limit configuration
+
 FLOAT_VALUE_MAX = 1e15
 FLOAT_VALUE_MIN = -1e15
 
-# MEDIUM FIX #11: Date continuity tolerance (max gap in days before requiring confirmation)
+
 MAX_BALANCE_GAP_DAYS = 10
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# SECURITY & SAFETY HELPER FUNCTIONS (Critical & High Severity Fixes)
-# ════════════════════════════════════════════════════════════════════════════════
-
-# Whitelist of allowed table names to prevent SQL injection
-# ⚠️ IMPORTANT: Keep this list up-to-date with all tables used in SQL queries
 ALLOWED_TABLES = {
-    # Daily reporting tables
-    "daily_reports",                # Brand B
-    "daily_reports_brand_a",        # Brand A
 
-    # Payable/Financial tables
-    "payable_tbl_brand_a",          # Payable records
-
-    # Cash flow tables
-    "cash_float_tbl",               # Cash float tracking
+    "daily_reports",                
+    "daily_reports_brand_a",     
+    "payable_tbl_brand_a",     
+    "cash_float_tbl",              
 }
 
 def validate_table_name(table_name):
-    """CRITICAL FIX #1: Validate table names to prevent SQL injection."""
+
     if table_name not in ALLOWED_TABLES:
         raise ValueError(f"Invalid table name: {table_name}. Allowed: {ALLOWED_TABLES}")
     return table_name
 
 
 def safe_json_serialize(data, max_size_kb=None, field_name="data"):
-    """CRITICAL FIX #3: Serialize JSON with size limits to prevent truncation."""
+
     if max_size_kb is None:
         max_size_kb = JSON_BREAKDOWN_MAX_SIZE_KB
     try:
@@ -2765,16 +2698,13 @@ class ClientDashboard(QWidget):
                         }}
                     """)
 
-
         if any_unlocked or not status_a or not status_b:
             self.post_button.setEnabled(True)
 
-        # Always restore palawan tab from Brand A table regardless of lock state
         self._restore_palawan_tab(sd)
 
         self.recalculate_all()
 
-        # Hide loading overlay after report is fully loaded
         if hasattr(self, 'loading_overlay'):
             self.loading_overlay.hide()
 
@@ -2816,7 +2746,6 @@ class ClientDashboard(QWidget):
             params = (date_str, self.branch, self.corporation)
             data = {}
 
-            # STEP 1: Try payable_tbl_brand_a (NEW SOURCE - recently saved data)
             try:
                 payable_result = self.db_manager.execute_query(
                     "SELECT sendout_capital, sendout_sc, sendout_commission, sendout_total, sendout_lotes, "
@@ -2838,7 +2767,6 @@ class ClientDashboard(QWidget):
             except Exception as e:
                 logger.debug(f"[_restore_palawan_tab] payable_tbl_brand_a fallback: {e}")
 
-            # STEP 2: Fallback to daily_reports (LEGACY SOURCE - older reports)
             if not data:
                 result_a = self.db_manager.execute_query(
                     "SELECT * FROM daily_reports_brand_a "
@@ -2867,12 +2795,9 @@ class ClientDashboard(QWidget):
                         if b_float != 0:
                             data[col] = b_val
 
-            # STEP 3: Also load adjustment data and merge it into the data dict
             if data:
-                # Now load adjustments from payable_tbl_brand_a or fallback
-                adj_data = self._get_palawan_adjustments(date_str)
-                if adj_data:
-                    data.update(adj_data)  # Merge adjustments into main data
+                # CRITICAL FIX: Load adjustments for ALL brands (palawan_tab is shared)
+                # But separate them so each brand only uses its own adjustments during posting
                 self.palawan_tab.load_data(data)
         except Exception as e:
             logger.error("[_restore_palawan_tab] %s", e)
@@ -2913,8 +2838,6 @@ class ClientDashboard(QWidget):
         except Exception as e:
             logger.debug(f"[_get_palawan_adjustments] payable_tbl_brand_a query: {e}")
 
-        # STEP 2: Fallback to daily_reports (LEGACY SOURCE)
-        # Load adjustments from Brand A (daily_reports_brand_a)
         try:
             result_a = self.db_manager.execute_query(
                 "SELECT palawan_suki_discounts, palawan_suki_rebates, "
@@ -2933,7 +2856,6 @@ class ClientDashboard(QWidget):
         except Exception as e:
             logger.debug(f"[_get_palawan_adjustments] Brand A fallback: {e}")
 
-        # Load adjustments from Brand B (daily_reports — no brand column, exclusively Brand B)
         try:
             result_b = self.db_manager.execute_query(
                 "SELECT palawan_suki_discounts, palawan_suki_rebates, "
@@ -3286,14 +3208,7 @@ class ClientDashboard(QWidget):
     def verify_database_save(self, date_str, brand_table,
                               expected_debit=None, expected_credit=None, expected_ending=None,
                               brand=None):
-        """
-        POST-SAVE VERIFICATION: Read data back from database and verify stored totals
-        match the values that were calculated before saving.
 
-        Expected values are passed in from handle_post so we compare against the
-        authoritative pre-save calculation rather than re-summing individual columns
-        (which may not be stored when a credit/debit field has no DB column in the table).
-        """
         try:
             query = f"SELECT beginning_balance, debit_total, credit_total, ending_balance FROM {brand_table} WHERE date = %s AND branch = %s AND corporation = %s"
             result = self.db_manager.execute_query(query, (date_str, self.branch, self.corporation))
@@ -3339,7 +3254,30 @@ class ClientDashboard(QWidget):
             logger.error("Could not verify database save: %s", e)
             return True  # Don't fail hard, just log it
 
-    def _save_palawan_to_payable(self, date_str, brand_full, palawan_data):
+    def _get_brand_specific_palawan_adjustments(self, date_str, brand_full):
+        """Get adjustments ONLY for the specified brand, not merged from other brands."""
+        table_name = "daily_reports_brand_a" if brand_full == "Brand A" else "daily_reports"
+        try:
+            result = self.db_manager.execute_query(
+                "SELECT palawan_suki_discounts, palawan_suki_rebates, "
+                "palawan_cancel, palawan_pay_out_incentives "
+                f"FROM {table_name} "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                (date_str, self.branch, self.corporation)
+            )
+            if result:
+                row = dict(result[0])
+                return {
+                    'palawan_suki_discounts': float(row.get('palawan_suki_discounts', 0) or 0),
+                    'palawan_suki_rebates': float(row.get('palawan_suki_rebates', 0) or 0),
+                    'palawan_cancel': float(row.get('palawan_cancel', 0) or 0),
+                    'palawan_pay_out_incentives': float(row.get('palawan_pay_out_incentives', 0) or 0),
+                }
+        except Exception as e:
+            logger.debug(f"[_get_brand_specific_palawan_adjustments] {brand_full} query: {e}")
+        return {}
+
+    def _save_palawan_to_payable(self, date_str, brand_full, palawan_data, brand_adjustments=None):
         """FIX #13: Save palawan data to payable_tbl_brand_a so 30%/60% sheets can display it.
 
         The report's 30%/60% palawan sheets query payable_tbl_brand_a, but the main report posting
@@ -3366,11 +3304,13 @@ class ClientDashboard(QWidget):
             int_total = float(palawan_data.get('int_total', 0) or 0)
 
             # Extract adjustment values (FIX #14: Include adjustments)
-            # Map palawan adjustment columns to payable table abbreviated names
-            inc = float(palawan_data.get('palawan_pay_out_incentives', 0) or 0)  # inc in payable table
-            skid = float(palawan_data.get('palawan_suki_discounts', 0) or 0)  # skid in payable table
-            skir = float(palawan_data.get('palawan_suki_rebates', 0) or 0)  # skir in payable table
-            cancellation = float(palawan_data.get('palawan_cancel', 0) or 0)  # cancellation in payable table
+            # CRITICAL FIX: Use brand-specific adjustments if provided, otherwise fallback to palawan_data
+            if brand_adjustments is None:
+                brand_adjustments = {}
+            inc = float(brand_adjustments.get('palawan_pay_out_incentives', 0) or palawan_data.get('palawan_pay_out_incentives', 0) or 0)
+            skid = float(brand_adjustments.get('palawan_suki_discounts', 0) or palawan_data.get('palawan_suki_discounts', 0) or 0)
+            skir = float(brand_adjustments.get('palawan_suki_rebates', 0) or palawan_data.get('palawan_suki_rebates', 0) or 0)
+            cancellation = float(brand_adjustments.get('palawan_cancel', 0) or palawan_data.get('palawan_cancel', 0) or 0)
 
             # Insert or update payable_tbl_brand_a with palawan data
             # Only insert if there's actual palawan data to save (including lotes)
@@ -3533,7 +3473,12 @@ class ClientDashboard(QWidget):
 
                 cf        = cf_tab.get_data()
                 beginning = float(bb_input.text().strip().replace(',', '') or 0)
-                deb = sum(v for k, v in cf['debit'].items()  if not k.endswith('_lotes'))
+                # CRITICAL: Exclude palawan fields from debit - they are saved separately to payable_tbl_brand_a
+                palawan_exclude = {'so_principal', 'so_sc', 'so_commission', 'so_total', 'so_lotes',
+                                  'po_principal', 'po_sc', 'po_commission', 'po_total', 'po_lotes',
+                                  'int_principal', 'int_sc', 'int_commission', 'int_total', 'int_lotes'}
+                deb = sum(v for k, v in cf['debit'].items()
+                         if not k.endswith('_lotes') and k not in palawan_exclude)
                 cre = sum(v for k, v in cf['credit'].items() if not k.endswith('_lotes'))
                 ending      = beginning + deb - cre
                 cash_count  = float(cc_input.text().strip().replace(',', '') or 0)
@@ -3544,38 +3489,15 @@ class ClientDashboard(QWidget):
                     else "short"
                 )
 
-                # Merge: palawan tab provides supplementary fields; credit tab takes
-                # precedence for any key that appears in both (non-zero credit wins).
-                all_vals = {**cf['debit'], **pal}
+                # CRITICAL FIX: Exclude palawan data from daily_reports
+                # Palawan is saved separately to payable_tbl_brand_a - must NOT duplicate in daily_reports
+                all_vals = {**cf['debit']}
                 for k, v in cf['credit'].items():
                     if v != 0 or k not in all_vals:
                         all_vals[k] = v
 
-                # FIX #12: Calculate aggregate palawan columns for report generation
-                # The report queries for palawan_send_out, palawan_sc, palawan_pay_out, etc.
-                # but we save breakdown columns (so_principal, so_sc, so_commission).
-                # Calculate and save the aggregate columns the report expects.
-                so_lotes = safe_float_cast(all_vals.get('so_lotes', 0)) or 0
-                po_lotes = safe_float_cast(all_vals.get('po_lotes', 0)) or 0
-
-                all_vals['palawan_send_out'] = (
-                    all_vals.get('palawan_sendout_principal', 0) or 0
-                )
-                all_vals['palawan_sc'] = (
-                    all_vals.get('palawan_sendout_sc', 0) or 0
-                )
-                all_vals['palawan_pay_out'] = (
-                    all_vals.get('palawan_payout_principal', 0) or 0
-                )
-                all_vals['palawan_pay_out_incentives'] = (
-                    all_vals.get('palawan_pay_out_incentives', 0) or 0
-                )
-                # Lotes: Send-Out section and SC use the same lotes count (SC is part of Send-Out)
-                # Pay-Out section uses its own lotes count
-                all_vals['palawan_send_out_lotes'] = int(so_lotes)
-                all_vals['palawan_sc_lotes'] = int(so_lotes)  # SC is part of Send-Out section
-                all_vals['palawan_pay_out_lotes'] = int(po_lotes)
-                all_vals['palawan_pay_out_incentives_lotes'] = 0  # No separate lotes for incentives
+                # Do NOT include palawan data in daily_reports - it goes to payable_tbl_brand_a only
+                # Palawan amounts are saved separately via _save_palawan_to_payable() to prevent double-counting
 
                 if hasattr(cf_tab, 'selected_bank_account') and cf_tab.selected_bank_account:
                     all_vals['fund_transfer_bank_account'] = cf_tab.selected_bank_account
@@ -3627,9 +3549,6 @@ class ClientDashboard(QWidget):
                         logger.error(f"Skipping empeno_motor_car_breakdown for {brand_full}: {e}")
                 
                 brand_all_vals[brand_full] = all_vals  
-
-                # CRITICAL SAFETY CHECK: Verify this brand's calculations one more time before saving
-                # This is a secondary check to ensure no corrupted data reaches database
                 expected_debit = beginning + deb
                 expected_credit = cre
                 expected_ending = expected_debit - expected_credit
@@ -3687,9 +3606,7 @@ class ClientDashboard(QWidget):
                     ] + _brand_vals + list(filtered.values())
 
                     ph    = ', '.join(['%s'] * len(cols))
-                    # Build ON DUPLICATE KEY UPDATE clause for all non-key columns.
-                    # Only updates when the existing row is unlocked (is_locked = 0),
-                    # so admin-locked records are never silently overwritten.
+
                     _key_cols = {'date', 'branch', 'corporation'}
                     _upd_pairs = [
                         f"`{c}` = IF(is_locked = 0, VALUES(`{c}`), `{c}`)"
@@ -3700,8 +3617,7 @@ class ClientDashboard(QWidget):
                         f"INSERT INTO {table_name} ({', '.join(cols)}) VALUES ({ph})"
                         f" ON DUPLICATE KEY UPDATE {_upd_clause}"
                     )
-                    # Keep a copy so we can build a fallback UPDATE on duplicate key
-                    # (used by the error-1062 handler for databases without the UNIQUE constraint)
+
                     _insert_cols = list(cols)
                     _insert_vals = list(vals)
 
@@ -3730,8 +3646,7 @@ class ClientDashboard(QWidget):
                             pass
                         time.sleep(0.5 * attempt)
                     elif is_dup and entry_status is None:
-                        # INSERT hit a duplicate key — the record already exists but
-                        # check_existing_entry missed it. Re-check lock status first.
+
                         recheck = self.check_existing_entry(sd, brand_full)
                         if recheck == "locked":
                             # Locked by admin/another session — do NOT overwrite
@@ -3796,8 +3711,10 @@ class ClientDashboard(QWidget):
                         # FIX #13: Save palawan data to payable_tbl_brand_a for 30%/60% report sheets
                         # The 30%/60% palawan sheets query payable_tbl_brand_a, so we need to populate it
                         # when the report is posted successfully
+                        # CRITICAL FIX: Only save THIS BRAND's palawan adjustments, not merged data from all brands
                         try:
-                            self._save_palawan_to_payable(sd, brand_full, pal)
+                            brand_pal_adjustments = self._get_brand_specific_palawan_adjustments(sd, brand_full)
+                            self._save_palawan_to_payable(sd, brand_full, pal, brand_pal_adjustments)
                             logger.info(f"FIX #13: Palawan data save completed for {self.branch} on {sd}")
                         except Exception as payable_err:
                             logger.warning(f"Could not save palawan to payable table: {payable_err}")
@@ -3846,14 +3763,6 @@ class ClientDashboard(QWidget):
                 if "Brand A" in successes:
                     self._save_cash_float(sd)
 
-                # NOTE: Client only writes to daily_reports_brand_a and daily_reports.
-                # Supplementary tables (service tables, palawan payable) are
-                # now managed server-side from the canonical daily report tables.
-                # This prevents duplicate/sync issues across multiple tables.
-
-                # Reset API connection to ensure new data is visible on next query
-                # This fixes database connection pooling issues that prevent newly
-                # posted reports from appearing until app restart
                 try:
                     if hasattr(self.db_manager, 'reset_connection'):
                         self.db_manager.reset_connection()

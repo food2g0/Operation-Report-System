@@ -20,15 +20,26 @@ except ImportError:
     CURRENT_VERSION = "1.0.0"
     GITHUB_REPO = "food2g0/Operation-Report-System"
 
-from auto_updater import (
-    _create_retry_session,
-    _is_trusted_download_url,
-    _validate_downloaded_installer,
-    _save_pre_update_version,
-    REQUIRE_CHECKSUM,
-    _find_release_checksum,
-    _sha256_file,
-)
+try:
+    from auto_updater import (
+        _create_retry_session,
+        _is_trusted_download_url,
+        _validate_downloaded_installer,
+        _save_pre_update_version,
+        REQUIRE_CHECKSUM,
+        _find_release_checksum,
+        _sha256_file,
+    )
+    AUTO_UPDATER_AVAILABLE = True
+except ImportError:
+    AUTO_UPDATER_AVAILABLE = False
+    _create_retry_session = None
+    _is_trusted_download_url = None
+    _validate_downloaded_installer = None
+    _save_pre_update_version = None
+    REQUIRE_CHECKSUM = False
+    _find_release_checksum = None
+    _sha256_file = None
 
 try:
     from packaging import version as pkg_version
@@ -67,6 +78,11 @@ class _UpdateWorker(QThread):
     failed           = pyqtSignal(str)          # error message — proceed to login anyway
 
     def run(self):
+        # Client-only build: auto_updater not available
+        if not AUTO_UPDATER_AVAILABLE:
+            self.no_update.emit()
+            return
+
         try:
             self.status_changed.emit("Checking for updates…")
             self.sub_status.emit(f"Current version: v{CURRENT_VERSION}")
@@ -551,7 +567,8 @@ class UpdateLauncherWindow(QWidget):
         4. We show 'Installing…' for 2 s then quit cleanly
         """
         try:
-            _save_pre_update_version()
+            if AUTO_UPDATER_AVAILABLE and _save_pre_update_version:
+                _save_pre_update_version()
 
             # Remove Zone.Identifier so installer runs without DLL restrictions
             self._unblock_file(path)

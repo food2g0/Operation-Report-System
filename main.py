@@ -106,8 +106,12 @@ def main():
             lw.show()
 
             # Show "Updated successfully" popup if this is a post-update first run
-            from auto_updater import check_update_success
-            check_update_success(parent=lw)
+            # Skip in client-only builds without auto_updater
+            try:
+                from auto_updater import check_update_success
+                check_update_success(parent=lw)
+            except ImportError:
+                pass  # auto_updater not available in client-only build
         except Exception as exc:
             release_single_instance_lock()
             exception_hook(type(exc), exc, exc.__traceback__)

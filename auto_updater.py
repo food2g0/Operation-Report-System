@@ -158,9 +158,9 @@ def _find_release_checksum(session, release_data, installer_filename):
 
 # Version tracking file path (to detect successful updates)
 def _get_version_file_path():
-    """Return path to the update-state file.
+    r"""Return path to the update-state file.
 
-    Always stored in %APPDATA%\\OperationReportSystem\\ so both the old version
+    Always stored in %APPDATA%\OperationReportSystem\ so both the old version
     (writing it before the installer runs) and the new version (reading it on
     first launch) resolve the exact same path.
 

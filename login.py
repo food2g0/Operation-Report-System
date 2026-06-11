@@ -10,7 +10,16 @@ import os
 
 logger = logging.getLogger(__name__)
 
-from db_connect_pooled import db_manager
+# Import database manager (optional - for offline fallback)
+# Client normally uses API, but can fall back to direct DB if offline
+try:
+    from db_connect_pooled import db_manager
+    DB_MANAGER_AVAILABLE = True
+except ImportError:
+    db_manager = None
+    DB_MANAGER_AVAILABLE = False
+    logger.info("Direct database access not available (client-only build)")
+
 from security import (
     verify_password, hash_password, is_password_hashed,
     login_rate_limiter, format_lockout_time
@@ -99,8 +108,11 @@ class LoginWindow(QWidget):
         )
 
     def init_database(self):
+        # Client-only build: no direct DB access, use API only
+        if not DB_MANAGER_AVAILABLE:
+            logger.info("Direct database access unavailable - using API only")
+            return
 
-  
         if not db_manager.test_connection():
             offline_manager.is_offline = True
             
@@ -470,11 +482,12 @@ class LoginWindow(QWidget):
             return
 
 
-        if not db_manager.test_connection():
-      
+        # Client-only build: skip direct DB check, go straight to API
+        if DB_MANAGER_AVAILABLE and not db_manager.test_connection():
+            # Direct DB unavailable - try offline mode
             offline_manager.is_offline = True
             success, user_data = offline_manager.verify_offline_credentials(username, password)
-            
+
             if success and user_data:
                 self._handle_offline_login(username, user_data)
             else:
@@ -560,8 +573,10 @@ class LoginWindow(QWidget):
         try:
             # Offline mode: use direct db_manager as a fallback (no network available)
             from Client.client_dashboard import ClientDashboard
+            # Pass db_manager if available, otherwise None (client-only build)
+            db_mgr = db_manager if DB_MANAGER_AVAILABLE else None
             self.dashboard = ClientDashboard(
-                username, branch, corporation, db_manager,
+                username, branch, corporation, db_mgr,
                 offline_mode=True
             )
             self.dashboard.logout_requested.connect(self.handle_logout)
@@ -576,17 +591,26 @@ class LoginWindow(QWidget):
 
     def test_database_connection(self):
         try:
-
+            # Client-only build: no direct DB access
+            if not DB_MANAGER_AVAILABLE:
+                return False
             return db_manager.test_connection()
         except Exception as e:
             logger.error("Database connection test failed: %s", e)
             return False
 
     def execute_database_query(self, query, params=None):
-
+        # Client-only build: no direct DB access
+        if not DB_MANAGER_AVAILABLE:
+            logger.warning("Direct database access not available in client-only build")
+            return None
         return db_manager.execute_query(query, params)
 
     def _migrate_password_if_needed(self, user_id: int, password: str, stored_password: str):
+        # Client-only build: cannot migrate passwords without direct DB access
+        if not DB_MANAGER_AVAILABLE:
+            logger.debug("Skipping password migration in client-only build")
+            return
 
         if not is_password_hashed(stored_password):
             try:
@@ -741,6 +765,16 @@ class LoginWindow(QWidget):
                                     )
                                     return
                             else:
+                                # Non-API mode: use direct database
+                                if not DB_MANAGER_AVAILABLE:
+                                    splash.close()
+                                    self.show_message(
+                                        "Database Connection Failed",
+                                        "API mode is disabled but direct database access is not available.\n"
+                                        "This is a client-only build. Please enable API mode.",
+                                        QMessageBox.Critical,
+                                    )
+                                    return
                                 _client_db = db_manager
                             from Client.client_dashboard import ClientDashboard
                             self.dashboard = ClientDashboard(db_username, branch, corporation, _client_db)

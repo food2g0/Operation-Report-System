@@ -1,0 +1,14 @@
+{
+  "trusted_devices": [
+    {
+      "name": "Admin",
+      "hostname": "DESKTOP-JB30NBB",
+      "username": "Admin",
+      "mac_address": "10:ff:e0:e4:cf:e1",
+      "fingerprint_hash": "eb3c767ebf9ffa0c",
+      "added_at": "2026-06-10T09:17:14.521588",
+      "last_used": "2026-06-10T09:17:14.521589"
+    }
+  ],
+  "created_at": "2026-06-10T09:17:14.521586"
+}
