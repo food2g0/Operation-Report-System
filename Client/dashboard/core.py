@@ -26,6 +26,7 @@ from Client.palawan_details_tab import PalawanDetailsTab
 from Client.dashboard.dialogs import FundTransferHODialog, MotorCarDetailDialog, EmpenaDetailDialog
 from Client.dashboard.managers import BalanceManager, PalawanManager
 from Client.dashboard.handlers import PostHandler, ExportHandler, ValidationService
+from Client.dashboard.builders import ButtonBuilder, InputFieldBuilder, FrameBuilder, LabelBuilder, LayoutBuilder
 from security import SessionManager
 from Client.ui_components import LoadingOverlay, NoWheelDateEdit
 from Client.ui_styles import (
@@ -231,14 +232,7 @@ class FundTransferHODialog(QDialog):
         """)
         root.addWidget(self.table)
 
-        add_btn = QPushButton("+ Add Transfer")
-        add_btn.setStyleSheet("""
-            QPushButton { background: #8B5CF6; color: white; border: none;
-                          border-radius: 6px; padding: 7px 18px;
-                          font-weight: 700; font-size: 12px; }
-            QPushButton:hover { background: #7C3AED; }
-        """)
-        add_btn.clicked.connect(self._add_row)
+        add_btn = ButtonBuilder.create_purple_button("+ Add Transfer", self._add_row)
         root.addWidget(add_btn, alignment=Qt.AlignLeft)
 
         totals_frame = QFrame()
@@ -301,21 +295,11 @@ class FundTransferHODialog(QDialog):
         bank_combo.setStyleSheet("padding: 4px 6px; font-size: 12px;")
         self.table.setCellWidget(row, 0, bank_combo)
 
-        amt_edit = QLineEdit()
-        amt_edit.setPlaceholderText("0.00")
-        amt_edit.setValidator(QDoubleValidator(0.0, 1e12, 2))
-        amt_edit.setStyleSheet(
-            "padding: 4px 8px; font-size: 13px; font-weight: 600;"
-        )
+        amt_edit = InputFieldBuilder.create_money_input("0.00")
         self.table.setCellWidget(row, 1, amt_edit)
 
-        rem_btn = QPushButton("✕")
+        rem_btn = ButtonBuilder.create_danger_button("✕", lambda _, b=rem_btn: self._remove_row_by_widget(b))
         rem_btn.setFixedWidth(28)
-        rem_btn.setStyleSheet(
-            "QPushButton { color: #EF4444; font-weight: 900; border: none; font-size: 13px; }"
-            "QPushButton:hover { color: #DC2626; }"
-        )
-        rem_btn.clicked.connect(lambda _, b=rem_btn: self._remove_row_by_widget(b))
         self.table.setCellWidget(row, 2, rem_btn)
 
         self._rows_data.append((bank_combo, amt_edit))
@@ -405,14 +389,7 @@ class MotorCarDetailDialog(QDialog):
         """)
         root.addWidget(self.table)
 
-        add_btn = QPushButton("+ Add Item")
-        add_btn.setStyleSheet("""
-            QPushButton { background: #3B82F6; color: white; border: none;
-                          border-radius: 6px; padding: 7px 18px;
-                          font-weight: 700; font-size: 12px; }
-            QPushButton:hover { background: #2563EB; }
-        """)
-        add_btn.clicked.connect(self._add_row)
+        add_btn = ButtonBuilder.create_primary_button("+ Add Item", self._add_row)
         root.addWidget(add_btn, alignment=Qt.AlignLeft)
 
         totals_frame = QFrame()
@@ -598,14 +575,7 @@ class EmpenaDetailDialog(QDialog):
         root.addWidget(self.table)
 
 
-        add_btn = QPushButton("+ Add Item")
-        add_btn.setStyleSheet("""
-            QPushButton { background: #3B82F6; color: white; border: none;
-                          border-radius: 6px; padding: 7px 18px;
-                          font-weight: 700; font-size: 12px; }
-            QPushButton:hover { background: #2563EB; }
-        """)
-        add_btn.clicked.connect(self._add_row)
+        add_btn = ButtonBuilder.create_primary_button("+ Add Item", self._add_row)
         root.addWidget(add_btn, alignment=Qt.AlignLeft)
 
      

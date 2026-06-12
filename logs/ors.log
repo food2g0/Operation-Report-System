@@ -6404,3 +6404,9 @@ KeyboardInterrupt
 2026-06-11 16:24:07 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] payable_result: [{'id': 36990, 'corporation': 'HEAD OFFICE', 'branch': 'HEAD OFFICE', 'date': '2026-07-08', 'sendout_capital': '2.00', 'sendout_sc': '2.00', 'sendout_commission': '2.00', 'sendout_total': '6.00', 'payout_capital': '2.00', 'payout_sc': '2.00', 'payout_commission': '2.00', 'payout_total': '6.00', 'international_capital': '2.00', 'international_sc': '2.00', 'international_commission': '2.00', 'international_total': '6.00', 'skid': '50.00', 'skir': '50.00', 'cancellation': '50.00', 'inc': '50.00', 'created_at': '2026-06-11 16:24:06', 'updated_at': '2026-06-11 16:24:06', 'sendout_lotes': 2, 'payout_lotes': 2, 'international_lotes': 2}]
 2026-06-11 16:24:07 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=50.00, skid=50.00, skir=50.00, cancellation=50.00
 2026-06-11 16:24:07 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 34 fields: adjustments=50.0, 50.0, 50.0, 50.0
+2026-06-12 08:25:26 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-12 08:25:30 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-12 08:25:30 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-12 08:25:30 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-12 08:25:30 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-12 08:25:40 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
