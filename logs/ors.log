@@ -6095,3 +6095,312 @@ KeyboardInterrupt
 2026-06-11 09:10:24 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
 2026-06-11 09:10:24 [INFO] AutoUpdater: Silent update status: Already up to date
 2026-06-11 09:10:25 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 12:23:29 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 12:23:33 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 12:23:33 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 12:23:33 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 12:23:33 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 12:23:35 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:06:41 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:06:49 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:06:51 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:24:20 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 13:24:24 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 13:24:24 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 13:24:24 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 13:24:24 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 13:24:30 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:24:30 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:29:49 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:29:55 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:35:19 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 13:35:22 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 13:35:22 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 13:35:22 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 13:35:22 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 13:35:27 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:35:28 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:36:14 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:36:14 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:36:14 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=100076.91, Credit=5.00, Ending=100071.91
+2026-06-11 13:36:14 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-04, SO=1.0, PO=1.0, INT=1.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:36:14 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-04 (result: 1)
+2026-06-11 13:36:14 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-04
+2026-06-11 13:36:14 [INFO] Client.dashboard.core: daily_reports verified: Debit=100119.06, Credit=5.00, Ending=100114.06
+2026-06-11 13:36:14 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-04, SO=1.0, PO=1.0, INT=1.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:36:14 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-04 (result: 1)
+2026-06-11 13:36:14 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-04
+2026-06-11 13:36:14 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 13:36:16 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:44:27 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 13:44:30 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 13:44:30 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 13:44:30 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 13:44:30 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 13:44:31 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:44:31 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:45:25 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:45:25 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:45:26 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=100117.47, Credit=1222.00, Ending=98895.47
+2026-06-11 13:45:26 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=1.0, PO=1.0, INT=1.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:45:26 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:45:26 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:45:26 [INFO] Client.dashboard.core: daily_reports verified: Debit=100157.62, Credit=1227.00, Ending=98930.62
+2026-06-11 13:45:26 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=1.0, PO=1.0, INT=1.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:45:26 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:45:26 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:45:26 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 13:45:27 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:45:47 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:45:52 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:46:05 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:46:10 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:46:10 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:46:31 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=100118.47, Credit=1222.00, Ending=98896.47
+2026-06-11 13:46:31 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=0.0, PO=0.0, INT=0.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:46:31 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:46:31 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:46:31 [INFO] Client.dashboard.core: daily_reports verified: Debit=100158.62, Credit=1227.00, Ending=98931.62
+2026-06-11 13:46:31 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=0.0, PO=0.0, INT=0.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:46:31 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:46:31 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:46:31 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 13:46:35 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:46:56 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:47:46 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:47:50 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:47:51 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:48:08 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=2.0, skid=2.0, skir=2.0, cancel=2.0
+2026-06-11 13:48:08 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=2.0, skid=2.0, skir=2.0, cancel=2.0
+2026-06-11 13:48:08 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=100118.47, Credit=1222.00, Ending=98896.47
+2026-06-11 13:48:08 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=1.0, PO=2.0, INT=2.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:48:08 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:48:08 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:48:08 [INFO] Client.dashboard.core: daily_reports verified: Debit=100158.62, Credit=1232.00, Ending=98926.62
+2026-06-11 13:48:08 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=1.0, PO=2.0, INT=2.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 13:48:08 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:48:08 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:48:08 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 13:48:10 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:48:12 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:53:52 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 13:53:56 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 13:53:56 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 13:53:56 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 13:53:56 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 13:53:57 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:54:00 [WARNING] urllib3.connectionpool: Retrying (Retry(total=0, connect=1, read=0, redirect=None, status=None)) after connection broken by 'RemoteDisconnected('Remote end closed connection without response')': /api/exec
+2026-06-11 13:54:08 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:54:12 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:54:13 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:54:13 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-06-11
+2026-06-11 13:54:20 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:32 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:32 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:54:34 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:54:38 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 13:54:40 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 13:54:41 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 13:54:41 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 13:54:41 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 13:54:42 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:54:42 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:54:42 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-06-11
+2026-06-11 13:54:46 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-06-12
+2026-06-11 13:54:49 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 15 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-23
+2026-06-11 13:54:51 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 15 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-24
+2026-06-11 13:54:54 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 15 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-26
+2026-06-11 13:54:56 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 15 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-01
+2026-06-11 13:55:02 [INFO] login: Logout requested - returning to login screen
+2026-06-11 13:55:06 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:58:17 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 13:58:20 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 13:58:20 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 13:58:21 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 13:58:21 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 13:58:26 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:58:26 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 13:58:27 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-06-11
+2026-06-11 13:58:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-06-12
+2026-06-11 13:58:33 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-06-13
+2026-06-11 13:58:39 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-06-15
+2026-06-11 13:58:42 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-18
+2026-06-11 13:58:49 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 24 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-19
+2026-06-11 13:58:52 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:58:56 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-04
+2026-06-11 13:58:59 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:59:02 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-03
+2026-06-11 13:59:04 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-04
+2026-06-11 13:59:08 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-05
+2026-06-11 13:59:27 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=55.0, skid=5.0, skir=5.0, cancel=5.0
+2026-06-11 13:59:27 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=55.0, skid=5.0, skir=5.0, cancel=5.0
+2026-06-11 13:59:27 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=100118.47, Credit=1222.00, Ending=98896.47
+2026-06-11 13:59:27 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=5.0, PO=5.0, INT=55.0, Adj: inc=2.0, skid=2.0, skir=2.0, cancel=2.0
+2026-06-11 13:59:27 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:59:27 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:59:27 [INFO] Client.dashboard.core: daily_reports verified: Debit=100220.62, Credit=1297.00, Ending=98923.62
+2026-06-11 13:59:27 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable: branch=HEAD OFFICE, date=2026-07-05, SO=5.0, PO=5.0, INT=55.0, Adj: inc=2.0, skid=2.0, skir=2.0, cancel=2.0
+2026-06-11 13:59:27 [INFO] Client.dashboard.managers.palawan_manager: Saved palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-05 (result: 1)
+2026-06-11 13:59:27 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-05
+2026-06-11 13:59:27 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 13:59:28 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 13:59:28 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 13:59:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 13:59:38 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-04
+2026-06-11 13:59:40 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 253 fields in daily_reports for HEAD OFFICE on 2026-07-03
+2026-06-11 13:59:42 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-02
+2026-06-11 13:59:46 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 30 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 14:01:22 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 14:01:25 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 14:01:25 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 14:01:26 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 14:01:26 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 14:01:26 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 14:01:27 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 14:01:27 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 4 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-11
+2026-06-11 14:01:30 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 14:04:06 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 14:04:09 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 14:04:09 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 14:04:09 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 14:04:09 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 14:04:10 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 14:04:10 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 14:04:10 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 14:04:10 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 4 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-11
+2026-06-11 14:04:13 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=2.0, skid=2.0, skir=2.0, cancellation=2.0
+2026-06-11 14:04:13 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 14:19:06 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 14:19:08 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 14:19:08 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 14:19:09 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 14:19:09 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 14:19:10 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 14:19:10 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 14:19:10 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 14:19:10 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 4 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-11
+2026-06-11 14:19:13 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=2.0, skid=2.0, skir=2.0, cancellation=2.0
+2026-06-11 14:19:13 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 15:06:30 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 15:06:33 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 15:06:33 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 15:06:34 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 15:06:34 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 15:06:35 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 15:06:35 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 15:06:35 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:06:35 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 4 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-11
+2026-06-11 15:06:42 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=2.0, skid=2.0, skir=2.0, cancellation=2.0
+2026-06-11 15:06:42 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 15:17:19 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 15:17:22 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 15:17:22 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 15:17:23 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 15:17:23 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 15:17:24 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 15:17:24 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 15:17:24 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:17:24 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 4 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-11
+2026-06-11 15:17:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=2.0, skid=2.0, skir=2.0, cancellation=2.0
+2026-06-11 15:17:31 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-05
+2026-06-11 15:17:36 [INFO] login: Logout requested - returning to login screen
+2026-06-11 15:17:39 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 15:17:39 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 15:17:39 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:17:39 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 4 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-11
+2026-06-11 15:18:37 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=8.0, skid=8.0, skir=88.0, cancel=8.0
+2026-06-11 15:18:37 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=8.0, skid=8.0, skir=88.0, cancel=8.0
+2026-06-11 15:18:38 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=98898.47, Credit=7.00, Ending=98891.47
+2026-06-11 15:18:38 [INFO] Client.dashboard.managers.palawan_manager: [get_brand_specific_palawan_adjustments] Brand A found in daily_reports_brand_a: skid=1.0, skir=1.0, cancel=1.0, inc=1.0
+2026-06-11 15:18:38 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable (Brand A): branch=HEAD OFFICE, date=2026-07-06, SO=10.0, PO=2022.0, INT=23.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:18:38 [INFO] Client.dashboard.managers.palawan_manager: Saved Brand A palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-06 - inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:18:38 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-06
+2026-06-11 15:18:38 [INFO] Client.dashboard.core: daily_reports verified: Debit=99155.62, Credit=2134.00, Ending=97021.62
+2026-06-11 15:18:38 [INFO] Client.dashboard.managers.palawan_manager: [get_brand_specific_palawan_adjustments] Brand B found in payable_tbl_brand_a: skid=1.0, skir=1.0, cancel=1.0, inc=1.0
+2026-06-11 15:18:38 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable (Brand B): branch=HEAD OFFICE, date=2026-07-06, SO=10.0, PO=2022.0, INT=23.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:18:38 [INFO] Client.dashboard.managers.palawan_manager: Saved Brand B palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-06 - inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:18:38 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-06
+2026-06-11 15:18:38 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 15:18:40 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 15:18:40 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:18:40 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-06
+2026-06-11 15:18:43 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.00, skid=1.00, skir=1.00, cancellation=1.00
+2026-06-11 15:18:43 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-06
+2026-06-11 15:22:51 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 15:22:55 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 15:22:55 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 15:22:55 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 15:22:55 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 15:22:56 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 15:22:56 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 15:22:57 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:22:57 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 4 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-06-11
+2026-06-11 15:23:03 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:23:03 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Found 34 fields in payable_tbl_brand_a for HEAD OFFICE on 2026-07-06
+2026-06-11 15:25:27 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 15:25:30 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 15:25:30 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 15:25:30 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 15:25:30 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 15:25:41 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 15:25:41 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 15:25:42 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:25:42 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 4 fields: adjustments=1.0, 1.0, 1.0, 1.0
+2026-06-11 15:25:52 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:25:52 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 34 fields: adjustments=1.0, 1.0, 1.0, 1.0
+2026-06-11 15:39:47 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=29.0, skid=20.0, skir=202.0, cancel=20.0
+2026-06-11 15:39:47 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=29.0, skid=20.0, skir=202.0, cancel=20.0
+2026-06-11 15:39:47 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=98893.47, Credit=5.00, Ending=98888.47
+2026-06-11 15:39:47 [INFO] Client.dashboard.managers.palawan_manager: [get_brand_specific_palawan_adjustments] Brand A found in daily_reports_brand_a: skid=1.0, skir=1.0, cancel=1.0, inc=1.0
+2026-06-11 15:39:47 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable (Brand A): branch=HEAD OFFICE, date=2026-07-07, SO=20.0, PO=20.0, INT=20.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:39:47 [INFO] Client.dashboard.managers.palawan_manager: Saved Brand A palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-07 - inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:39:47 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-07
+2026-06-11 15:39:47 [INFO] Client.dashboard.core: daily_reports verified: Debit=97063.62, Credit=291.00, Ending=96772.62
+2026-06-11 15:39:47 [INFO] Client.dashboard.managers.palawan_manager: [get_brand_specific_palawan_adjustments] Brand B found in payable_tbl_brand_a: skid=1.0, skir=1.0, cancel=1.0, inc=1.0
+2026-06-11 15:39:47 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable (Brand B): branch=HEAD OFFICE, date=2026-07-07, SO=20.0, PO=20.0, INT=20.0, Adj: inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:39:47 [INFO] Client.dashboard.managers.palawan_manager: Saved Brand B palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-07 - inc=1.0, skid=1.0, skir=1.0, cancel=1.0
+2026-06-11 15:39:47 [INFO] Client.dashboard.core: FIX #13: Palawan data save completed for HEAD OFFICE on 2026-07-07
+2026-06-11 15:39:47 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 15:39:49 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 15:39:49 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 15:39:49 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 34 fields: adjustments=1.0, 1.0, 1.0, 1.0
+2026-06-11 15:39:52 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.00, skid=1.00, skir=1.00, cancellation=1.00
+2026-06-11 15:39:52 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 34 fields: adjustments=1.0, 1.0, 1.0, 1.0
+2026-06-11 16:23:13 [INFO] RemoteDatabaseManager: API mode enabled — connecting via http://222.127.90.218:5000
+2026-06-11 16:23:16 [INFO] AutoUpdater: Silent updater: Checking for updates...
+2026-06-11 16:23:17 [INFO] AutoUpdater: Silent update status: Checking for updates...
+2026-06-11 16:23:17 [INFO] AutoUpdater: Silent updater: Already on latest version (1.0.0)
+2026-06-11 16:23:17 [INFO] AutoUpdater: Silent update status: Already up to date
+2026-06-11 16:23:19 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 16:23:19 [WARNING] Client.dashboard.core: _connect_shared_fields error (non-fatal): [Errno 2] No such file or directory: 'C:\\Users\\Admin\\Operation-Report-System\\Client\\field_config.json'
+2026-06-11 16:23:20 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] Querying payable_tbl_brand_a with params: ('2026-06-11', 'HEAD OFFICE', 'HEAD OFFICE')
+2026-06-11 16:23:20 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] payable_result: [{'id': 31857, 'corporation': 'HEAD OFFICE', 'branch': 'HEAD OFFICE', 'date': '2026-06-11', 'sendout_capital': 0.0, 'sendout_sc': 0.0, 'sendout_commission': 0.0, 'sendout_total': 0.0, 'payout_capital': 0.0, 'payout_sc': 0.0, 'payout_commission': 0.0, 'payout_total': 0.0, 'international_capital': 0.0, 'international_sc': 0.0, 'international_commission': 0.0, 'international_total': 0.0, 'skid': 1.0, 'skir': 1.0, 'cancellation': 1.0, 'inc': 1.0, 'created_at': '2026-06-09T14:48:40', 'updated_at': '2026-06-09T14:48:40', 'sendout_lotes': 0, 'payout_lotes': 0, 'international_lotes': 0}]
+2026-06-11 16:23:20 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=1.0, skid=1.0, skir=1.0, cancellation=1.0
+2026-06-11 16:23:20 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 4 fields: adjustments=1.0, 1.0, 1.0, 1.0
+2026-06-11 16:23:23 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] Querying payable_tbl_brand_a with params: ('2026-07-08', 'HEAD OFFICE', 'HEAD OFFICE')
+2026-06-11 16:23:23 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] payable_result: []
+2026-06-11 16:23:23 [INFO] Client.dashboard.managers.palawan_manager: 🟡 [restore_palawan_tab] FALLBACK to daily_reports - loading from daily_reports_brand_a and daily_reports
+2026-06-11 16:23:23 [INFO] Client.dashboard.managers.palawan_manager: 🟡 [restore_palawan_tab] result_a: [], result_b: []
+2026-06-11 16:24:03 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=50.0, skid=50.0, skir=50.0, cancel=50.0
+2026-06-11 16:24:03 [INFO] Client.palawan_details_tab: 🔵 PalawanDetailsTab.get_data() adjustments: inc=50.0, skid=50.0, skir=50.0, cancel=50.0
+2026-06-11 16:24:03 [INFO] Client.dashboard.core: daily_reports_brand_a verified: Debit=98888.47, Credit=5.00, Ending=98883.47
+2026-06-11 16:24:03 [INFO] Client.dashboard.core: daily_reports verified: Debit=96778.62, Credit=202.00, Ending=96576.62
+2026-06-11 16:24:03 [INFO] Client.dashboard.managers.palawan_manager: [get_brand_specific_palawan_adjustments] Brand B found in daily_reports: skid=50.0, skir=50.0, cancel=50.0, inc=50.0
+2026-06-11 16:24:03 [INFO] Client.dashboard.managers.palawan_manager: 🔵 save_palawan_to_payable (Brand B): branch=HEAD OFFICE, date=2026-07-08, SO=2.0, PO=2.0, INT=2.0, Adj: inc=50.0, skid=50.0, skir=50.0, cancel=50.0
+2026-06-11 16:24:03 [INFO] Client.dashboard.managers.palawan_manager: Saved Brand B palawan data to payable_tbl_brand_a for HEAD OFFICE on 2026-07-08 - inc=50.0, skid=50.0, skir=50.0, cancel=50.0
+2026-06-11 16:24:03 [INFO] Client.dashboard.core: ✅ Palawan Details B saved to payable_tbl_brand_a for HEAD OFFICE on 2026-07-08
+2026-06-11 16:24:04 [INFO] Client.dashboard.core: Cash Float saved: 0.00
+2026-06-11 16:24:05 [INFO] APIDbManager: API token obtained from http://222.127.90.218:5000
+2026-06-11 16:24:05 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] Querying payable_tbl_brand_a with params: ('2026-07-08', 'HEAD OFFICE', 'HEAD OFFICE')
+2026-06-11 16:24:05 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] payable_result: [{'id': 36990, 'corporation': 'HEAD OFFICE', 'branch': 'HEAD OFFICE', 'date': '2026-07-08', 'sendout_capital': 2.0, 'sendout_sc': 2.0, 'sendout_commission': 2.0, 'sendout_total': 6.0, 'payout_capital': 2.0, 'payout_sc': 2.0, 'payout_commission': 2.0, 'payout_total': 6.0, 'international_capital': 2.0, 'international_sc': 2.0, 'international_commission': 2.0, 'international_total': 6.0, 'skid': 50.0, 'skir': 50.0, 'cancellation': 50.0, 'inc': 50.0, 'created_at': '2026-06-11T16:24:06', 'updated_at': '2026-06-11T16:24:06', 'sendout_lotes': 2, 'payout_lotes': 2, 'international_lotes': 2}]
+2026-06-11 16:24:05 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=50.0, skid=50.0, skir=50.0, cancellation=50.0
+2026-06-11 16:24:05 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 34 fields: adjustments=50.0, 50.0, 50.0, 50.0
+2026-06-11 16:24:07 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] Querying payable_tbl_brand_a with params: ('2026-07-08', 'HEAD OFFICE', 'HEAD OFFICE')
+2026-06-11 16:24:07 [INFO] Client.dashboard.managers.palawan_manager: 🔵 [restore_palawan_tab] payable_result: [{'id': 36990, 'corporation': 'HEAD OFFICE', 'branch': 'HEAD OFFICE', 'date': '2026-07-08', 'sendout_capital': '2.00', 'sendout_sc': '2.00', 'sendout_commission': '2.00', 'sendout_total': '6.00', 'payout_capital': '2.00', 'payout_sc': '2.00', 'payout_commission': '2.00', 'payout_total': '6.00', 'international_capital': '2.00', 'international_sc': '2.00', 'international_commission': '2.00', 'international_total': '6.00', 'skid': '50.00', 'skir': '50.00', 'cancellation': '50.00', 'inc': '50.00', 'created_at': '2026-06-11 16:24:06', 'updated_at': '2026-06-11 16:24:06', 'sendout_lotes': 2, 'payout_lotes': 2, 'international_lotes': 2}]
+2026-06-11 16:24:07 [INFO] Client.dashboard.managers.palawan_manager: [restore_palawan_tab] Adjustments from payable_tbl_brand_a - inc=50.00, skid=50.00, skir=50.00, cancellation=50.00
+2026-06-11 16:24:07 [INFO] Client.dashboard.managers.palawan_manager: 🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with 34 fields: adjustments=50.0, 50.0, 50.0, 50.0

@@ -112,18 +112,18 @@
     "branch": "HEAD OFFICE",
     "corporation": "HEAD OFFICE",
     "brand": "Brand A",
-    "date": "2026-07-03",
-    "ending_balance": 100071.29,
-    "cached_at": "2026-06-10T16:20:01.768805"
+    "date": "2026-07-08",
+    "ending_balance": 98883.47,
+    "cached_at": "2026-06-11T16:24:03.834207"
   },
   "cl_0381_head_office_head_office_brand_b": {
     "username": "CL-0381",
     "branch": "HEAD OFFICE",
     "corporation": "HEAD OFFICE",
     "brand": "Brand B",
-    "date": "2026-07-03",
-    "ending_balance": 100116.06,
-    "cached_at": "2026-06-10T16:20:01.887216"
+    "date": "2026-07-08",
+    "ending_balance": 96576.62,
+    "cached_at": "2026-06-11T16:24:03.984825"
   },
   "cl_0002_20th_safelock_pawnshop_inc__brand_a": {
     "username": "CL-0002",

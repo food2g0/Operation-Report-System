@@ -1,4 +1,4 @@
-﻿
+"""Dashboard module - organizes ClientDashboard and related components."""
 
 from Client.dashboard.core import ClientDashboard
 

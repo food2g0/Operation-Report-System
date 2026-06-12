@@ -292,12 +292,6 @@ class AdminDashboard(QWidget):
         except Exception as e:
             logger.error("[AdminDashboard] review table create: %s", e)
 
-        # Drop legacy payable_brand_a table — replaced by payable_tbl_brand_a
-        try:
-            self.db.execute_query("DROP TABLE IF EXISTS payable_brand_a")
-        except Exception as e:
-            logger.error("[AdminDashboard] payable_brand_a table drop: %s", e)
-
         # Add any columns to daily_reports_brand_a that may be missing on older DB installs
         _migrations = [
             ("daily_reports_brand_a", "pc_inc_insurance",              "DECIMAL(15,2) DEFAULT 0.00"),
