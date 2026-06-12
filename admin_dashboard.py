@@ -2785,7 +2785,7 @@ class AdminDashboard(QWidget):
 
    
             main_tables = ["daily_reports_brand_a", "daily_reports"]
-            supp_tables = ["payable_tbl_brand_a", "cash_float_tbl"]
+            supp_tables = ["cash_float_tbl"]  # payable_tbl_brand_a preserved (contains Palawan Details B)
             found = False
 
             for table in main_tables:
