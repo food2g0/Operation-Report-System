@@ -2514,11 +2514,12 @@ class ClientDashboard(QWidget):
                     self.loading_overlay.show()
                     QApplication.processEvents()
 
-                self._load_brand_report_data("Brand A", sd)
-                self._load_brand_report_data("Brand B", sd)
-                # Load Palawan tab data (both main data and adjustments merged before UI update)
+                # Load Palawan tab data FIRST so palawan amounts are included in cash flow calculations
                 self._restore_palawan_tab(sd)      # Loads main palawan + adjustments (merged)
                 self._restore_palawan_payable(sd)  # DEPRECATED - adjustments now loaded in _restore_palawan_tab
+                # Now load brand data - recalculate_all() will include palawan amounts
+                self._load_brand_report_data("Brand A", sd)
+                self._load_brand_report_data("Brand B", sd)
             finally:
                 try:
                     if hasattr(self, 'loading_overlay'):
@@ -2756,6 +2757,10 @@ class ClientDashboard(QWidget):
         self._toggle_inputs(True)
 
     def recalculate_all(self):
+        # Skip if we're in the middle of loading a report - don't overwrite database values
+        if getattr(self, '_skip_ending_balance_recalc', False):
+            return
+
         for brand in ("a", "b"):
             bb  = getattr(self, f"beginning_balance_input_{brand}")
             cft = getattr(self, f"cash_flow_tab_{brand}")
@@ -5017,7 +5022,9 @@ class ClientDashboard(QWidget):
             )
 
     def _load_brand_report_data(self, brand, date_str):
-
+        logger.info(f"_load_brand_report_data START: brand={brand}, date={date_str}")
+        # Set flag to prevent recalculate_all() from overwriting database values during load
+        self._skip_ending_balance_recalc = True
         try:
             table_name = "daily_reports_brand_a" if brand == "Brand A" else "daily_reports"
             # CRITICAL FIX: Validate table name to prevent SQL injection
@@ -5094,25 +5101,26 @@ class ClientDashboard(QWidget):
             
    
             col_mapping = cf_tab._build_column_mapping()
-            
+
+            # Block ALL signals during loading to prevent recalculate_all() from being triggered
+            cf_tab.blockSignals(True)
+            bb_input.blockSignals(True)
+            cc_input.blockSignals(True)
 
             reverse_mapping = {v: k for k, v in col_mapping.items()}
-            
+
             for label, widget in cf_tab.debit_inputs.items():
                 db_col = col_mapping.get(label, cf_tab._sanitize_column(label))
                 value = data.get(db_col, 0)
-                widget.blockSignals(True)
                 if value:
                     widget.setText(f"{float(value):.2f}")
                 else:
                     widget.clear()  # Clear if value is 0 or missing
-                widget.blockSignals(False)
                 
                 lotes_col = db_col + "_lotes"
                 lotes_val = data.get(lotes_col, 0)
                 lotes_widget = cf_tab.debit_lotes_inputs.get(label)
                 if lotes_widget:
-                    lotes_widget.blockSignals(True)
                     if lotes_val:
                         try:
                             lotes_widget.setText(str(int(float(lotes_val))))
@@ -5120,23 +5128,19 @@ class ClientDashboard(QWidget):
                             lotes_widget.setText(str(lotes_val))
                     else:
                         lotes_widget.clear()  # Clear if value is 0 or missing
-                    lotes_widget.blockSignals(False)
-            
+
             for label, widget in cf_tab.credit_inputs.items():
                 db_col = col_mapping.get(label, cf_tab._sanitize_column(label))
                 value = data.get(db_col, 0)
-                widget.blockSignals(True)
                 if value:
                     widget.setText(f"{float(value):.2f}")
                 else:
                     widget.clear()  # Clear if value is 0 or missing
-                widget.blockSignals(False)
-                
+
                 lotes_col = db_col + "_lotes"
                 lotes_val = data.get(lotes_col, 0)
                 lotes_widget = cf_tab.credit_lotes_inputs.get(label)
                 if lotes_widget:
-                    lotes_widget.blockSignals(True)
                     if lotes_val:
                         try:
                             lotes_widget.setText(str(int(float(lotes_val))))
@@ -5144,10 +5148,45 @@ class ClientDashboard(QWidget):
                             lotes_widget.setText(str(lotes_val))
                     else:
                         lotes_widget.clear()  # Clear if value is 0 or missing
-                    lotes_widget.blockSignals(False)
-            
-            # Force a full UI recalculation now that all fields are populated
-            self.recalculate_all()
+
+            # Load and display database values directly without recalculation
+            ending_balance = float(data.get('ending_balance', 0) or 0)
+            cash_result = float(data.get('cash_result', 0) or 0)
+            variance_status = data.get('variance_status', 'balanced')
+
+            logger.info(f"LOADED FROM DB ({brand}, {table_name}): ending_balance={ending_balance}, cash_result={cash_result}, variance_status={variance_status}")
+
+            eb_disp = self.ending_balance_display_a if brand == "Brand A" else self.ending_balance_display_b
+            cr_disp = self.cash_result_display_a if brand == "Brand A" else self.cash_result_display_b
+            vs_label = self.variance_status_label_a if brand == "Brand A" else self.variance_status_label_b
+
+            # Set ending balance from database (still signals blocked)
+            eb_disp.setText(f"{float(ending_balance):,.2f}")
+            logger.info(f"SET ending_balance_display to {ending_balance}")
+            c = _EMERALD_400 if ending_balance > 0 else (_RED_400 if ending_balance < 0 else _WHITE)
+            eb_disp.setStyleSheet(f"font-size: 15px; font-weight: 800; color: {c}; background: transparent;")
+
+            # Set cash result from database
+            cr_disp.setText(f"{float(cash_result):,.2f}")
+
+            # Set variance status from database
+            if abs(cash_result) < 0.01:
+                vs_label.setText("✓  Balanced")
+                vs_label.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_EMERALD_400}; background: transparent;")
+            elif cash_result > 0:
+                vs_label.setText(f"Over  +{abs(cash_result):,.2f}")
+                vs_label.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_AMBER_400}; background: transparent;")
+            else:
+                vs_label.setText(f"Short  {cash_result:,.2f}")
+                vs_label.setStyleSheet(f"font-size: 12px; font-weight: 700; color: {_RED_400}; background: transparent;")
+
+            # NOW unblock all signals - this is safe because we've set all the database values
+            cf_tab.blockSignals(False)
+            bb_input.blockSignals(False)
+            cc_input.blockSignals(False)
+            logger.info(f"UNBLOCKED signals after loading {brand} - ending_balance should be {ending_balance}")
+            # Clear the skip flag - next recalculate will respect user changes
+            self._skip_ending_balance_recalc = False
             
         except Exception as e:
             logger.error("_load_brand_report_data error (%s): %s", brand, e)
