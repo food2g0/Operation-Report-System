@@ -1,17 +1,17 @@
 """UI builders for constructing dashboard components."""
 
 from Client.dashboard.builders.ui_builders import (
-    BalanceColumnBuilder,
-    BrandSummaryBuilder,
-    StatusBoxBuilder,
+    ButtonBuilder,
     InputFieldBuilder,
-    FrameBuilder
+    FrameBuilder,
+    LabelBuilder,
+    LayoutBuilder
 )
 
 __all__ = [
-    'BalanceColumnBuilder',
-    'BrandSummaryBuilder',
-    'StatusBoxBuilder',
+    'ButtonBuilder',
     'InputFieldBuilder',
-    'FrameBuilder'
+    'FrameBuilder',
+    'LabelBuilder',
+    'LayoutBuilder'
 ]

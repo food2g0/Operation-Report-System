@@ -25,7 +25,7 @@ from Client.cash_flow_tab import CashFlowTab
 from Client.palawan_details_tab import PalawanDetailsTab
 from Client.dashboard.dialogs import FundTransferHODialog, MotorCarDetailDialog, EmpenaDetailDialog
 from Client.dashboard.managers import BalanceManager, PalawanManager
-from Client.dashboard.handlers import PostHandler, ExportHandler, ValidationService
+from Client.dashboard.handlers import PostHandler, ExportHandler, ValidationService, ServerErrorHandler
 from Client.dashboard.builders import ButtonBuilder, InputFieldBuilder, FrameBuilder, LabelBuilder, LayoutBuilder
 from security import SessionManager
 from Client.ui_components import LoadingOverlay, NoWheelDateEdit
@@ -743,6 +743,7 @@ class ClientDashboard(QWidget):
         self.post_handler = PostHandler(db_manager, branch, corporation, offline_mode)
         self.export_handler = ExportHandler(branch, corporation)
         self.validation_service = ValidationService(db_manager, branch, corporation)
+        self.error_handler = ServerErrorHandler(self, offline_manager)
 
         # Zoom functionality
         self.zoom_level = 100

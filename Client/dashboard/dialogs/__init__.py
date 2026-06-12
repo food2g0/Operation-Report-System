@@ -5,9 +5,11 @@ from Client.dashboard.dialogs.detail_dialogs import (
     MotorCarDetailDialog,
     EmpenaDetailDialog
 )
+from Client.dashboard.dialogs.server_down_dialog import ServerDownDialog
 
 __all__ = [
     'FundTransferHODialog',
     'MotorCarDetailDialog',
-    'EmpenaDetailDialog'
+    'EmpenaDetailDialog',
+    'ServerDownDialog'
 ]
