@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QDateEdit, QMessageBox,
-    QSpinBox, QFileDialog
+    QSpinBox, QFileDialog, QApplication
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor, QFont
@@ -394,19 +394,33 @@ class BIRBookPage(QWidget):
                 # Add expand button in last column if group has multiple transactions
                 if len(txns) > 1:
                     expand_btn = QPushButton("▼")
-                    expand_btn.setMaximumWidth(40)
+                    expand_btn.setMaximumWidth(35)
+                    expand_btn.setMaximumHeight(25)
+                    expand_btn.setMinimumWidth(35)
+                    expand_btn.setMinimumHeight(25)
                     expand_btn.setCursor(Qt.PointingHandCursor)
                     expand_btn.setStyleSheet("""
                         QPushButton {
                             background: #3B82F6; color: white;
                             border: none; border-radius: 3px;
-                            padding: 3px 8px; font-weight: 600;
+                            padding: 0px 5px; font-weight: 600;
+                            font-size: 12px;
                         }
                         QPushButton:hover { background: #2563EB; }
                     """)
                     expand_btn.clicked.connect(lambda checked, r=row_idx, d=(date, branch), t=txns:
                                                self._toggle_group_expansion(r, d, t))
-                    self.table.setCellWidget(row_idx, 17, expand_btn)
+
+                    # Create container widget to center the button
+                    container = QWidget()
+                    layout = QHBoxLayout(container)
+                    layout.setContentsMargins(2, 2, 2, 2)
+                    layout.setSpacing(0)
+                    layout.addStretch()
+                    layout.addWidget(expand_btn)
+                    layout.addStretch()
+
+                    self.table.setCellWidget(row_idx, 17, container)
                     self.group_data[row_idx] = (date, branch, txns[1:])  # Store hidden transactions
 
                 row_idx += 1
@@ -467,9 +481,11 @@ class BIRBookPage(QWidget):
         self._add_group_totals_row(all_group_txns, insert_row)
 
         # Update button to collapse
-        button = self.table.cellWidget(header_row, 17)
-        if button:
-            button.setText("▲")
+        container = self.table.cellWidget(header_row, 17)
+        if container:
+            button = container.findChild(QPushButton)
+            if button:
+                button.setText("▲")
 
         # Mark as expanded
         self.expanded_groups.add(group_id)
@@ -496,9 +512,11 @@ class BIRBookPage(QWidget):
             self.table.removeRow(header_row + 1)
 
         # Update button to expand
-        button = self.table.cellWidget(header_row, 17)
-        if button:
-            button.setText("▼")
+        container = self.table.cellWidget(header_row, 17)
+        if container:
+            button = container.findChild(QPushButton)
+            if button:
+                button.setText("▼")
 
         # Mark as collapsed
         self.expanded_groups.discard(group_id)
