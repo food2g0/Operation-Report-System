@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import (
     QSpinBox, QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtGui import QColor, QFont
 from api_db_manager import db_manager
 import json
 import logging
@@ -382,7 +383,10 @@ class BIRBookPage(QWidget):
                     # Add expandable "Show X more" row
                     self.table.insertRow(row_idx)
                     expand_item = QTableWidgetItem(f"+ Show {len(txns) - 1} more transaction{'s' if len(txns) - 1 > 1 else ''}")
-                    expand_item.setStyleSheet("color: #0284C7; font-weight: 600;")
+                    expand_font = QFont()
+                    expand_font.setWeight(QFont.Bold)
+                    expand_item.setFont(expand_font)
+                    expand_item.setForeground(QColor("#0284C7"))
                     self.table.setItem(row_idx, 0, expand_item)
                     self.group_rows[row_idx] = ('expand', (date, branch, txns[1:]))
                     row_idx += 1
@@ -412,60 +416,62 @@ class BIRBookPage(QWidget):
         total_ar = sum(float(t.get("ar_palawan", 0)) for t in transactions)
 
         # Style for totals row
-        totals_style = "background-color: #F1F5F9; font-weight: 700; color: #0F172A;"
+        totals_bg = QColor("#F1F5F9")
+        totals_fg = QColor("#0F172A")
+        totals_font = QFont()
+        totals_font.setBold(True)
+
+        def _create_totals_item(text=""):
+            """Helper to create styled totals item."""
+            item = QTableWidgetItem(text)
+            item.setBackground(totals_bg)
+            item.setForeground(totals_fg)
+            item.setFont(totals_font)
+            item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            return item
 
         # Date column - TOTALS label
-        label_item = QTableWidgetItem("TOTALS")
-        label_item.setStyleSheet(totals_style)
+        label_item = _create_totals_item("TOTALS")
+        label_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.table.setItem(row_idx, 0, label_item)
 
         # Other columns until Principal
         for col in range(1, 5):
-            item = QTableWidgetItem("")
-            item.setStyleSheet(totals_style)
-            self.table.setItem(row_idx, col, item)
+            self.table.setItem(row_idx, col, _create_totals_item())
 
         # Principal (column 5)
-        principal_item = QTableWidgetItem(f"{total_principal:,.2f}")
-        principal_item.setStyleSheet(totals_style)
+        principal_item = _create_totals_item(f"{total_principal:,.2f}")
         principal_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.table.setItem(row_idx, 5, principal_item)
 
         # Commission (column 6)
-        commission_item = QTableWidgetItem(f"{total_commission:,.2f}")
-        commission_item.setStyleSheet(totals_style)
+        commission_item = _create_totals_item(f"{total_commission:,.2f}")
         commission_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.table.setItem(row_idx, 6, commission_item)
 
         # SC (column 7)
-        sc_item = QTableWidgetItem(f"{total_sc:,.2f}")
-        sc_item.setStyleSheet(totals_style)
+        sc_item = _create_totals_item(f"{total_sc:,.2f}")
         sc_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.table.setItem(row_idx, 7, sc_item)
 
         # Total SC (column 8)
-        total_sc_item = QTableWidgetItem(f"{total_total_sc:,.2f}")
-        total_sc_item.setStyleSheet(totals_style)
+        total_sc_item = _create_totals_item(f"{total_total_sc:,.2f}")
         total_sc_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.table.setItem(row_idx, 8, total_sc_item)
 
         # Income (column 9)
-        income_item = QTableWidgetItem(f"{total_income:,.2f}")
-        income_item.setStyleSheet(totals_style)
+        income_item = _create_totals_item(f"{total_income:,.2f}")
         income_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.table.setItem(row_idx, 9, income_item)
 
         # A/R Palawan (column 10)
-        ar_item = QTableWidgetItem(f"{total_ar:,.2f}")
-        ar_item.setStyleSheet(totals_style)
+        ar_item = _create_totals_item(f"{total_ar:,.2f}")
         ar_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.table.setItem(row_idx, 10, ar_item)
 
         # Rest of columns
         for col in range(11, 18):
-            item = QTableWidgetItem("")
-            item.setStyleSheet(totals_style)
-            self.table.setItem(row_idx, col, item)
+            self.table.setItem(row_idx, col, _create_totals_item())
 
     def _prev_page(self):
         """Go to previous page."""
