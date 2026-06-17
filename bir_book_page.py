@@ -385,6 +385,9 @@ class BIRBookPage(QWidget):
         # Display only first transaction per group with expand button
         for (date, branch), txns in groups.items():
             if txns:
+                # INSERT NEW ROW FIRST
+                self.table.insertRow(row_idx)
+
                 # Add first transaction with date/branch visible
                 self._add_table_row(txns[0], show_date_branch=True, row_idx=row_idx)
 
