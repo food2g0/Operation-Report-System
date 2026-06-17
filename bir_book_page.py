@@ -87,6 +87,18 @@ class BIRBookPage(QWidget):
         load_btn.clicked.connect(self._load_transactions)
         filter_row1.addWidget(load_btn)
 
+        monthly_report_btn = QPushButton("Generate Monthly Report")
+        monthly_report_btn.setStyleSheet("""
+            QPushButton {
+                background: #F59E0B; color: white; border: none;
+                border-radius: 5px; padding: 6px 16px;
+                font-weight: 700;
+            }
+            QPushButton:hover { background: #D97706; }
+        """)
+        monthly_report_btn.clicked.connect(self._generate_monthly_report)
+        filter_row1.addWidget(monthly_report_btn)
+
         export_btn = QPushButton("Export to Excel")
         export_btn.setStyleSheet("""
             QPushButton {
@@ -131,6 +143,8 @@ class BIRBookPage(QWidget):
 
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.Stretch)
+        # Fix last column to have more width for button
+        hh.setSectionResizeMode(17, QHeaderView.ResizeToContents)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -465,13 +479,13 @@ class BIRBookPage(QWidget):
 
         insert_row = header_row + 1
 
-        # Insert hidden transactions
+        # Insert hidden transactions (NOT including first_txn, which is already shown)
         for hidden_txn in hidden_txns:
             self.table.insertRow(insert_row)
             self._add_table_row(hidden_txn, show_date_branch=False, row_idx=insert_row)
             insert_row += 1
 
-        # Insert totals row for this group
+        # Insert totals row for this group (includes first_txn + hidden_txns)
         if first_txn:
             all_group_txns = [first_txn] + hidden_txns
         else:
@@ -799,6 +813,206 @@ class BIRBookPage(QWidget):
         except Exception as e:
             logger.error(f"[BIRBookPage] Export error: {e}")
             QMessageBox.critical(self, "Export Error", f"Failed to export to Excel:\n{str(e)}")
+
+    def _generate_monthly_report(self):
+        """Generate monthly Excel report with separate sheets per branch."""
+        selected_corp = self.corporation_combo.currentData()
+        if not selected_corp:
+            QMessageBox.warning(self, "No Selection", "Please select a corporation first.")
+            return
+
+        selected_date = self.date_picker.date()
+        year = selected_date.year()
+        month = selected_date.month()
+
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        except ImportError:
+            QMessageBox.warning(self, "Missing Library", "openpyxl is required. Please install it.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Monthly Report",
+            f"BIR_Book_{selected_corp}_{year}-{month:02d}.xlsx",
+            "Excel Files (*.xlsx);;All Files (*)"
+        )
+
+        if not file_path:
+            return
+
+        try:
+            self.info_label.setText("⏳ Generating monthly report...")
+
+            # Query all transactions for the selected month and corporation
+            query = """
+                SELECT date, branch, corporation,
+                       sendout_detailed_principal, sendout_detailed_sc, sendout_detailed_commission,
+                       payout_detailed_principal, payout_detailed_sc, payout_detailed_commission,
+                       international_detailed_principal, international_detailed_sc, international_detailed_commission
+                FROM payable_tbl_brand_a
+                WHERE corporation = %s
+                AND YEAR(date) = %s
+                AND MONTH(date) = %s
+                ORDER BY date, branch
+            """
+
+            result = self.db.execute_query(query, (selected_corp, year, month))
+
+            if not result:
+                QMessageBox.warning(self, "No Data", f"No transactions found for {selected_corp} in {year}-{month:02d}")
+                self.info_label.setText("No data for selected period")
+                return
+
+            # Collect all transactions
+            all_txns = []
+            for record in result:
+                date = record.get("date", "")
+                branch = record.get("branch", "")
+
+                sections = [("sendout", "Sendout"), ("payout", "Payout"), ("international", "International")]
+
+                for section_key, _ in sections:
+                    for field_type in ("principal", "sc", "commission"):
+                        col_name = f"{section_key}_detailed_{field_type}"
+                        json_str = record.get(col_name)
+
+                        if json_str:
+                            try:
+                                transactions = json.loads(json_str)
+                                for txn in transactions:
+                                    txn_with_meta = {
+                                        'date': date,
+                                        'branch': branch,
+                                        '_type': section_key,
+                                        **txn
+                                    }
+                                    all_txns.append(txn_with_meta)
+                            except (json.JSONDecodeError, TypeError) as e:
+                                logger.error(f"JSON parse error: {e}")
+
+            if not all_txns:
+                QMessageBox.warning(self, "No Data", "No detailed transactions found for this period.")
+                self.info_label.setText("No detailed transactions")
+                return
+
+            # Create Excel workbook with separate sheets per branch
+            wb = openpyxl.Workbook()
+            wb.remove(wb.active)
+
+            header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+            header_font = Font(bold=True, color="FFFFFF", size=11)
+            header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            totals_fill = PatternFill(start_color="E0E7FF", end_color="E0E7FF", fill_type="solid")
+            totals_font = Font(bold=True, color="3730A3")
+
+            columns = [
+                "Date", "Branch", "Code", "Receiver", "Sender", "Principal",
+                "Commission", "SC", "Total SC", "Income (43%)", "A/R Palawan",
+                "KYC Docs", "Business Name", "Relationship", "Source Funds", "Purpose", "Evaluation"
+            ]
+
+            # Group by branch
+            branches = {}
+            for txn in all_txns:
+                branch = txn.get('branch', 'Unknown')
+                if branch not in branches:
+                    branches[branch] = []
+                branches[branch].append(txn)
+
+            # Create sheet per branch
+            for branch_name, branch_txns in sorted(branches.items()):
+                ws = wb.create_sheet(title=branch_name[:31])
+
+                # Headers
+                for col_idx, col_name in enumerate(columns, 1):
+                    cell = ws.cell(row=1, column=col_idx)
+                    cell.value = col_name
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = header_alignment
+                    cell.border = border
+
+                # Data rows
+                for row_idx, txn in enumerate(branch_txns, 2):
+                    ws.cell(row=row_idx, column=1).value = str(txn.get("date", ""))
+                    ws.cell(row=row_idx, column=2).value = txn.get("branch", "")
+                    ws.cell(row=row_idx, column=3).value = txn.get("code", "")
+                    ws.cell(row=row_idx, column=4).value = txn.get("receiver", "")
+                    ws.cell(row=row_idx, column=5).value = txn.get("sender", "")
+                    ws.cell(row=row_idx, column=6).value = float(txn.get("principal", 0))
+                    ws.cell(row=row_idx, column=7).value = float(txn.get("commission", 0))
+                    ws.cell(row=row_idx, column=8).value = float(txn.get("sc", 0))
+                    ws.cell(row=row_idx, column=9).value = float(txn.get("total_sc", 0))
+                    ws.cell(row=row_idx, column=10).value = float(txn.get("income", 0))
+                    ws.cell(row=row_idx, column=11).value = float(txn.get("ar_palawan", 0))
+                    ws.cell(row=row_idx, column=12).value = txn.get("kyc_docs", "")
+                    ws.cell(row=row_idx, column=13).value = txn.get("business_name", "")
+                    ws.cell(row=row_idx, column=14).value = txn.get("relationship", "")
+                    ws.cell(row=row_idx, column=15).value = txn.get("source_funds", "")
+                    ws.cell(row=row_idx, column=16).value = txn.get("purpose", "")
+                    ws.cell(row=row_idx, column=17).value = txn.get("evaluation", "")
+
+                    # Format
+                    for col in range(1, 18):
+                        cell = ws.cell(row=row_idx, column=col)
+                        cell.border = border
+                        cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                        if col in [6, 7, 8, 9, 10, 11]:
+                            cell.number_format = '#,##0.00'
+                            cell.alignment = Alignment(horizontal="right", vertical="top")
+
+                # Branch totals
+                totals_row = len(branch_txns) + 2
+                ws.cell(row=totals_row, column=3).value = "BRANCH TOTAL"
+                ws.cell(row=totals_row, column=3).fill = totals_fill
+                ws.cell(row=totals_row, column=3).font = totals_font
+
+                for col in range(1, 18):
+                    cell = ws.cell(row=totals_row, column=col)
+                    cell.fill = totals_fill
+                    cell.font = totals_font
+                    cell.border = border
+
+                total_principal = sum(float(t.get("principal", 0)) for t in branch_txns)
+                total_commission = sum(float(t.get("commission", 0)) for t in branch_txns)
+                total_sc = sum(float(t.get("sc", 0)) for t in branch_txns)
+                total_total_sc = sum(float(t.get("total_sc", 0)) for t in branch_txns)
+                total_income = sum(float(t.get("income", 0)) for t in branch_txns)
+                total_ar = sum(float(t.get("ar_palawan", 0)) for t in branch_txns)
+
+                ws.cell(row=totals_row, column=6).value = total_principal
+                ws.cell(row=totals_row, column=6).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=7).value = total_commission
+                ws.cell(row=totals_row, column=7).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=8).value = total_sc
+                ws.cell(row=totals_row, column=8).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=9).value = total_total_sc
+                ws.cell(row=totals_row, column=9).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=10).value = total_income
+                ws.cell(row=totals_row, column=10).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=11).value = total_ar
+                ws.cell(row=totals_row, column=11).number_format = '#,##0.00'
+
+                # Column widths
+                for col, width in [('A', 12), ('B', 15), ('C', 12), ('D', 15), ('E', 15), ('F', 12), ('G', 12), ('H', 10), ('I', 12), ('J', 12), ('K', 12), ('L', 15), ('M', 18), ('N', 15), ('O', 15), ('P', 15), ('Q', 15)]:
+                    ws.column_dimensions[col].width = width
+
+            wb.save(file_path)
+            QMessageBox.information(self, "Report Generated", f"✓ Monthly report saved:\n{file_path}")
+            self.info_label.setText(f"✓ Report generated for {year}-{month:02d} ({len(branches)} branches)")
+            logger.info(f"[BIRBookPage] Generated monthly report for {selected_corp} {year}-{month:02d}")
+
+        except Exception as e:
+            logger.error(f"[BIRBookPage] Monthly report error: {e}")
+            QMessageBox.critical(self, "Error", f"Failed to generate report:\n{str(e)}")
+            self.info_label.setText("Report generation failed")
 
     def refresh(self):
         """Refresh data (called when tab is shown)."""
