@@ -40,7 +40,7 @@ class BIRBookPage(QWidget):
         title.setStyleSheet("font-size: 16px; font-weight: 800; color: #1E293B;")
         root.addWidget(title)
 
-        # Filter section - Row 1: Corporation and Date
+        # Filter section - Row 1: Corporation, Date, and Transaction Type
         filter_row1 = QHBoxLayout()
         filter_row1.setSpacing(16)
 
@@ -92,6 +92,20 @@ class BIRBookPage(QWidget):
         """)
         export_btn.clicked.connect(self._export_to_excel)
         filter_row1.addWidget(export_btn)
+
+        filter_row1.addSpacing(20)
+
+        # Transaction Type toggle
+        txn_type_label = QLabel("Transaction Type:")
+        txn_type_label.setStyleSheet("font-weight: 600; color: #334155;")
+        filter_row1.addWidget(txn_type_label)
+
+        self.txn_type_combo = QComboBox()
+        self.txn_type_combo.setMinimumWidth(150)
+        self.txn_type_combo.addItem("Send-Out (Sendout)", "sendout")
+        self.txn_type_combo.addItem("Pay-Out (Payout)", "payout")
+        self.txn_type_combo.currentIndexChanged.connect(self._on_filter_changed)
+        filter_row1.addWidget(self.txn_type_combo)
 
         root.addLayout(filter_row1)
 
@@ -307,6 +321,7 @@ class BIRBookPage(QWidget):
                                     txn_with_meta = {
                                         'date': date,
                                         'branch': branch,
+                                        '_type': section_key,  # 'sendout', 'payout', 'international'
                                         **txn
                                     }
                                     self.all_transactions.append(txn_with_meta)
@@ -323,7 +338,7 @@ class BIRBookPage(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to load transactions:\n{str(e)}\n\nMake sure the database is connected and available.")
 
     def _display_page(self):
-        """Display the current page of transactions."""
+        """Display the current page with grouped and collapsible rows."""
         self.table.setRowCount(0)
 
         if not self.all_transactions:
@@ -332,22 +347,125 @@ class BIRBookPage(QWidget):
 
         selected_corp = self.corporation_combo.currentData()
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
+        selected_txn_type = self.txn_type_combo.currentData()
+
+        # Filter transactions by type
+        filtered_txns = [t for t in self.all_transactions if t.get('_type') == selected_txn_type]
 
         start_idx = (self.current_page - 1) * self.rows_per_page
         end_idx = start_idx + self.rows_per_page
-        page_transactions = self.all_transactions[start_idx:end_idx]
+        page_transactions = filtered_txns[start_idx:end_idx]
 
-        total_pages = (len(self.all_transactions) + self.rows_per_page - 1) // self.rows_per_page
+        total_pages = (len(filtered_txns) + self.rows_per_page - 1) // self.rows_per_page
 
+        # Group transactions by date and branch
+        groups = {}
         for txn in page_transactions:
-            self._add_table_row(txn)
+            key = (txn.get('date'), txn.get('branch'))
+            if key not in groups:
+                groups[key] = []
+            groups[key].append(txn)
+
+        # Display grouped transactions
+        row_idx = 0
+        self.group_rows = {}  # Track which rows are group headers
+
+        for (date, branch), txns in groups.items():
+            # First transaction shows date and branch
+            if txns:
+                self._add_table_row(txns[0], show_date_branch=True)
+                self.group_rows[row_idx] = (date, branch, txns)
+                row_idx += 1
+
+                # Additional transactions don't show date/branch
+                if len(txns) > 1:
+                    # Add expandable "Show X more" row
+                    self.table.insertRow(row_idx)
+                    expand_item = QTableWidgetItem(f"+ Show {len(txns) - 1} more transaction{'s' if len(txns) - 1 > 1 else ''}")
+                    expand_item.setStyleSheet("color: #0284C7; font-weight: 600;")
+                    self.table.setItem(row_idx, 0, expand_item)
+                    self.group_rows[row_idx] = ('expand', (date, branch, txns[1:]))
+                    row_idx += 1
+
+        # Add totals row
+        self._add_totals_row(filtered_txns, row_idx)
+        row_idx += 1
 
         self.page_info.setText(f"Page {self.current_page} of {total_pages}")
         self.info_label.setText(
             f"✓ Showing {len(page_transactions)} transactions | "
-            f"Total: {len(self.all_transactions)} | "
+            f"Total: {len(filtered_txns)} | "
+            f"Type: {self.txn_type_combo.currentText()} | "
             f"Date: {selected_date} | Corporation: {selected_corp}"
         )
+
+    def _add_totals_row(self, transactions, row_idx):
+        """Add a totals row at the bottom of the table."""
+        self.table.insertRow(row_idx)
+
+        # Calculate totals
+        total_principal = sum(float(t.get("principal", 0)) for t in transactions)
+        total_commission = sum(float(t.get("commission", 0)) for t in transactions)
+        total_sc = sum(float(t.get("sc", 0)) for t in transactions)
+        total_total_sc = sum(float(t.get("total_sc", 0)) for t in transactions)
+        total_income = sum(float(t.get("income", 0)) for t in transactions)
+        total_ar = sum(float(t.get("ar_palawan", 0)) for t in transactions)
+
+        # Style for totals row
+        totals_style = "background-color: #F1F5F9; font-weight: 700; color: #0F172A;"
+
+        # Date column - TOTALS label
+        label_item = QTableWidgetItem("TOTALS")
+        label_item.setStyleSheet(totals_style)
+        self.table.setItem(row_idx, 0, label_item)
+
+        # Other columns until Principal
+        for col in range(1, 5):
+            item = QTableWidgetItem("")
+            item.setStyleSheet(totals_style)
+            self.table.setItem(row_idx, col, item)
+
+        # Principal (column 5)
+        principal_item = QTableWidgetItem(f"{total_principal:,.2f}")
+        principal_item.setStyleSheet(totals_style)
+        principal_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row_idx, 5, principal_item)
+
+        # Commission (column 6)
+        commission_item = QTableWidgetItem(f"{total_commission:,.2f}")
+        commission_item.setStyleSheet(totals_style)
+        commission_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row_idx, 6, commission_item)
+
+        # SC (column 7)
+        sc_item = QTableWidgetItem(f"{total_sc:,.2f}")
+        sc_item.setStyleSheet(totals_style)
+        sc_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row_idx, 7, sc_item)
+
+        # Total SC (column 8)
+        total_sc_item = QTableWidgetItem(f"{total_total_sc:,.2f}")
+        total_sc_item.setStyleSheet(totals_style)
+        total_sc_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row_idx, 8, total_sc_item)
+
+        # Income (column 9)
+        income_item = QTableWidgetItem(f"{total_income:,.2f}")
+        income_item.setStyleSheet(totals_style)
+        income_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row_idx, 9, income_item)
+
+        # A/R Palawan (column 10)
+        ar_item = QTableWidgetItem(f"{total_ar:,.2f}")
+        ar_item.setStyleSheet(totals_style)
+        ar_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.table.setItem(row_idx, 10, ar_item)
+
+        # Rest of columns
+        for col in range(11, 18):
+            item = QTableWidgetItem("")
+            item.setStyleSheet(totals_style)
+            self.table.setItem(row_idx, col, item)
 
     def _prev_page(self):
         """Go to previous page."""
@@ -368,15 +486,15 @@ class BIRBookPage(QWidget):
         self.current_page = 1
         self._display_page()
 
-    def _add_table_row(self, txn):
+    def _add_table_row(self, txn, show_date_branch=True):
         """Add a transaction row to the table."""
         row = self.table.rowCount()
         self.table.insertRow(row)
 
-        # Map transaction data to table columns (no branch status)
+        # Map transaction data to table columns
         data = [
-            str(txn.get("date", "")),
-            txn.get("branch", ""),
+            str(txn.get("date", "")) if show_date_branch else "",
+            txn.get("branch", "") if show_date_branch else "",
             txn.get("code", ""),
             txn.get("receiver", ""),
             txn.get("sender", ""),
@@ -398,12 +516,22 @@ class BIRBookPage(QWidget):
         for col, value in enumerate(data):
             item = QTableWidgetItem(str(value))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            # Right-align numeric columns
+            if col in [5, 6, 7, 8, 9, 10]:
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             self.table.setItem(row, col, item)
 
     def _export_to_excel(self):
         """Export current transactions to Excel file."""
         if not self.all_transactions:
             QMessageBox.warning(self, "No Data", "No transactions to export. Load a report first.")
+            return
+
+        selected_txn_type = self.txn_type_combo.currentData()
+        filtered_txns = [t for t in self.all_transactions if t.get('_type') == selected_txn_type]
+
+        if not filtered_txns:
+            QMessageBox.warning(self, "No Data", f"No {self.txn_type_combo.currentText()} transactions to export.")
             return
 
         try:
@@ -454,7 +582,7 @@ class BIRBookPage(QWidget):
                 cell.border = border
 
             # Write data
-            for row_idx, txn in enumerate(self.all_transactions, 2):
+            for row_idx, txn in enumerate(filtered_txns, 2):
                 ws.cell(row=row_idx, column=1).value = str(txn.get("date", ""))
                 ws.cell(row=row_idx, column=2).value = txn.get("branch", "")
                 ws.cell(row=row_idx, column=3).value = txn.get("code", "")
@@ -502,16 +630,16 @@ class BIRBookPage(QWidget):
             ws.column_dimensions['Q'].width = 15
 
             # Add summary at bottom
-            summary_row = len(self.all_transactions) + 3
+            summary_row = len(filtered_txns) + 3
             ws.cell(row=summary_row, column=1).value = "Summary"
             ws.cell(row=summary_row, column=1).font = Font(bold=True, size=11)
 
-            total_principal = sum(float(txn.get("principal", 0)) for txn in self.all_transactions)
-            total_commission = sum(float(txn.get("commission", 0)) for txn in self.all_transactions)
-            total_sc = sum(float(txn.get("sc", 0)) for txn in self.all_transactions)
-            total_total_sc = sum(float(txn.get("total_sc", 0)) for txn in self.all_transactions)
-            total_income = sum(float(txn.get("income", 0)) for txn in self.all_transactions)
-            total_ar = sum(float(txn.get("ar_palawan", 0)) for txn in self.all_transactions)
+            total_principal = sum(float(txn.get("principal", 0)) for txn in filtered_txns)
+            total_commission = sum(float(txn.get("commission", 0)) for txn in filtered_txns)
+            total_sc = sum(float(txn.get("sc", 0)) for txn in filtered_txns)
+            total_total_sc = sum(float(txn.get("total_sc", 0)) for txn in filtered_txns)
+            total_income = sum(float(txn.get("income", 0)) for txn in filtered_txns)
+            total_ar = sum(float(txn.get("ar_palawan", 0)) for txn in filtered_txns)
 
             ws.cell(row=summary_row + 1, column=5).value = "Total Principal:"
             ws.cell(row=summary_row + 1, column=6).value = total_principal
@@ -536,9 +664,9 @@ class BIRBookPage(QWidget):
             wb.save(file_path)
             QMessageBox.information(
                 self, "Export Successful",
-                f"✓ Exported {len(self.all_transactions)} transactions to:\n{file_path}"
+                f"✓ Exported {len(filtered_txns)} {self.txn_type_combo.currentText()} transactions to:\n{file_path}"
             )
-            logger.info(f"[BIRBookPage] Exported {len(self.all_transactions)} transactions to {file_path}")
+            logger.info(f"[BIRBookPage] Exported {len(filtered_txns)} transactions to {file_path}")
 
         except Exception as e:
             logger.error(f"[BIRBookPage] Export error: {e}")
