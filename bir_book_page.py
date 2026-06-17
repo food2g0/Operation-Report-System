@@ -1054,7 +1054,7 @@ class BIRBookPage(QWidget):
             for branch_name, branch_txns in sorted(branches.items()):
                 ws = wb.create_sheet(title=branch_name[:31])
 
-                # Headers
+                # Headers for SEND-OUT (columns A-Q)
                 for col_idx, col_name in enumerate(columns, 1):
                     cell = ws.cell(row=1, column=col_idx)
                     cell.value = col_name
@@ -1063,34 +1063,103 @@ class BIRBookPage(QWidget):
                     cell.alignment = header_alignment
                     cell.border = border
 
-                # Data rows
-                for row_idx, txn in enumerate(branch_txns, 2):
-                    ws.cell(row=row_idx, column=1).value = str(txn.get("date", ""))
-                    ws.cell(row=row_idx, column=2).value = txn.get("branch", "")
-                    ws.cell(row=row_idx, column=3).value = txn.get("code", "")
-                    ws.cell(row=row_idx, column=4).value = txn.get("receiver", "")
-                    ws.cell(row=row_idx, column=5).value = txn.get("sender", "")
-                    ws.cell(row=row_idx, column=6).value = float(txn.get("principal", 0))
-                    ws.cell(row=row_idx, column=7).value = float(txn.get("commission", 0))
-                    ws.cell(row=row_idx, column=8).value = float(txn.get("sc", 0))
-                    ws.cell(row=row_idx, column=9).value = float(txn.get("total_sc", 0))
-                    ws.cell(row=row_idx, column=10).value = float(txn.get("income", 0))
-                    ws.cell(row=row_idx, column=11).value = float(txn.get("ar_palawan", 0))
-                    ws.cell(row=row_idx, column=12).value = txn.get("kyc_docs", "")
-                    ws.cell(row=row_idx, column=13).value = txn.get("business_name", "")
-                    ws.cell(row=row_idx, column=14).value = txn.get("relationship", "")
-                    ws.cell(row=row_idx, column=15).value = txn.get("source_funds", "")
-                    ws.cell(row=row_idx, column=16).value = txn.get("purpose", "")
-                    ws.cell(row=row_idx, column=17).value = txn.get("evaluation", "")
+                # Headers for PAY-OUT (columns AA-AQ)
+                payout_fill = PatternFill(start_color="DC2626", end_color="DC2626", fill_type="solid")  # Red
+                for col_idx, col_name in enumerate(columns, 27):  # Column 27 = AA
+                    cell = ws.cell(row=1, column=col_idx)
+                    cell.value = col_name
+                    cell.fill = payout_fill
+                    cell.font = header_font
+                    cell.alignment = header_alignment
+                    cell.border = border
 
-                    # Format
-                    for col in range(1, 18):
-                        cell = ws.cell(row=row_idx, column=col)
-                        cell.border = border
-                        cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-                        if col in [6, 7, 8, 9, 10, 11]:
-                            cell.number_format = '#,##0.00'
-                            cell.alignment = Alignment(horizontal="right", vertical="top")
+                # Separate sendout and payout transactions
+                sendout_txns = [t for t in branch_txns if t.get('_type') == 'sendout']
+                payout_txns = [t for t in branch_txns if t.get('_type') == 'payout']
+
+                # Group by date
+                dates_sendout = {}
+                for t in sendout_txns:
+                    d = str(t.get('date', ''))
+                    if d not in dates_sendout:
+                        dates_sendout[d] = []
+                    dates_sendout[d].append(t)
+
+                dates_payout = {}
+                for t in payout_txns:
+                    d = str(t.get('date', ''))
+                    if d not in dates_payout:
+                        dates_payout[d] = []
+                    dates_payout[d].append(t)
+
+                # Write data by date with separators
+                row_idx = 2
+                all_dates = sorted(set(list(dates_sendout.keys()) + list(dates_payout.keys())))
+
+                for day_date in all_dates:
+                    day_sendout = dates_sendout.get(day_date, [])
+                    day_payout = dates_payout.get(day_date, [])
+                    max_txns = max(len(day_sendout), len(day_payout))
+
+                    # Write sendout and payout side by side
+                    for idx in range(max_txns):
+                        # SEND-OUT (columns A-Q)
+                        if idx < len(day_sendout):
+                            txn = day_sendout[idx]
+                            # Show date/branch only on first transaction of the day
+                            ws.cell(row=row_idx, column=1).value = day_date if idx == 0 else ""
+                            ws.cell(row=row_idx, column=2).value = txn.get("branch", "") if idx == 0 else ""
+                            ws.cell(row=row_idx, column=3).value = txn.get("code", "")
+                            ws.cell(row=row_idx, column=4).value = txn.get("receiver", "")
+                            ws.cell(row=row_idx, column=5).value = txn.get("sender", "")
+                            ws.cell(row=row_idx, column=6).value = float(txn.get("principal", 0))
+                            ws.cell(row=row_idx, column=7).value = float(txn.get("commission", 0))
+                            ws.cell(row=row_idx, column=8).value = float(txn.get("sc", 0))
+                            ws.cell(row=row_idx, column=9).value = float(txn.get("total_sc", 0))
+                            ws.cell(row=row_idx, column=10).value = float(txn.get("income", 0))
+                            ws.cell(row=row_idx, column=11).value = float(txn.get("ar_palawan", 0))
+                            ws.cell(row=row_idx, column=12).value = txn.get("kyc_docs", "")
+                            ws.cell(row=row_idx, column=13).value = txn.get("business_name", "")
+                            ws.cell(row=row_idx, column=14).value = txn.get("relationship", "")
+                            ws.cell(row=row_idx, column=15).value = txn.get("source_funds", "")
+                            ws.cell(row=row_idx, column=16).value = txn.get("purpose", "")
+                            ws.cell(row=row_idx, column=17).value = txn.get("evaluation", "")
+
+                        # PAY-OUT (columns AA-AQ)
+                        if idx < len(day_payout):
+                            txn = day_payout[idx]
+                            ws.cell(row=row_idx, column=27).value = day_date if idx == 0 else ""  # AA
+                            ws.cell(row=row_idx, column=28).value = txn.get("branch", "") if idx == 0 else ""  # AB
+                            ws.cell(row=row_idx, column=29).value = txn.get("code", "")  # AC
+                            ws.cell(row=row_idx, column=30).value = txn.get("receiver", "")  # AD
+                            ws.cell(row=row_idx, column=31).value = txn.get("sender", "")  # AE
+                            ws.cell(row=row_idx, column=32).value = float(txn.get("principal", 0))  # AF
+                            ws.cell(row=row_idx, column=33).value = float(txn.get("commission", 0))  # AG
+                            ws.cell(row=row_idx, column=34).value = float(txn.get("sc", 0))  # AH
+                            ws.cell(row=row_idx, column=35).value = float(txn.get("total_sc", 0))  # AI
+                            ws.cell(row=row_idx, column=36).value = float(txn.get("income", 0))  # AJ
+                            ws.cell(row=row_idx, column=37).value = float(txn.get("ar_palawan", 0))  # AK
+                            ws.cell(row=row_idx, column=38).value = txn.get("kyc_docs", "")  # AL
+                            ws.cell(row=row_idx, column=39).value = txn.get("business_name", "")  # AM
+                            ws.cell(row=row_idx, column=40).value = txn.get("relationship", "")  # AN
+                            ws.cell(row=row_idx, column=41).value = txn.get("source_funds", "")  # AO
+                            ws.cell(row=row_idx, column=42).value = txn.get("purpose", "")  # AP
+                            ws.cell(row=row_idx, column=43).value = txn.get("evaluation", "")  # AQ
+
+                        # Format all cells
+                        for col in list(range(1, 18)) + list(range(27, 44)):
+                            cell = ws.cell(row=row_idx, column=col)
+                            cell.border = border
+                            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+                            if col in [6, 7, 8, 9, 10, 11, 32, 33, 34, 35, 36, 37]:  # Number columns
+                                cell.number_format = '#,##0.00'
+                                cell.alignment = Alignment(horizontal="right", vertical="top")
+
+                        row_idx += 1
+
+                    # Add 3-5 blank rows between days for visual separation
+                    for _ in range(4):
+                        row_idx += 1
 
                 # Branch totals
                 totals_row = len(branch_txns) + 2
@@ -1124,8 +1193,14 @@ class BIRBookPage(QWidget):
                 ws.cell(row=totals_row, column=11).value = total_ar
                 ws.cell(row=totals_row, column=11).number_format = '#,##0.00'
 
-                # Column widths
+                # Column widths for SEND-OUT and PAY-OUT
                 for col, width in [('A', 12), ('B', 15), ('C', 12), ('D', 15), ('E', 15), ('F', 12), ('G', 12), ('H', 10), ('I', 12), ('J', 12), ('K', 12), ('L', 15), ('M', 18), ('N', 15), ('O', 15), ('P', 15), ('Q', 15)]:
+                    ws.column_dimensions[col].width = width
+                # Add spacing columns (R-Z)
+                for col in ['R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']:
+                    ws.column_dimensions[col].width = 2  # Narrow spacing
+                # Pay-Out column widths (AA-AQ)
+                for col, width in [('AA', 12), ('AB', 15), ('AC', 12), ('AD', 15), ('AE', 15), ('AF', 12), ('AG', 12), ('AH', 10), ('AI', 12), ('AJ', 12), ('AK', 12), ('AL', 15), ('AM', 18), ('AN', 15), ('AO', 15), ('AP', 15), ('AQ', 15)]:
                     ws.column_dimensions[col].width = width
 
             wb.save(file_path)
