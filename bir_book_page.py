@@ -3,7 +3,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView, QDateEdit, QMessageBox,
-    QSpinBox, QFileDialog, QApplication
+    QSpinBox, QFileDialog, QApplication, QDialog, QGridLayout
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor, QFont
@@ -13,6 +13,95 @@ import logging
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+
+class MonthlyReportDialog(QDialog):
+    """Dialog to select parameters for monthly report generation."""
+
+    def __init__(self, corporations, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Generate Monthly Report")
+        self.setMinimumWidth(400)
+        self.corporations = corporations
+        self._init_ui()
+
+    def _init_ui(self):
+        """Setup dialog UI."""
+        layout = QGridLayout(self)
+        layout.setSpacing(12)
+
+        # Corporation
+        corp_label = QLabel("Corporation:")
+        corp_label.setStyleSheet("font-weight: 600;")
+        self.corp_combo = QComboBox()
+        self.corp_combo.addItems(self.corporations)
+        layout.addWidget(corp_label, 0, 0)
+        layout.addWidget(self.corp_combo, 0, 1)
+
+        # Month
+        month_label = QLabel("Month:")
+        month_label.setStyleSheet("font-weight: 600;")
+        self.month_spinner = QSpinBox()
+        self.month_spinner.setMinimum(1)
+        self.month_spinner.setMaximum(12)
+        self.month_spinner.setValue(QDate.currentDate().month())
+        layout.addWidget(month_label, 1, 0)
+        layout.addWidget(self.month_spinner, 1, 1)
+
+        # Year
+        year_label = QLabel("Year:")
+        year_label.setStyleSheet("font-weight: 600;")
+        self.year_spinner = QSpinBox()
+        self.year_spinner.setMinimum(2020)
+        self.year_spinner.setMaximum(2099)
+        self.year_spinner.setValue(QDate.currentDate().year())
+        layout.addWidget(year_label, 2, 0)
+        layout.addWidget(self.year_spinner, 2, 1)
+
+        # Branch Status
+        status_label = QLabel("Branch Status:")
+        status_label.setStyleSheet("font-weight: 600;")
+        self.status_combo = QComboBox()
+        self.status_combo.addItems(["All Branches", "Registered", "Not Registered"])
+        layout.addWidget(status_label, 3, 0)
+        layout.addWidget(self.status_combo, 3, 1)
+
+        # Buttons
+        button_layout = QHBoxLayout()
+        generate_btn = QPushButton("Generate Report")
+        generate_btn.setStyleSheet("""
+            QPushButton {
+                background: #F59E0B; color: white; border: none;
+                border-radius: 5px; padding: 6px 16px;
+                font-weight: 700;
+            }
+            QPushButton:hover { background: #D97706; }
+        """)
+        generate_btn.clicked.connect(self.accept)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet("""
+            QPushButton {
+                background: #6B7280; color: white; border: none;
+                border-radius: 5px; padding: 6px 16px;
+                font-weight: 700;
+            }
+            QPushButton:hover { background: #4B5563; }
+        """)
+        cancel_btn.clicked.connect(self.reject)
+
+        button_layout.addWidget(generate_btn)
+        button_layout.addWidget(cancel_btn)
+        layout.addLayout(button_layout, 4, 0, 1, 2)
+
+    def get_params(self):
+        """Return selected parameters."""
+        return {
+            'corporation': self.corp_combo.currentText(),
+            'month': self.month_spinner.value(),
+            'year': self.year_spinner.value(),
+            'status': self.status_combo.currentText()
+        }
 
 
 class BIRBookPage(QWidget):
@@ -816,14 +905,27 @@ class BIRBookPage(QWidget):
 
     def _generate_monthly_report(self):
         """Generate monthly Excel report with separate sheets per branch."""
-        selected_corp = self.corporation_combo.currentData()
-        if not selected_corp:
-            QMessageBox.warning(self, "No Selection", "Please select a corporation first.")
+        # Get list of corporations
+        corporations = []
+        for i in range(self.corporation_combo.count()):
+            corp = self.corporation_combo.itemText(i)
+            if corp:
+                corporations.append(corp)
+
+        if not corporations:
+            QMessageBox.warning(self, "No Corporations", "No corporations available.")
             return
 
-        selected_date = self.date_picker.date()
-        year = selected_date.year()
-        month = selected_date.month()
+        # Show dialog
+        dialog = MonthlyReportDialog(corporations, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        params = dialog.get_params()
+        selected_corp = params['corporation']
+        month = params['month']
+        year = params['year']
+        status_filter = params['status']
 
         try:
             import openpyxl
@@ -843,6 +945,19 @@ class BIRBookPage(QWidget):
 
         try:
             self.info_label.setText("⏳ Generating monthly report...")
+
+            # Load branch status map if filtering
+            branch_status_map = {}
+            if status_filter != "All Branches":
+                try:
+                    status_result = self.db.execute_query(
+                        "SELECT branch_name, status FROM branch_table WHERE status IN ('Registered', 'Not Registered')"
+                    )
+                    if status_result:
+                        for row in status_result:
+                            branch_status_map[row.get("branch_name", "")] = row.get("status", "")
+                except Exception as e:
+                    logger.warning(f"Could not load branch status: {e}")
 
             # Query all transactions for the selected month and corporation
             query = """
@@ -918,10 +1033,19 @@ class BIRBookPage(QWidget):
                 "KYC Docs", "Business Name", "Relationship", "Source Funds", "Purpose", "Evaluation"
             ]
 
-            # Group by branch
+            # Group by branch and apply status filter
             branches = {}
             for txn in all_txns:
                 branch = txn.get('branch', 'Unknown')
+
+                # Apply branch status filter
+                if status_filter != "All Branches":
+                    branch_status = branch_status_map.get(branch, "Not Registered")
+                    if status_filter == "Registered" and branch_status != "Registered":
+                        continue
+                    if status_filter == "Not Registered" and branch_status != "Not Registered":
+                        continue
+
                 if branch not in branches:
                     branches[branch] = []
                 branches[branch].append(txn)
