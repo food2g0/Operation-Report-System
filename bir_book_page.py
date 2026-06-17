@@ -64,8 +64,11 @@ class BIRBookPage(QWidget):
         filter_row1.addWidget(date_label)
 
         self.date_picker = QDateEdit()
-        self.date_picker.setDate(QDate.currentDate())
+        # Set to today's date (use QDate explicitly)
+        today = QDate.currentDate()
+        self.date_picker.setDate(today)
         self.date_picker.setCalendarPopup(True)
+        self.date_picker.setDateRange(QDate(2020, 1, 1), QDate.currentDate())  # Set valid range
         self.date_picker.dateChanged.connect(self._on_filter_changed)
         filter_row1.addWidget(self.date_picker)
 
@@ -203,7 +206,7 @@ class BIRBookPage(QWidget):
         root.addLayout(pagination_row)
 
     def _find_available_dates(self):
-        """Find the most recent date with data in the database."""
+        """Find the most recent date with data in the database (not exceeding today)."""
         try:
             result = self.db.execute_query(
                 "SELECT DISTINCT DATE(date) as report_date FROM payable_tbl_brand_a ORDER BY DATE(date) DESC LIMIT 1"
@@ -217,12 +220,18 @@ class BIRBookPage(QWidget):
                     parts = str(date_str).split('-')
                     if len(parts) == 3:
                         year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
-                        from PyQt5.QtCore import QDate
                         latest_date = QDate(year, month, day)
-                        self.date_picker.blockSignals(True)
-                        self.date_picker.setDate(latest_date)
-                        self.date_picker.blockSignals(False)
-                        return True
+
+                        # Only use the date if it's not in the future
+                        today = QDate.currentDate()
+                        if latest_date <= today:
+                            self.date_picker.blockSignals(True)
+                            self.date_picker.setDate(latest_date)
+                            self.date_picker.blockSignals(False)
+                            return True
+                        else:
+                            logger.warning(f"[BIRBookPage] Latest date {date_str} is in future, using today instead")
+                            return False
             return False
         except Exception as e:
             logger.error("[BIRBookPage] Find available dates error: %s", e)
@@ -342,7 +351,6 @@ class BIRBookPage(QWidget):
     def _display_page(self):
         """Display the current page with expandable groups and per-group totals."""
         self.table.setRowCount(0)
-        self.table.cellClicked.disconnect()  # Clear old connections
 
         if not self.all_transactions:
             self.info_label.setText("No transactions to display")
@@ -406,13 +414,6 @@ class BIRBookPage(QWidget):
             f"Type: {self.txn_type_combo.currentText()} | "
             f"Date: {selected_date} | Corporation: {selected_corp}"
         )
-
-        # Reconnect cell clicked for future use
-        self.table.cellClicked.connect(self._on_table_cell_clicked)
-
-    def _on_table_cell_clicked(self, row, col):
-        """Handle table cell clicks (for future use)."""
-        pass
 
     def _toggle_group_expansion(self, header_row, group_key, hidden_txns):
         """Toggle expansion of a transaction group."""
