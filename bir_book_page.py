@@ -68,7 +68,8 @@ class BIRBookPage(QWidget):
         today = QDate.currentDate()
         self.date_picker.setDate(today)
         self.date_picker.setCalendarPopup(True)
-        self.date_picker.setDateRange(QDate(2020, 1, 1), QDate.currentDate())  # Set valid range
+        # Allow selecting any date (past or future)
+        self.date_picker.setDateRange(QDate(2020, 1, 1), QDate(2099, 12, 31))
         self.date_picker.dateChanged.connect(self._on_filter_changed)
         filter_row1.addWidget(self.date_picker)
 
