@@ -26,6 +26,7 @@ class BIRBookPage(QWidget):
         self.all_transactions = []  # Store all transactions for pagination
         self.current_page = 1
         self.rows_per_page = 50
+        self.expanded_groups = set()  # Track which groups are expanded (date, branch)
         self._setup_ui()
         self._load_corporations()
         self._find_available_dates()  # Auto-detect latest date with data
@@ -339,8 +340,9 @@ class BIRBookPage(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to load transactions:\n{str(e)}\n\nMake sure the database is connected and available.")
 
     def _display_page(self):
-        """Display the current page with grouped and collapsible rows."""
+        """Display the current page with expandable groups and per-group totals."""
         self.table.setRowCount(0)
+        self.table.cellClicked.disconnect()  # Clear old connections
 
         if not self.all_transactions:
             self.info_label.setText("No transactions to display")
@@ -367,47 +369,196 @@ class BIRBookPage(QWidget):
                 groups[key] = []
             groups[key].append(txn)
 
-        # Display grouped transactions
+        # Store group data for expansion
+        self.group_data = {}  # Maps (row_idx) -> (date, branch, all_txns)
         row_idx = 0
-        self.group_rows = {}  # Track which rows are group headers
 
+        # Display only first transaction per group with expand button
         for (date, branch), txns in groups.items():
-            # First transaction shows date and branch
             if txns:
-                self._add_table_row(txns[0], show_date_branch=True)
-                self.group_rows[row_idx] = (date, branch, txns)
-                row_idx += 1
+                # Add first transaction with date/branch visible
+                self._add_table_row(txns[0], show_date_branch=True, row_idx=row_idx)
 
-                # Additional transactions don't show date/branch
+                # Add expand button in last column if group has multiple transactions
                 if len(txns) > 1:
-                    # Add expandable "Show X more" row
-                    self.table.insertRow(row_idx)
-                    expand_item = QTableWidgetItem(f"+ Show {len(txns) - 1} more transaction{'s' if len(txns) - 1 > 1 else ''}")
-                    expand_font = QFont()
-                    expand_font.setWeight(QFont.Bold)
-                    expand_item.setFont(expand_font)
-                    expand_item.setForeground(QColor("#0284C7"))
-                    self.table.setItem(row_idx, 0, expand_item)
-                    self.group_rows[row_idx] = ('expand', (date, branch, txns[1:]))
-                    row_idx += 1
+                    expand_btn = QPushButton("▼")
+                    expand_btn.setMaximumWidth(40)
+                    expand_btn.setCursor(Qt.PointingHandCursor)
+                    expand_btn.setStyleSheet("""
+                        QPushButton {
+                            background: #3B82F6; color: white;
+                            border: none; border-radius: 3px;
+                            padding: 3px 8px; font-weight: 600;
+                        }
+                        QPushButton:hover { background: #2563EB; }
+                    """)
+                    expand_btn.clicked.connect(lambda checked, r=row_idx, d=(date, branch), t=txns:
+                                               self._toggle_group_expansion(r, d, t))
+                    self.table.setCellWidget(row_idx, 17, expand_btn)
+                    self.group_data[row_idx] = (date, branch, txns[1:])  # Store hidden transactions
 
-        # Add totals row
-        self._add_totals_row(filtered_txns, row_idx)
-        row_idx += 1
+                row_idx += 1
 
         self.page_info.setText(f"Page {self.current_page} of {total_pages}")
         self.info_label.setText(
-            f"✓ Showing {len(page_transactions)} transactions | "
-            f"Total: {len(filtered_txns)} | "
+            f"✓ Showing {len([g for g in groups])} branches | "
+            f"Total: {len(filtered_txns)} transactions | "
             f"Type: {self.txn_type_combo.currentText()} | "
             f"Date: {selected_date} | Corporation: {selected_corp}"
         )
 
-    def _add_totals_row(self, transactions, row_idx):
-        """Add a totals row at the bottom of the table."""
-        self.table.insertRow(row_idx)
+        # Reconnect cell clicked for future use
+        self.table.cellClicked.connect(self._on_table_cell_clicked)
 
-        # Calculate totals
+    def _on_table_cell_clicked(self, row, col):
+        """Handle table cell clicks (for future use)."""
+        pass
+
+    def _toggle_group_expansion(self, header_row, group_key, hidden_txns):
+        """Toggle expansion of a transaction group."""
+        date, branch = group_key
+        group_id = (header_row, date, branch)
+
+        if group_id in self.expanded_groups:
+            # Collapse: remove hidden rows and totals
+            self._collapse_group(header_row, group_id)
+        else:
+            # Expand: add hidden rows and totals
+            self._expand_group(header_row, group_key, hidden_txns)
+
+    def _expand_group(self, header_row, group_key, hidden_txns):
+        """Expand a group to show hidden transactions and totals."""
+        date, branch = group_key
+        group_id = (header_row, date, branch)
+
+        # Get all transactions in this group (including the visible one)
+        all_txns = [self.table.item(header_row, col).text() if self.table.item(header_row, col) else ''
+                    for col in range(18)]
+        all_txns_data = hidden_txns
+
+        # Find first transaction to get the visible one
+        first_txn_code = self.table.item(header_row, 2).text()
+        first_txn = None
+        for t in self.all_transactions:
+            if t.get('code') == first_txn_code and t.get('date') == date and t.get('branch') == branch:
+                first_txn = t
+                break
+
+        insert_row = header_row + 1
+
+        # Insert hidden transactions
+        for hidden_txn in hidden_txns:
+            self.table.insertRow(insert_row)
+            self._add_table_row(hidden_txn, show_date_branch=False, row_idx=insert_row)
+            insert_row += 1
+
+        # Insert totals row for this group
+        if first_txn:
+            all_group_txns = [first_txn] + hidden_txns
+        else:
+            all_group_txns = hidden_txns
+
+        self.table.insertRow(insert_row)
+        self._add_group_totals_row(all_group_txns, insert_row)
+
+        # Update button to collapse
+        button = self.table.cellWidget(header_row, 17)
+        if button:
+            button.setText("▲")
+
+        # Mark as expanded
+        self.expanded_groups.add(group_id)
+
+    def _collapse_group(self, header_row, group_id):
+        """Collapse a group to hide transactions and totals."""
+        date, branch = group_id[:2] if len(group_id) > 2 else (None, None)
+
+        # Count rows to remove (hidden transactions + totals)
+        rows_to_remove = 0
+        check_row = header_row + 1
+
+        while check_row < self.table.rowCount():
+            # Check if this is an empty row (part of the group)
+            first_col = self.table.item(check_row, 0)
+            if first_col and first_col.text().strip() == "":
+                rows_to_remove += 1
+                check_row += 1
+            else:
+                break
+
+        # Remove rows in reverse order
+        for _ in range(rows_to_remove):
+            self.table.removeRow(header_row + 1)
+
+        # Update button to expand
+        button = self.table.cellWidget(header_row, 17)
+        if button:
+            button.setText("▼")
+
+        # Mark as collapsed
+        self.expanded_groups.discard(group_id)
+
+
+    def _prev_page(self):
+        """Go to previous page."""
+        if self.current_page > 1:
+            self.current_page -= 1
+            self._display_page()
+
+    def _next_page(self):
+        """Go to next page."""
+        total_pages = (len(self.all_transactions) + self.rows_per_page - 1) // self.rows_per_page
+        if self.current_page < total_pages:
+            self.current_page += 1
+            self._display_page()
+
+    def _on_rows_per_page_changed(self):
+        """Handle rows per page change."""
+        self.rows_per_page = self.rows_spinner.value()
+        self.current_page = 1
+        self._display_page()
+
+    def _add_table_row(self, txn, show_date_branch=True, row_idx=None):
+        """Add a transaction row to the table."""
+        if row_idx is None:
+            row_idx = self.table.rowCount()
+
+        # Map transaction data to table columns
+        data = [
+            str(txn.get("date", "")) if show_date_branch else "",
+            txn.get("branch", "") if show_date_branch else "",
+            txn.get("code", ""),
+            txn.get("receiver", ""),
+            txn.get("sender", ""),
+            f"{txn.get('principal', 0):.2f}",
+            f"{txn.get('commission', 0):.2f}",
+            f"{txn.get('sc', 0):.2f}",
+            f"{txn.get('total_sc', 0):.2f}",
+            f"{txn.get('income', 0):.2f}",
+            f"{txn.get('ar_palawan', 0):.2f}",
+            txn.get("kyc_docs", ""),
+            txn.get("business_name", ""),
+            txn.get("relationship", ""),
+            txn.get("source_funds", ""),
+            txn.get("purpose", ""),
+            txn.get("evaluation", ""),
+            ""
+        ]
+
+        for col, value in enumerate(data):
+            item = QTableWidgetItem(str(value))
+            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+            # Right-align numeric columns
+            if col in [5, 6, 7, 8, 9, 10]:
+                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            # Add light indentation for hidden rows (show_date_branch=False)
+            if not show_date_branch and col == 2:
+                item.setText("  " + item.text())
+            self.table.setItem(row_idx, col, item)
+
+    def _add_group_totals_row(self, transactions, row_idx):
+        """Add a totals row for a specific branch group."""
+        # Calculate totals for this group only
         total_principal = sum(float(t.get("principal", 0)) for t in transactions)
         total_commission = sum(float(t.get("commission", 0)) for t in transactions)
         total_sc = sum(float(t.get("sc", 0)) for t in transactions)
@@ -416,8 +567,8 @@ class BIRBookPage(QWidget):
         total_ar = sum(float(t.get("ar_palawan", 0)) for t in transactions)
 
         # Style for totals row
-        totals_bg = QColor("#F1F5F9")
-        totals_fg = QColor("#0F172A")
+        totals_bg = QColor("#E0E7FF")
+        totals_fg = QColor("#3730A3")
         totals_font = QFont()
         totals_font.setBold(True)
 
@@ -430,13 +581,15 @@ class BIRBookPage(QWidget):
             item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             return item
 
-        # Date column - TOTALS label
-        label_item = _create_totals_item("TOTALS")
+        # Code column - "Totals" label
+        label_item = _create_totals_item("Totals")
         label_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        self.table.setItem(row_idx, 0, label_item)
+        self.table.setItem(row_idx, 2, label_item)
 
-        # Other columns until Principal
-        for col in range(1, 5):
+        # Empty columns before Principal
+        for col in range(0, 2):
+            self.table.setItem(row_idx, col, _create_totals_item())
+        for col in range(3, 5):
             self.table.setItem(row_idx, col, _create_totals_item())
 
         # Principal (column 5)
@@ -472,60 +625,6 @@ class BIRBookPage(QWidget):
         # Rest of columns
         for col in range(11, 18):
             self.table.setItem(row_idx, col, _create_totals_item())
-
-    def _prev_page(self):
-        """Go to previous page."""
-        if self.current_page > 1:
-            self.current_page -= 1
-            self._display_page()
-
-    def _next_page(self):
-        """Go to next page."""
-        total_pages = (len(self.all_transactions) + self.rows_per_page - 1) // self.rows_per_page
-        if self.current_page < total_pages:
-            self.current_page += 1
-            self._display_page()
-
-    def _on_rows_per_page_changed(self):
-        """Handle rows per page change."""
-        self.rows_per_page = self.rows_spinner.value()
-        self.current_page = 1
-        self._display_page()
-
-    def _add_table_row(self, txn, show_date_branch=True):
-        """Add a transaction row to the table."""
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-
-        # Map transaction data to table columns
-        data = [
-            str(txn.get("date", "")) if show_date_branch else "",
-            txn.get("branch", "") if show_date_branch else "",
-            txn.get("code", ""),
-            txn.get("receiver", ""),
-            txn.get("sender", ""),
-            f"{txn.get('principal', 0):.2f}",
-            f"{txn.get('commission', 0):.2f}",
-            f"{txn.get('sc', 0):.2f}",
-            f"{txn.get('total_sc', 0):.2f}",
-            f"{txn.get('income', 0):.2f}",
-            f"{txn.get('ar_palawan', 0):.2f}",
-            txn.get("kyc_docs", ""),
-            txn.get("business_name", ""),
-            txn.get("relationship", ""),
-            txn.get("source_funds", ""),
-            txn.get("purpose", ""),
-            txn.get("evaluation", ""),
-            ""
-        ]
-
-        for col, value in enumerate(data):
-            item = QTableWidgetItem(str(value))
-            item.setFlags(item.flags() & ~Qt.ItemIsEditable)
-            # Right-align numeric columns
-            if col in [5, 6, 7, 8, 9, 10]:
-                item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-            self.table.setItem(row, col, item)
 
     def _export_to_excel(self):
         """Export current transactions to Excel file."""
