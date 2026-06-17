@@ -424,14 +424,38 @@ class PalawanManager:
                        f"SO={so_principal}, PO={po_principal}, INT={int_principal}, "
                        f"Adj: inc={inc}, skid={skid}, skir={skir}, cancel={cancellation}")
 
-            result = self.db_manager.execute_query(
-                """INSERT INTO payable_tbl_brand_a
+            # Get detailed transactions if available and ensure they're strings
+            so_detailed_principal = palawan_data.get('sendout_detailed_principal')
+            so_detailed_sc = palawan_data.get('sendout_detailed_sc')
+            so_detailed_commission = palawan_data.get('sendout_detailed_commission')
+            po_detailed_principal = palawan_data.get('payout_detailed_principal')
+            po_detailed_sc = palawan_data.get('payout_detailed_sc')
+            po_detailed_commission = palawan_data.get('payout_detailed_commission')
+            int_detailed_principal = palawan_data.get('international_detailed_principal')
+            int_detailed_sc = palawan_data.get('international_detailed_sc')
+            int_detailed_commission = palawan_data.get('international_detailed_commission')
+
+            logger.info(f"🔵 PalawanManager - Detailed transactions received:")
+            logger.info(f"  SO Principal: {so_detailed_principal[:100] if so_detailed_principal else 'None'}...")
+            logger.info(f"  SO SC: {so_detailed_sc[:100] if so_detailed_sc else 'None'}...")
+            logger.info(f"  SO Commission: {so_detailed_commission[:100] if so_detailed_commission else 'None'}...")
+            logger.info(f"  PO Principal: {po_detailed_principal[:100] if po_detailed_principal else 'None'}...")
+            logger.info(f"  PO SC: {po_detailed_sc[:100] if po_detailed_sc else 'None'}...")
+            logger.info(f"  PO Commission: {po_detailed_commission[:100] if po_detailed_commission else 'None'}...")
+            logger.info(f"  INT Principal: {int_detailed_principal[:100] if int_detailed_principal else 'None'}...")
+            logger.info(f"  INT SC: {int_detailed_sc[:100] if int_detailed_sc else 'None'}...")
+            logger.info(f"  INT Commission: {int_detailed_commission[:100] if int_detailed_commission else 'None'}...")
+
+            sql = """INSERT INTO payable_tbl_brand_a
                    (corporation, branch, date,
                     sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
                     payout_lotes, payout_capital, payout_sc, payout_commission, payout_total,
                     international_lotes, international_capital, international_sc, international_commission, international_total,
+                    sendout_detailed_principal, sendout_detailed_sc, sendout_detailed_commission,
+                    payout_detailed_principal, payout_detailed_sc, payout_detailed_commission,
+                    international_detailed_principal, international_detailed_sc, international_detailed_commission,
                     inc, skid, skir, cancellation)
-                   VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s)
+                   VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s,%s,%s)
                    ON DUPLICATE KEY UPDATE
                     sendout_lotes=VALUES(sendout_lotes),
                     sendout_capital=VALUES(sendout_capital),
@@ -448,26 +472,78 @@ class PalawanManager:
                     international_sc=VALUES(international_sc),
                     international_commission=VALUES(international_commission),
                     international_total=VALUES(international_total),
+                    sendout_detailed_principal=VALUES(sendout_detailed_principal),
+                    sendout_detailed_sc=VALUES(sendout_detailed_sc),
+                    sendout_detailed_commission=VALUES(sendout_detailed_commission),
+                    payout_detailed_principal=VALUES(payout_detailed_principal),
+                    payout_detailed_sc=VALUES(payout_detailed_sc),
+                    payout_detailed_commission=VALUES(payout_detailed_commission),
+                    international_detailed_principal=VALUES(international_detailed_principal),
+                    international_detailed_sc=VALUES(international_detailed_sc),
+                    international_detailed_commission=VALUES(international_detailed_commission),
                     inc=VALUES(inc),
                     skid=VALUES(skid),
                     skir=VALUES(skir),
                     cancellation=VALUES(cancellation),
                     updated_at=CURRENT_TIMESTAMP
-                """,
-                (
-                    self.corporation, self.branch, date_str,
-                    so_lotes, so_principal, so_sc, so_commission, so_total,
-                    po_lotes, po_principal, po_sc, po_commission, po_total,
-                    int_lotes, int_principal, int_sc, int_commission, int_total,
-                    inc, skid, skir, cancellation,
-                )
+                """
+            params = (
+                self.corporation, self.branch, date_str,
+                so_lotes, so_principal, so_sc, so_commission, so_total,
+                po_lotes, po_principal, po_sc, po_commission, po_total,
+                int_lotes, int_principal, int_sc, int_commission, int_total,
+                so_detailed_principal, so_detailed_sc, so_detailed_commission,
+                po_detailed_principal, po_detailed_sc, po_detailed_commission,
+                int_detailed_principal, int_detailed_sc, int_detailed_commission,
+                inc, skid, skir, cancellation,
             )
+
+            logger.info(f"🔴 SQL INSERT about to execute with {len(params)} params")
+            logger.info(f"  SQL statement: {sql[:200]}...")
+
+            # Log all detailed transaction columns for debugging
+            logger.info(f"  Detailed transaction columns:")
+            logger.info(f"    sendout_detailed_principal type: {type(so_detailed_principal)}, len: {len(so_detailed_principal) if so_detailed_principal else 0}")
+            logger.info(f"    sendout_detailed_principal: {so_detailed_principal[:100] if so_detailed_principal else 'NULL'}...")
+            logger.info(f"    sendout_detailed_sc: {so_detailed_sc[:100] if so_detailed_sc else 'NULL'}...")
+            logger.info(f"    sendout_detailed_commission: {so_detailed_commission[:100] if so_detailed_commission else 'NULL'}...")
+            logger.info(f"    payout_detailed_principal: {po_detailed_principal[:100] if po_detailed_principal else 'NULL'}...")
+            logger.info(f"    payout_detailed_sc: {po_detailed_sc[:100] if po_detailed_sc else 'NULL'}...")
+            logger.info(f"    payout_detailed_commission: {po_detailed_commission[:100] if po_detailed_commission else 'NULL'}...")
+            logger.info(f"    international_detailed_principal: {int_detailed_principal[:100] if int_detailed_principal else 'NULL'}...")
+            logger.info(f"    international_detailed_sc: {int_detailed_sc[:100] if int_detailed_sc else 'NULL'}...")
+            logger.info(f"    international_detailed_commission: {int_detailed_commission[:100] if int_detailed_commission else 'NULL'}...")
+
+            result, error = self.db_manager.execute_query_with_exception(sql, params)
+            logger.info(f"🔴 INSERT result: {result}, error: {error}")
+
+            if error:
+                logger.error(f"❌ INSERT FAILED: {error}")
+                return False
+
+            if result is None or result == 0:
+                logger.warning(f"⚠️ INSERT returned {result} (may indicate 0 rows affected or duplicate key with no changes)")
+
+            # Verify the insert actually worked by querying it back immediately
+            verify_params = (date_str, self.branch, self.corporation)
+            verify_result = self.db_manager.execute_query(
+                "SELECT sendout_detailed_principal FROM payable_tbl_brand_a "
+                "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                verify_params
+            )
+            if verify_result and verify_result[0].get('sendout_detailed_principal'):
+                logger.info(f"✅ Verified: detailed_principal in DB: {verify_result[0]['sendout_detailed_principal'][:100]}...")
+            else:
+                logger.warning(f"⚠️ Verification query returned: {verify_result} (detailed columns may not be persisting)")
+
             logger.info(f"Saved {brand_full} palawan data to payable_tbl_brand_a for {self.branch} on {date_str} - "
                        f"inc={inc}, skid={skid}, skir={skir}, cancel={cancellation}")
             return True
 
         except Exception as e:
-            logger.warning(f"Could not save palawan data: {e}")
+            logger.error(f"❌ Could not save palawan data: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
 
     def collect_palawan_for_draft(self, palawan_tab):
