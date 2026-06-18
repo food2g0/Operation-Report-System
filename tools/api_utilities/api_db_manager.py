@@ -28,6 +28,8 @@ class APIDbManager:
         self.logger   = logging.getLogger("APIDbManager")
 
         self._token   = None
+        self._token_time = 0  # Track when token was obtained
+        self._token_ttl = 3500  # Tokens expire in ~1 hour (3600s), refresh at 3500s to be safe
         self._session = _requests.Session()
         retry = Retry(
             total=1,
@@ -72,6 +74,7 @@ class APIDbManager:
             )
             if resp.status_code == 200:
                 self._token = resp.json().get("token")
+                self._token_time = time.time()  # Record when token was obtained
                 self._session.headers.update(
                     {"Authorization": f"Bearer {self._token}"}
                 )
@@ -98,7 +101,14 @@ class APIDbManager:
     # ── Internal helpers ──────────────────────────────────────────────────────
 
     def _ensure_token(self) -> None:
-        if not self._token:
+        """Ensure we have a valid token, refreshing if expired."""
+        now = time.time()
+        token_age = now - self._token_time
+
+        # Refresh if no token or token is too old
+        if not self._token or token_age >= self._token_ttl:
+            if token_age >= self._token_ttl and self._token:
+                self.logger.debug(f"Token expired (age={token_age:.0f}s), refreshing...")
             self.connect()
 
     @staticmethod

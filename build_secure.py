@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 
 
 def get_version():
-    """Read __version__ from version.py without importing it."""
+
     with open('version.py', 'r', encoding='utf-8') as f:
         content = f.read()
     match = re.search(r'^__version__\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
@@ -29,7 +29,7 @@ def get_version():
 
 
 def patch_installer_iss(version):
-    """Update AppVersion in installer.iss to match version.py."""
+   
     iss_path = 'installer.iss'
     with open(iss_path, 'r', encoding='utf-8') as f:
         content = f.read()

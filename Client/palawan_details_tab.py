@@ -1,17 +1,3 @@
-"""
-PalawanDetailsTab
------------------
-Tab widget for Palawan Details (Brand B) data entry.
-Design matches PalawanPayableTab.
-
-Provides data-entry for:
-  - PALAWAN SEND-OUT      : Lotes, Principal, SC, Commission, TOTAL
-  - PALAWAN PAY-OUT       : Lotes, Principal, SC, Commission, TOTAL
-  - PALAWAN INTERNATIONAL : Lotes, Principal, SC, Commission, TOTAL
-  - PALAWAN ADJUSTMENTS
-
-Data is saved to `payable_tbl_brand_a` (shared with Brand A).
-"""
 
 from PyQt5.QtWidgets import (
     QWidget, QLabel, QLineEdit, QVBoxLayout, QHBoxLayout,
@@ -21,6 +7,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QDoubleValidator, QIntValidator
 from PyQt5.QtCore import Qt
 import logging
+import json
 
 from Client.ui_scaling import _sz
 
@@ -57,6 +44,8 @@ class PalawanDetailsTab(QWidget):
         super().__init__()
         self.parent = parent
         self._dashboard = parent  # alias used by _save()
+        self._detailed_transactions = {}  # Store transactions: key = "so_principal", value = [...]
+        self._code_name_lookup = {}  # Store code->name mappings for auto-carry: key = "so", value = {code: name, ...}
         self._setup_ui()
 
     # ──────────────────────────────────────────────────────────────────────
@@ -93,6 +82,22 @@ class PalawanDetailsTab(QWidget):
         self._po_group,  self._po_fields  = self._make_section("PALAWAN PAY-OUT",       _PO_COLOR)
         self._int_group, self._int_fields = self._make_section("PALAWAN INTERNATIONAL", _INT_COLOR)
 
+        # Wire up detail buttons (only for Send-Out and Pay-Out, not International)
+        for prefix, fields in [("so", self._so_fields), ("po", self._po_fields)]:
+            field = fields["principal"]
+            detail_key = f"{prefix}_principal"
+            field.detail_key = detail_key
+            field.detail_button.clicked.connect(
+                lambda checked=False, k=detail_key, f=field: self._open_transaction_dialog(k, f)
+            )
+
+        # Hide detail button for International (allow direct input)
+        self._int_fields["principal"].detail_button.setVisible(False)
+
+        # Disable Send-Out and Pay-Out fields (will be populated from transaction dialog)
+        self._disable_section_fields(self._so_fields)
+        self._disable_section_fields(self._po_fields)
+
         sections_row.addWidget(self._so_group)
         sections_row.addWidget(self._po_group)
         sections_row.addWidget(self._int_group)
@@ -103,19 +108,19 @@ class PalawanDetailsTab(QWidget):
         adj_box = QGroupBox("PALAWAN ADJUSTMENTS (Auto-carries to Brand B Cash Flow)")
         adj_box.setStyleSheet(f"""
             QGroupBox {{
-                border: 2px solid #F59E0B;
+                border: 1px solid #E2E8F0;
                 border-radius: {_sz(6)}px;
                 margin-top: {_sz(22)}px;
                 padding: {_sz(14)}px {_sz(12)}px {_sz(12)}px {_sz(12)}px;
-                background-color: #FFFBEB;
+                background-color: white;
             }}
             QGroupBox::title {{
-                color: #D97706;
+                color: #1E293B;
                 font-weight: 800;
                 font-size: {_sz(12)}px;
                 letter-spacing: 1px;
                 padding: 1px {_sz(8)}px;
-                background-color: #FFFBEB;
+                background-color: white;
                 border-radius: {_sz(4)}px;
             }}
         """)
@@ -136,7 +141,7 @@ class PalawanDetailsTab(QWidget):
             inp.textChanged.connect(self.parent.recalculate_all)
             self.adjustments_inputs[adj_label] = inp
             lbl = QLabel(adj_label + ":")
-            lbl.setStyleSheet(f"font-size: {_sz(13)}px; font-weight: 600; color: #92400E;")
+            lbl.setStyleSheet(f"font-size: {_sz(13)}px; font-weight: 700; color: #1E293B;")
             adj_form.addRow(lbl, inp)
 
         adj_box.setLayout(adj_form)
@@ -171,6 +176,17 @@ class PalawanDetailsTab(QWidget):
         self.sendout_total_display       = self._so_fields["total_display"]
         self.payout_total_display        = self._po_fields["total_display"]
         self.international_total_display = self._int_fields["total_display"]
+
+    def _disable_section_fields(self, fields: dict):
+        """Disable all input fields in a section (they'll be populated from transaction dialog)."""
+        for key in ("lotes", "principal", "sc", "commission"):
+            if key in fields:
+                fields[key].setReadOnly(True)
+                fields[key].setStyleSheet(
+                    f"background-color: {_SLATE_100}; color: {_SLATE_700}; "
+                    f"border: 1px solid {_SLATE_200}; border-radius: {_sz(4)}px; "
+                    f"padding: {_sz(6)}px {_sz(10)}px;"
+                )
 
     def _make_section(self, title: str, color: str):
         """Create one group box with Lotes + Principal + SC + Commission + TOTAL."""
@@ -208,8 +224,38 @@ class PalawanDetailsTab(QWidget):
         form.addRow(lbl, lotes_field)
         fields["lotes"] = lotes_field
 
-        # Principal / SC / Commission (decimal)
-        for key, label_text in [("principal", "Principal:"), ("sc", "SC:"), ("commission", "Commission:")]:
+        # Principal with detail button
+        principal_layout = QHBoxLayout()
+        principal_layout.setSpacing(_sz(6))
+        principal_layout.setContentsMargins(0, 0, 0, 0)
+
+        principal_field = QLineEdit()
+        principal_field.setValidator(QDoubleValidator(0.0, 1e12, 2))
+        principal_field.setPlaceholderText("0.00")
+        principal_layout.addWidget(principal_field)
+
+        principal_btn = QPushButton("+")
+        principal_btn.setFixedWidth(_sz(32))
+        principal_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {color}; color: white; border: none;
+                border-radius: {_sz(4)}px; font-weight: 800;
+                font-size: {_sz(12)}px; padding: 2px;
+            }}
+            QPushButton:hover {{ opacity: 0.9; }}
+        """)
+
+        principal_field.detail_button = principal_btn
+        principal_field.detail_key = "principal"  # Will be set to "so_principal", etc.
+
+        lbl_principal = QLabel("Principal:")
+        lbl_principal.setStyleSheet(f"font-size: {_sz(13)}px; font-weight: 600; color: {_SLATE_700};")
+        principal_layout.addWidget(principal_btn)
+        form.addRow(lbl_principal, principal_layout)
+        fields["principal"] = principal_field
+
+        # SC and Commission (no buttons, auto-populated)
+        for key, label_text in [("sc", "SC:"), ("commission", "Commission:")]:
             f = QLineEdit()
             f.setValidator(QDoubleValidator(0.0, 1e12, 2))
             f.setPlaceholderText("0.00")
@@ -251,6 +297,74 @@ class PalawanDetailsTab(QWidget):
             except ValueError:
                 pass
         total_display.setText(f"{total:.2f}")
+
+    def _open_transaction_dialog(self, detail_key: str, field: QLineEdit):
+        """Open transaction detail dialog for principal field.
+
+        When dialog closes, automatically updates Principal, SC, and Commission fields
+        with the transaction amounts.
+
+        Args:
+            detail_key: Key like "so_principal" (always principal in new design)
+            field: The principal field to update
+        """
+        # Lazy import to avoid circular dependency
+        from Client.dashboard.dialogs import PalawanTransactionDetailDialog
+        import logging
+        logger = logging.getLogger(__name__)
+
+        logger.info(f"🔵 _open_transaction_dialog called for {detail_key}")
+
+        # Get existing transactions if any
+        existing_txns = self._detailed_transactions.get(detail_key, [])
+        logger.info(f"  Existing transactions: {len(existing_txns)}")
+
+        # Create label for display
+        section_map = {
+            "so": "Send-Out",
+            "po": "Pay-Out",
+            "int": "International"
+        }
+        prefix = detail_key.split("_")[0]  # Extract "so", "po", or "int"
+        section = section_map.get(prefix, prefix)
+        dialog_label = f"{section} Transactions"
+
+        # Open dialog with transaction type for correct income calculation
+        dlg = PalawanTransactionDetailDialog(dialog_label, existing_txns, self, transaction_type=prefix)
+        if dlg.exec_():
+            # Get the transactions
+            txns = dlg.get_transactions_data()
+            logger.info(f"  Dialog returned {len(txns)} transactions")
+            logger.info(f"  Transaction data: {str(txns)[:200]}")
+
+            # Store transactions
+            self._detailed_transactions[detail_key] = txns
+            logger.info(f"  Stored transactions in _detailed_transactions[{detail_key}]")
+
+            # Get totals for each field from transactions
+            principal_total = dlg.get_total_principal()
+            commission_total = dlg.get_total_commission()
+            sc_total = dlg.get_total_sc()
+
+            # Get the section fields
+            if prefix == "so":
+                section_fields = self._so_fields
+            elif prefix == "po":
+                section_fields = self._po_fields
+            else:  # "int"
+                section_fields = self._int_fields
+
+            # Update all fields — lotes = total number of transactions
+            section_fields["lotes"].setText(str(len(txns)))
+            section_fields["principal"].setText(f"{principal_total:.2f}")
+            section_fields["sc"].setText(f"{sc_total:.2f}")
+            section_fields["commission"].setText(f"{commission_total:.2f}")
+
+            # Recalculate section totals
+            self._recalc_section(section_fields, section_fields["total_display"])
+
+            # Trigger full recalculation to update Brand B cash flow
+            self.parent.recalculate_all()
 
     # ── Compat shims used by old code ──────────────────────────────────────
     def calculate_palawan_totals(self):
@@ -310,6 +424,21 @@ class PalawanDetailsTab(QWidget):
             "palawan_cancel":             _dec(adj.get("Palawan Cancel",             QLineEdit())),
         }
 
+        # Add detailed transactions as JSON
+        import logging
+        logger_detail = logging.getLogger(__name__)
+        for key in ("so_principal", "so_sc", "so_commission",
+                    "po_principal", "po_sc", "po_commission",
+                    "int_principal", "int_sc", "int_commission"):
+            txns = self._detailed_transactions.get(key, [])
+            json_key = f"sendout_detailed_{key.split('_', 1)[1]}" if key.startswith("so_") else \
+                      f"payout_detailed_{key.split('_', 1)[1]}" if key.startswith("po_") else \
+                      f"international_detailed_{key.split('_', 1)[1]}"
+            json_data = json.dumps(txns) if txns else None
+            result[json_key] = json_data
+            if txns:
+                logger_detail.info(f"🔵 PalawanDetailsTab.get_data() - {json_key}: {len(txns)} transactions, data: {json_data[:100] if json_data else 'None'}...")
+
         # Legacy aliases so _restore_palawan_tab / cashflow mirror still work
         result["palawan_sendout_principal"]           = result["so_principal"]
         result["palawan_sendout_sc"]                  = result["so_sc"]
@@ -367,6 +496,27 @@ class PalawanDetailsTab(QWidget):
                 v = data.get(old_key, 0)
             return v
 
+        # Load detailed transactions from JSON
+        self._detailed_transactions = {}
+        self._code_name_lookup = {}
+        for prefix, label_prefix in [("so", "sendout"), ("po", "payout"), ("int", "international")]:
+            for field_type in ("principal", "sc", "commission"):
+                json_key = f"{label_prefix}_detailed_{field_type}"
+                json_str = data.get(json_key)
+                detail_key = f"{prefix}_{field_type}"
+                if json_str:
+                    try:
+                        txns = json.loads(json_str)
+                        self._detailed_transactions[detail_key] = txns
+                        # Build code->name lookup from loaded transactions
+                        if prefix not in self._code_name_lookup:
+                            self._code_name_lookup[prefix] = {}
+                        for txn in txns:
+                            if txn.get("code"):
+                                self._code_name_lookup[prefix][txn["code"]] = txn.get("name", "")
+                    except (json.JSONDecodeError, TypeError):
+                        self._detailed_transactions[detail_key] = []
+
         for prefix, fields, old_pfx in [
             ("so",  self._so_fields,  "palawan_sendout"),
             ("po",  self._po_fields,  "palawan_payout"),
@@ -423,8 +573,11 @@ class PalawanDetailsTab(QWidget):
                     sendout_lotes, sendout_capital, sendout_sc, sendout_commission, sendout_total,
                     payout_lotes,  payout_capital,  payout_sc,  payout_commission,  payout_total,
                     international_lotes, international_capital, international_sc,
-                    international_commission, international_total)
-                   VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s)
+                    international_commission, international_total,
+                    sendout_detailed_principal, sendout_detailed_sc, sendout_detailed_commission,
+                    payout_detailed_principal, payout_detailed_sc, payout_detailed_commission,
+                    international_detailed_principal, international_detailed_sc, international_detailed_commission)
+                   VALUES (%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s, %s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON DUPLICATE KEY UPDATE
                     sendout_lotes=VALUES(sendout_lotes),
                     sendout_capital=VALUES(sendout_capital),
@@ -441,6 +594,15 @@ class PalawanDetailsTab(QWidget):
                     international_sc=VALUES(international_sc),
                     international_commission=VALUES(international_commission),
                     international_total=VALUES(international_total),
+                    sendout_detailed_principal=VALUES(sendout_detailed_principal),
+                    sendout_detailed_sc=VALUES(sendout_detailed_sc),
+                    sendout_detailed_commission=VALUES(sendout_detailed_commission),
+                    payout_detailed_principal=VALUES(payout_detailed_principal),
+                    payout_detailed_sc=VALUES(payout_detailed_sc),
+                    payout_detailed_commission=VALUES(payout_detailed_commission),
+                    international_detailed_principal=VALUES(international_detailed_principal),
+                    international_detailed_sc=VALUES(international_detailed_sc),
+                    international_detailed_commission=VALUES(international_detailed_commission),
                     updated_at=CURRENT_TIMESTAMP
                 """,
                 (
@@ -451,6 +613,12 @@ class PalawanDetailsTab(QWidget):
                     data["po_commission"],  data["po_total"],
                     data["int_lotes"], data["int_principal"], data["int_sc"],
                     data["int_commission"], data["int_total"],
+                    data.get("sendout_detailed_principal"), data.get("sendout_detailed_sc"),
+                    data.get("sendout_detailed_commission"),
+                    data.get("payout_detailed_principal"), data.get("payout_detailed_sc"),
+                    data.get("payout_detailed_commission"),
+                    data.get("international_detailed_principal"), data.get("international_detailed_sc"),
+                    data.get("international_detailed_commission"),
                 )
             )
             QMessageBox.information(self, "Saved", f"Palawan Details B saved for {sd}.")

@@ -573,3 +573,32 @@ class EmpenaDetailDialog(QDialog):
 
     def get_row_count(self) -> int:
         return len(self._rows_data)
+
+    def get_breakdown_data(self) -> list:
+        """Return rows as [[pct_str, amount], ...] for DB persistence."""
+        data = []
+        for pct_combo, amt_edit, _ in self._rows_data:
+            try:
+                pct_str = pct_combo.currentText()
+                amt = float(amt_edit.text().strip().replace(',', '') or 0)
+            except ValueError:
+                pct_str, amt = "2.5%", 0.0
+            data.append([pct_str, amt])
+        return data
+
+    def load_breakdown_data(self, data: list):
+        """Restore rows from saved [[pct_str, amount], ...] list."""
+        while self.table.rowCount() > 0:
+            self.table.removeRow(0)
+        self._rows_data = []
+        for entry in data:
+            if len(entry) < 2:
+                continue
+            pct_str, amt = str(entry[0]), entry[1]
+            self._add_row()
+            pct_combo, amt_edit, _ = self._rows_data[-1]
+            idx = pct_combo.findText(pct_str)
+            if idx >= 0:
+                pct_combo.setCurrentIndex(idx)
+            amt_edit.setText(str(amt))
+        self._recalc()

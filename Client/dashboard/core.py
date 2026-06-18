@@ -24,6 +24,7 @@ from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from Client.cash_flow_tab import CashFlowTab
 from Client.palawan_details_tab import PalawanDetailsTab
 from Client.dashboard.dialogs import FundTransferHODialog, MotorCarDetailDialog, EmpenaDetailDialog
+from Client.dashboard.report_cache import save as _cache_save, load as _cache_load, invalidate as _cache_invalidate
 from Client.dashboard.managers import BalanceManager, PalawanManager
 from Client.dashboard.handlers import PostHandler, ExportHandler, ValidationService, ServerErrorHandler
 from Client.dashboard.builders import ButtonBuilder, InputFieldBuilder, FrameBuilder, LabelBuilder, LayoutBuilder
@@ -298,8 +299,9 @@ class FundTransferHODialog(QDialog):
         amt_edit = InputFieldBuilder.create_money_input("0.00")
         self.table.setCellWidget(row, 1, amt_edit)
 
-        rem_btn = ButtonBuilder.create_danger_button("✕", lambda _, b=rem_btn: self._remove_row_by_widget(b))
+        rem_btn = ButtonBuilder.create_danger_button("✕")
         rem_btn.setFixedWidth(28)
+        rem_btn.clicked.connect(lambda _, b=rem_btn: self._remove_row_by_widget(b))
         self.table.setCellWidget(row, 2, rem_btn)
 
         self._rows_data.append((bank_combo, amt_edit))
@@ -759,7 +761,19 @@ class ClientDashboard(QWidget):
         self._is_connected = True
         self._conn_timer = QTimer(self)
         self._conn_timer.timeout.connect(self._check_internet)
-        QTimer.singleShot(3_000, lambda: self._conn_timer.start(5_000))
+        def _start_conn_timer():
+            try:
+                self._conn_timer.start(5_000)
+            except RuntimeError:
+                pass
+        QTimer.singleShot(3_000, _start_conn_timer)
+
+        # Initialize notification listener for entry reset alerts
+        self._notification_listener = None
+        self._active_toasts = []
+        self._force_quit = False          # True only when user picks Quit from tray menu
+        self._setup_tray_icon()
+        self._setup_notification_listener()
 
         self.beginning_balance_auto_filled_a = False
         self.beginning_balance_auto_filled_b = False
@@ -872,18 +886,143 @@ class ClientDashboard(QWidget):
 
         from PyQt5.QtCore import QTimer as _QT
         _QT.singleShot(300, self._load_draft)
-        
-       
+
+
         self.loading_overlay = LoadingOverlay(self)
-        
+
         self.showMaximized()
 
         if AUTO_UPDATE_ENABLED and check_update_success:
             check_update_success(parent=self)
-        
-        
+
+
         if not self.offline_mode and OFFLINE_SUPPORT and offline_manager:
             _QT.singleShot(1000, self._check_pending_entries_sync)
+
+    # ── System tray ───────────────────────────────────────────────────────────
+
+    def _setup_tray_icon(self):
+        import os
+        from PyQt5.QtWidgets import QSystemTrayIcon, QMenu, QAction
+        from PyQt5.QtGui import QIcon
+
+        _root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+        icon_path = os.path.normpath(os.path.join(_root, 'assets', 'logo.ico'))
+        icon = QIcon(icon_path) if os.path.exists(icon_path) else self.style().standardIcon(
+            self.style().SP_ComputerIcon
+        )
+
+        self._tray_icon = QSystemTrayIcon(icon, parent=self)
+        self._tray_icon.setToolTip("Operation Report System")
+
+        menu = QMenu()
+        show_action = QAction("Show / Hide", self)
+        show_action.triggered.connect(self._tray_toggle_window)
+        menu.addAction(show_action)
+        menu.addSeparator()
+        quit_action = QAction("Quit", self)
+        quit_action.triggered.connect(self._tray_quit)
+        menu.addAction(quit_action)
+
+        self._tray_icon.setContextMenu(menu)
+        self._tray_icon.activated.connect(self._on_tray_activated)
+        self._tray_icon.show()
+
+    def _tray_toggle_window(self):
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
+    def _on_tray_activated(self, reason):
+        from PyQt5.QtWidgets import QSystemTrayIcon
+        if reason == QSystemTrayIcon.DoubleClick:
+            self._tray_toggle_window()
+
+    def _tray_quit(self):
+        self._force_quit = True
+        self.close()
+
+    # ── Notification listener ─────────────────────────────────────────────────
+
+    def _setup_notification_listener(self):
+        """Initialize WebSocket notification listener for entry reset alerts."""
+        try:
+            from notification_listener import NotificationListener
+            from api_config import API_URL
+
+            self._notification_listener = NotificationListener(API_URL, self.branch, parent=self)
+            self._notification_listener.signals.entry_reset_signal.connect(self._on_entry_reset)
+            self._notification_listener.signals.connection_changed.connect(self._on_notification_connection_changed)
+            self._notification_listener.signals.error_signal.connect(self._on_notification_error)
+            self._notification_listener.start()
+            logger.info(f"Notification listener started for branch: {self.branch}")
+        except Exception as e:
+            logger.warning(f"Failed to initialize notification listener: {e}")
+
+    def _on_entry_reset(self, data):
+        """Handle entry reset notification from admin."""
+        try:
+            branch = data.get("branch", "Unknown")
+            date_str = data.get("date", "Unknown")
+            admin = data.get("admin_name", "Administrator")
+
+            logger.info(f"Entry reset notification received for branch {branch} on {date_str}")
+
+            # Evict cached data so the reloaded form fetches fresh DB values
+            _cache_invalidate(date_str, branch, self.corporation)
+
+            # ── Native desktop notification (visible even when minimized) ──────
+            from PyQt5.QtWidgets import QSystemTrayIcon
+            if hasattr(self, '_tray_icon'):
+                self._tray_icon.showMessage(
+                    "Entry Reset — Action Required",
+                    f"Your entry for {date_str} has been reset by {admin}.\n"
+                    f"Open the app to edit and resubmit your report.",
+                    QSystemTrayIcon.Information,
+                    10000,   # stays visible for 10 seconds
+                )
+
+            # ── Also show in-app dialog if the window is currently visible ────
+            if self.isVisible():
+                from PyQt5.QtWidgets import QMessageBox
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Entry Reset Notification")
+                msg.setText(
+                    f"<b>Your entry for {date_str} has been reset by {admin}.</b><br><br>"
+                    f"Your form has been reloaded — you can now edit and resubmit."
+                )
+                msg.setIcon(QMessageBox.Information)
+                msg.setStandardButtons(QMessageBox.Ok)
+                msg.setModal(False)
+                msg.show()
+                self._active_toasts.append(msg)
+                msg.finished.connect(
+                    lambda: self._active_toasts.remove(msg) if msg in self._active_toasts else None
+                )
+
+            # ── Auto-reload the form for today's date ─────────────────────────
+            try:
+                current_date = self.date_input.date().toString("yyyy-MM-dd") if hasattr(self, 'date_input') else date_str
+                if current_date == date_str:
+                    self._restore_palawan_tab(date_str)
+                    logger.info(f"Auto-reloaded palawan tab after entry reset for {date_str}")
+            except Exception as reload_err:
+                logger.warning(f"Could not auto-reload after entry reset: {reload_err}")
+
+        except Exception as e:
+            logger.error(f"Error handling entry reset notification: {e}")
+
+    def _on_notification_connection_changed(self, connected):
+        """Handle notification connection state changes."""
+        status = "connected" if connected else "disconnected"
+        logger.info(f"Notification listener {status}")
+
+    def _on_notification_error(self, error_msg):
+        """Handle notification listener errors."""
+        logger.error(f"Notification error: {error_msg}")
 
     def _check_pending_entries_sync(self):
         
@@ -1897,6 +2036,9 @@ class ClientDashboard(QWidget):
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if r == QMessageBox.Yes:
+            # Force closeEvent to run the full cleanup path (stop threads, hide tray)
+            # instead of just hiding the window to the system tray.
+            self._force_quit = True
             self.session.logout()
             self.logout_requested.emit()
             self.close()
@@ -2113,6 +2255,49 @@ class ClientDashboard(QWidget):
             )
 
     def closeEvent(self, event):
+        """Hide to system tray on close; only truly quit via tray → Quit."""
+        if not self._force_quit:
+            event.ignore()
+            self.hide()
+            from PyQt5.QtWidgets import QSystemTrayIcon
+            if hasattr(self, '_tray_icon'):
+                self._tray_icon.showMessage(
+                    "Operation Report System",
+                    "App is still running in the background.\n"
+                    "Right-click the tray icon to quit.",
+                    QSystemTrayIcon.Information,
+                    3000,
+                )
+            return
+
+        # True quit — hide tray icon then clean up
+        if hasattr(self, '_tray_icon'):
+            self._tray_icon.hide()
+
+        # Stop notification listener
+        if self._notification_listener:
+            try:
+                self._notification_listener.stop()
+                self._notification_listener.quit()
+                self._notification_listener.wait(2000)
+            except Exception as e:
+                logger.warning(f"Error stopping notification listener: {e}")
+        try:
+            if hasattr(self, '_session_timer'):
+                try:
+                    self._session_timer.stop()
+                except RuntimeError:
+                    pass
+        except:
+            pass
+        try:
+            if hasattr(self, '_conn_timer'):
+                try:
+                    self._conn_timer.stop()
+                except RuntimeError:
+                    pass
+        except:
+            pass
         if hasattr(self, '_update_checker_threads'):
             for thread in self._update_checker_threads[:]:
                 if thread.isRunning():
@@ -3159,7 +3344,22 @@ class ClientDashboard(QWidget):
                     pc_salary_breakdown=pc_salary,
                     motor_car_breakdown=motor_car
                 )
-                
+
+                # Save Empeno JEW breakdown rows so they survive reload
+                if hasattr(self, '_jew_dialogs'):
+                    for _lbl, _col in [
+                        ('Empeno JEW. (NEW)',  'empeno_jew_new_breakdown'),
+                        ('Empeno JEW (RENEW)', 'empeno_jew_renew_breakdown'),
+                    ]:
+                        _dlg = self._jew_dialogs.get(_lbl)
+                        if _dlg and hasattr(_dlg, 'get_breakdown_data'):
+                            _bd = _dlg.get_breakdown_data()
+                            if any(row[1] for row in _bd):
+                                try:
+                                    all_vals[_col] = json.dumps(_bd)
+                                except Exception as _e:
+                                    logger.error("Error serializing %s: %s", _col, _e)
+
                 brand_all_vals[brand_full] = all_vals
 
                 is_valid, error_msg = self.post_handler.validate_balance_calculations(balances)
@@ -3480,7 +3680,22 @@ class ClientDashboard(QWidget):
 
                 if hasattr(self, '_motor_car_breakdown') and self._motor_car_breakdown:
                     all_vals['empeno_motor_car_breakdown'] = json.dumps(self._motor_car_breakdown)
-                
+
+                # Save Empeno JEW breakdown rows so they survive reload
+                if hasattr(self, '_jew_dialogs'):
+                    for _lbl, _col in [
+                        ('Empeno JEW. (NEW)',  'empeno_jew_new_breakdown'),
+                        ('Empeno JEW (RENEW)', 'empeno_jew_renew_breakdown'),
+                    ]:
+                        _dlg = self._jew_dialogs.get(_lbl)
+                        if _dlg and hasattr(_dlg, 'get_breakdown_data'):
+                            _bd = _dlg.get_breakdown_data()
+                            if any(row[1] for row in _bd):
+                                try:
+                                    all_vals[_col] = json.dumps(_bd)
+                                except Exception as _e:
+                                    logger.error("Error serializing %s: %s", _col, _e)
+
                 brand_data[brand_full] = {
                     "table_name": table_name,
                     "beginning_balance": beginning,
@@ -5037,38 +5252,49 @@ class ClientDashboard(QWidget):
             if hasattr(cf_tab, 'clear_fields'):
                 cf_tab.clear_fields()
 
-            if brand == "Brand B":
-                # daily_reports is exclusively the Brand B table; no brand filter needed.
-                results = None
-                for q, params in [
-                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
-                     (date_str, self.branch, self.corporation)),
-                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
-                     (date_str, self.branch)),
-                ]:
-                    results = self.db_manager.execute_query(q, params)
-                    if results:
-                        break
+            # ── Cache read (locked reports only) ─────────────────────────────
+            data = _cache_load(date_str, brand, self.branch, self.corporation)
+            if data:
+                logger.info("Cache HIT for %s/%s — skipping DB query", brand, date_str)
             else:
-                results = None
-                for q, params in [
-                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
-                     (date_str, self.branch, self.corporation)),
-                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
-                     (date_str, self.branch)),
-                ]:
-                    results = self.db_manager.execute_query(q, params)
-                    if results:
-                        break
-            
-            if not results or len(results) == 0:
-                logger.debug(
-                    "_load_brand_report_data: No row found for brand=%s branch=%s date=%s corp=%s",
-                    brand, self.branch, date_str, self.corporation
-                )
-                return
-            
-            data = results[0]
+                # Cache miss — fetch from DB
+                if brand == "Brand B":
+                    # daily_reports is exclusively the Brand B table; no brand filter needed.
+                    results = None
+                    for q, params in [
+                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                         (date_str, self.branch, self.corporation)),
+                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
+                         (date_str, self.branch)),
+                    ]:
+                        results = self.db_manager.execute_query(q, params)
+                        if results:
+                            break
+                else:
+                    results = None
+                    for q, params in [
+                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                         (date_str, self.branch, self.corporation)),
+                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
+                         (date_str, self.branch)),
+                    ]:
+                        results = self.db_manager.execute_query(q, params)
+                        if results:
+                            break
+
+                if not results or len(results) == 0:
+                    logger.debug(
+                        "_load_brand_report_data: No row found for brand=%s branch=%s date=%s corp=%s",
+                        brand, self.branch, date_str, self.corporation
+                    )
+                    return
+
+                data = results[0]
+
+                # Persist to cache only for locked (posted) reports
+                if data.get('is_locked'):
+                    _cache_save(date_str, brand, self.branch, self.corporation, data)
+                    logger.info("Cache WRITE for %s/%s", brand, date_str)
             
             beginning_balance = data.get('beginning_balance', 0) or 0
             bb_input.setReadOnly(False)
@@ -5185,6 +5411,46 @@ class ClientDashboard(QWidget):
             bb_input.blockSignals(False)
             cc_input.blockSignals(False)
             logger.info(f"UNBLOCKED signals after loading {brand} - ending_balance should be {ending_balance}")
+
+            # ── Brand B: re-apply Jew. A.I after unblocking ───────────────────
+            # blockSignals(True) on cf_tab does NOT block individual QLineEdit
+            # children. Loading the Empeno JEW credit fields triggers their
+            # textChanged → _update_jew_ai_b() → overwrites Jew. A.I with 0.
+            # Fix: restore the DB value as the final step and sync _jew_computed_b
+            # so subsequent auto-updates also produce the correct total.
+            if brand == "Brand B" and hasattr(self, '_jew_computed_b'):
+                jew_ai_val = float(data.get('jew_ai', 0) or 0)
+                jew_ai_widget = cf_tab.debit_inputs.get("Jew. A.I")
+                if jew_ai_widget:
+                    # Assign the full loaded value to one slot so the sum stays correct
+                    self._jew_computed_b['Empeno JEW. (NEW)'] = jew_ai_val
+                    self._jew_computed_b['Empeno JEW (RENEW)'] = 0.0
+                    jew_ai_widget.blockSignals(True)
+                    jew_ai_widget.setText(f"{jew_ai_val:.2f}" if jew_ai_val else "")
+                    jew_ai_widget.blockSignals(False)
+                    logger.info(f"Re-applied Jew. A.I for Brand B after load: {jew_ai_val}")
+
+            # Restore Empeno JEW breakdown rows from saved JSON so the dialogs
+            # are pre-populated when the user opens them after loading a posted report.
+            if hasattr(self, '_jew_dialogs'):
+                for _lbl, _col in [
+                    ('Empeno JEW. (NEW)',  'empeno_jew_new_breakdown'),
+                    ('Empeno JEW (RENEW)', 'empeno_jew_renew_breakdown'),
+                ]:
+                    _raw = data.get(_col)
+                    if not _raw:
+                        continue
+                    try:
+                        _bd = json.loads(_raw) if isinstance(_raw, str) else _raw
+                        if not isinstance(_bd, list) or not _bd:
+                            continue
+                        if _lbl not in self._jew_dialogs:
+                            self._jew_dialogs[_lbl] = EmpenaDetailDialog(_lbl, parent=self)
+                        self._jew_dialogs[_lbl].load_breakdown_data(_bd)
+                        logger.info("Restored %d rows for %s", len(_bd), _lbl)
+                    except Exception as _e:
+                        logger.error("Error restoring %s: %s", _lbl, _e)
+
             # Clear the skip flag - next recalculate will respect user changes
             self._skip_ending_balance_recalc = False
             

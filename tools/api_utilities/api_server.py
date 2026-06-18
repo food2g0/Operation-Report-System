@@ -28,9 +28,22 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel
 from starlette.middleware.base import BaseHTTPMiddleware
 import jwt as pyjwt
+try:
+    from socketio import AsyncServer, ASGIApp
+    SOCKETIO_AVAILABLE = True
+except ImportError:
+    SOCKETIO_AVAILABLE = False
+    log = None
+    AsyncServer = None
+    ASGIApp = None
+
+# Check if running with Gunicorn (WSGI) or uvicorn (ASGI)
+import sys
+_RUNNING_WITH_GUNICORN = "gunicorn" in sys.modules or any("gunicorn" in arg for arg in sys.argv)
 
 from db_connect_pooled import DatabaseManagerPooled
 from error_tracker import error_tracker, audit_logger, log_exception, log_audit
+from notification_manager import notification_manager
 
 
 API_KEY    = os.environ.get("ORS_API_KEY",    "")
@@ -572,6 +585,53 @@ app = FastAPI(
 )
 app.add_middleware(_TrackingMiddleware)
 
+# ── Socket.IO Configuration ────────────────────────────────────────────────────
+_sio = None
+if SOCKETIO_AVAILABLE:
+    try:
+        _sio = AsyncServer(
+            async_mode="asgi",
+            cors_allowed_origins="*",
+            ping_timeout=60,
+            ping_interval=25,
+        )
+        notification_manager.set_sio(_sio)
+        log.info("Socket.IO server initialized for real-time notifications")
+    except Exception as e:
+        log.warning(f"Failed to initialize Socket.IO: {e}")
+        _sio = None
+else:
+    log.warning("Socket.IO not available - notifications will be disabled")
+
+
+# ── Socket.IO Event Handlers ──────────────────────────────────────────────────
+if _sio and SOCKETIO_AVAILABLE and not _RUNNING_WITH_GUNICORN:
+    @_sio.on("connect")
+    async def on_connect(sid, environ):
+        """Handle client connection."""
+        log.info(f"Client {sid} connected")
+
+    @_sio.on("disconnect")
+    async def on_disconnect(sid):
+        """Handle client disconnection."""
+        notification_manager.unregister_client(sid)
+        log.info(f"Client {sid} disconnected")
+
+    @_sio.on("register_branch")
+    async def on_register_branch(sid, data):
+        """Client registers for notifications on a specific branch."""
+        try:
+            branch = data.get("branch")
+            if branch:
+                notification_manager.register_client(sid, branch)
+                await _sio.emit("register_success", {"branch": branch}, to=sid)
+                log.info(f"Client {sid} registered for branch: {branch}")
+            else:
+                await _sio.emit("error", {"message": "Branch not provided"}, to=sid)
+        except Exception as e:
+            log.error(f"Error registering branch for {sid}: {e}")
+            await _sio.emit("error", {"message": str(e)}, to=sid)
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -594,6 +654,16 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     )
 
 
+def _cleanup_expired_notifications():
+    """Delete pending_notifications rows whose 48-hour TTL has passed."""
+    try:
+        _db.execute_query(
+            "DELETE FROM pending_notifications WHERE expires_at <= NOW()", []
+        )
+    except Exception:
+        pass  # Table may not exist yet; suppress silently
+
+
 def _start_background_cleanup():
     """Start background cleanup thread for memory leak prevention."""
     def cleanup_loop():
@@ -602,6 +672,7 @@ def _start_background_cleanup():
                 time.sleep(300)  # Run every 5 minutes
                 _cleanup_stale_rate_limit_entries()
                 _cleanup_old_tasks()
+                _cleanup_expired_notifications()
             except Exception as e:
                 log.error(f"Background cleanup error: {e}")
 
@@ -1038,6 +1109,270 @@ def task_status(task_id: str, _: None = Depends(_require_token)):
     if result is None:
         raise HTTPException(status_code=404, detail="Task not found")
     return result
+
+
+# ── Notification Endpoints ─────────────────────────────────────────────────────
+
+class NotificationRequest(BaseModel):
+    branch: str
+    date: str
+    admin_name: str = "Administrator"
+
+
+def _ensure_notifications_table():
+    """Create pending_notifications table if it doesn't exist."""
+    try:
+        _db.execute_query(
+            """CREATE TABLE IF NOT EXISTS pending_notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                branch VARCHAR(255) NOT NULL,
+                date VARCHAR(20) NOT NULL,
+                admin_name VARCHAR(255) DEFAULT 'Administrator',
+                created_at DATETIME DEFAULT NOW(),
+                expires_at DATETIME NOT NULL,
+                INDEX idx_branch (branch),
+                INDEX idx_expires (expires_at)
+            ) DEFAULT CHARSET=utf8mb4""",
+            []
+        )
+    except Exception as e:
+        log.warning(f"Could not create pending_notifications table: {e}")
+
+
+_notifications_table_ready = False
+
+
+@app.post("/api/notify/reset_entry")
+def notify_reset_entry(body: NotificationRequest, request: Request, _: None = Depends(_require_token)):
+    """Notify branch clients that their entry has been reset.
+    Stores in DB for reliable delivery across all workers, and also
+    broadcasts via Socket.IO for instant delivery when available.
+    """
+    global _notifications_table_ready
+    clients_notified = 0
+
+    # Persist to DB so any worker (and polling clients) can serve it
+    try:
+        if not _notifications_table_ready:
+            _ensure_notifications_table()
+            _notifications_table_ready = True
+        _db.execute_query(
+            "INSERT INTO pending_notifications (branch, date, admin_name, expires_at) "
+            "VALUES (%s, %s, %s, DATE_ADD(NOW(), INTERVAL 48 HOUR))",
+            [body.branch, body.date, body.admin_name]
+        )
+        log.info(f"Stored pending notification for branch {body.branch} on {body.date}")
+    except Exception as e:
+        log.warning(f"Could not store pending notification in DB: {e}")
+
+    # Also broadcast via Socket.IO for instant delivery (best-effort)
+    if _sio and not _RUNNING_WITH_GUNICORN:
+        try:
+            notification_data = {
+                "type": "entry_reset",
+                "branch": body.branch,
+                "date": body.date,
+                "admin_name": body.admin_name,
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            }
+            clients_notified = notification_manager.broadcast_to_branch(
+                body.branch, "entry_reset", notification_data
+            )
+            log.info(f"Socket.IO: notified {clients_notified} clients in branch {body.branch}")
+        except Exception as e:
+            log.warning(f"Socket.IO broadcast failed (non-fatal): {e}")
+
+    return {
+        "status": "success",
+        "clients_notified": clients_notified,
+        "branch": body.branch,
+        "date": body.date,
+        "persisted": True,
+    }
+
+
+@app.get("/api/notify/pending")
+def get_pending_notifications(branch: str, timeout: int = 0, _: None = Depends(_require_token)):
+    """Return and consume pending notifications for a branch.
+
+    With timeout=0  → regular poll (returns immediately, empty or not).
+    With timeout>0  → long poll: holds the request open for up to `timeout` seconds,
+                       checking every 0.5 s. Returns as soon as a notification arrives.
+                       Capped at 29 s to stay within Gunicorn's default worker timeout.
+    """
+    import time as _time
+
+    global _notifications_table_ready
+    if not _notifications_table_ready:
+        _ensure_notifications_table()
+        _notifications_table_ready = True
+
+    max_wait = min(max(timeout, 0), 29)
+    deadline = _time.monotonic() + max_wait
+
+    def _fetch():
+        try:
+            rows = _db.execute_query(
+                "SELECT id, branch, date, admin_name, created_at FROM pending_notifications "
+                "WHERE branch = %s AND expires_at > NOW() ORDER BY created_at",
+                [branch]
+            )
+            if rows:
+                ids = [r["id"] for r in rows]
+                placeholders = ",".join(["%s"] * len(ids))
+                _db.execute_query(
+                    f"DELETE FROM pending_notifications WHERE id IN ({placeholders})", ids
+                )
+            return rows or []
+        except Exception as e:
+            log.warning(f"Could not fetch pending notifications: {e}")
+            return []
+
+    rows = _fetch()
+    while not rows and _time.monotonic() < deadline:
+        _time.sleep(0.5)
+        rows = _fetch()
+
+    notifications = [
+        {
+            "type": "entry_reset",
+            "branch": r["branch"],
+            "date": str(r["date"]),
+            "admin_name": r["admin_name"],
+            "timestamp": str(r["created_at"]),
+        }
+        for r in rows
+    ]
+    return {"notifications": notifications}
+
+
+@app.get("/api/notify/capabilities")
+def notify_capabilities():
+    """Public endpoint — tells clients whether Socket.IO is available on this server.
+    No auth required; contains no sensitive data."""
+    return {
+        "socketio": bool(_sio and not _RUNNING_WITH_GUNICORN),
+        "polling": True,
+    }
+
+
+@app.get("/api/notify/stats")
+def notification_stats(_: None = Depends(_require_token)):
+    """Get Socket.IO connection statistics."""
+    return notification_manager.get_connection_stats()
+
+
+# ── Machine access control ────────────────────────────────────────────────────
+
+class MachineRegisterRequest(BaseModel):
+    machine_id:  str
+    hostname:    Optional[str] = None
+    branch:      Optional[str] = None
+    username:    Optional[str] = None
+    mac_address: Optional[str] = None
+    cpu_info:    Optional[str] = None
+
+
+@app.post("/api/machine/register")
+def machine_register(body: MachineRegisterRequest, _: None = Depends(_require_token)):
+    """Register a machine on first login (auto-approved).
+    If the machine is already revoked this call does NOT re-approve it.
+    """
+    existing = _db.execute_query(
+        "SELECT status FROM machines WHERE machine_id = %s LIMIT 1",
+        [body.machine_id]
+    )
+    if existing:
+        # Update last_seen (and branch/username in case they changed)
+        _db.execute_query(
+            """UPDATE machines
+               SET last_seen = NOW(), branch = %s, username = %s,
+                   hostname = %s
+               WHERE machine_id = %s""",
+            [body.branch, body.username, body.hostname, body.machine_id]
+        )
+        return {"status": existing[0]["status"]}
+    else:
+        _db.execute_query(
+            """INSERT INTO machines
+               (machine_id, hostname, branch, username, mac_address, cpu_info,
+                status, registered_at, last_seen)
+               VALUES (%s, %s, %s, %s, %s, %s, 'approved', NOW(), NOW())""",
+            [body.machine_id, body.hostname, body.branch, body.username,
+             body.mac_address, body.cpu_info]
+        )
+        return {"status": "approved"}
+
+
+@app.get("/api/machine/verify/{machine_id}")
+def machine_verify(machine_id: str, _: None = Depends(_require_token)):
+    """Check whether a machine is approved. Returns {status: approved|revoked|unknown}."""
+    rows = _db.execute_query(
+        "SELECT status FROM machines WHERE machine_id = %s LIMIT 1",
+        [machine_id]
+    )
+    if not rows:
+        return {"status": "unknown"}
+    return {"status": rows[0]["status"]}
+
+
+@app.get("/api/machine/list")
+def machine_list(_: None = Depends(_require_token)):
+    """Return all registered machines for the super-admin dashboard."""
+    rows = _db.execute_query(
+        """SELECT id, machine_id, hostname, branch, username,
+                  mac_address, cpu_info, status,
+                  registered_at, last_seen, revoked_at, revoked_by, notes
+           FROM machines
+           ORDER BY registered_at DESC""",
+        []
+    )
+    def _fmt(row):
+        out = dict(row)
+        for k in ("registered_at", "last_seen", "revoked_at"):
+            v = out.get(k)
+            out[k] = v.isoformat() if v else None
+        return out
+    return {"machines": [_fmt(r) for r in (rows or [])]}
+
+
+@app.post("/api/machine/revoke/{machine_id}")
+def machine_revoke(machine_id: str, body: dict = None, _: None = Depends(_require_token)):
+    """Revoke a machine — it will be blocked on the next startup."""
+    revoked_by = (body or {}).get("revoked_by", "super_admin")
+    _db.execute_query(
+        """UPDATE machines
+           SET status = 'revoked', revoked_at = NOW(), revoked_by = %s
+           WHERE machine_id = %s""",
+        [revoked_by, machine_id]
+    )
+    return {"ok": True}
+
+
+@app.post("/api/machine/approve/{machine_id}")
+def machine_approve(machine_id: str, _: None = Depends(_require_token)):
+    """Re-approve a previously revoked machine."""
+    _db.execute_query(
+        """UPDATE machines
+           SET status = 'approved', revoked_at = NULL, revoked_by = NULL
+           WHERE machine_id = %s""",
+        [machine_id]
+    )
+    return {"ok": True}
+
+
+# ── Mount Socket.IO to FastAPI ────────────────────────────────────────────────
+# Only mount with uvicorn (ASGI). Gunicorn (WSGI) is incompatible.
+if _sio and ASGIApp and not _RUNNING_WITH_GUNICORN:
+    try:
+        app = ASGIApp(_sio, app)
+        log.info("Socket.IO mounted to FastAPI app (ASGI mode)")
+    except Exception as e:
+        log.warning(f"Failed to mount Socket.IO: {e}. Notifications will be unavailable.")
+elif _sio and _RUNNING_WITH_GUNICORN:
+    log.warning("Running with Gunicorn (WSGI). Socket.IO notifications are not supported in WSGI mode.")
+    log.warning("To use notifications, run with: python api_server.py (uvicorn)")
+    _sio = None  # Disable Socket.IO in Gunicorn
 
 
 if __name__ == "__main__":

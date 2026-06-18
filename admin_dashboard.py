@@ -35,6 +35,7 @@ from global_other_services_page import GlobalOtherServicesPage
 from ft_ho_page import FTHOPage
 from depo_br_page import DepoBRPage
 from review_summary_page import ReviewSummaryPage
+from bir_book_page import BIRBookPage
 from connection_watcher import ConnectionWatcher, ConnectionBanner
 
 
@@ -784,12 +785,13 @@ class AdminDashboard(QWidget):
         self.depo_br_btn = QPushButton("DEPO BR")
         self.admin_btn = QPushButton("User Management")
         self.review_summary_btn = QPushButton("Review Summary")
+        self.bir_book_btn = QPushButton("BIR Book")
 
 
         for btn in [self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn,
                     self.fund_btn, self.payable_btn, self.global_payable_btn, self.report_btn, self.daily_txn_btn,
                     self.new_sanla_btn, self.new_renew_btn, self.global_os_btn, self.ft_ho_btn, self.depo_br_btn,
-                    self.admin_btn, self.review_summary_btn]:
+                    self.admin_btn, self.review_summary_btn, self.bir_book_btn]:
             btn.setCheckable(True)
         self.daily_btn.setChecked(True) 
 
@@ -802,10 +804,10 @@ class AdminDashboard(QWidget):
                 self.review_summary_btn, self.admin_btn
             ]
         else:
-     
+
             self.nav_buttons = [
                 self.daily_btn, self.variance_btn, self.palawan_btn, self.mc_btn,
-                self.fund_btn, self.payable_btn, self.global_payable_btn, self.report_btn, self.review_summary_btn, self.admin_btn
+                self.fund_btn, self.payable_btn, self.global_payable_btn, self.report_btn, self.review_summary_btn, self.admin_btn, self.bir_book_btn
             ]
 
         for btn in self.nav_buttons:
@@ -848,6 +850,7 @@ class AdminDashboard(QWidget):
             self._add_lazy(7, lambda: ReportPage(), 'report_widget')
             self._add_lazy(8, lambda: ReviewSummaryPage(account_type=self.account_type), 'review_summary_widget')
             self._add_lazy(9, lambda: UserManagementPage(), 'admin_widget')
+            self._add_lazy(10, lambda: BIRBookPage(parent=self), 'bir_book_widget')
         
         main_layout.addWidget(self.stack)
 
@@ -880,6 +883,7 @@ class AdminDashboard(QWidget):
             self.report_btn.clicked.connect(lambda: self.switch_view(7, self.report_btn))
             self.review_summary_btn.clicked.connect(lambda: self.switch_view(8, self.review_summary_btn))
             self.admin_btn.clicked.connect(lambda: self.switch_view(9, self.admin_btn))
+            self.bir_book_btn.clicked.connect(lambda: self.switch_view(10, self.bir_book_btn))
 
         self.setLayout(main_layout)
 
@@ -2759,7 +2763,7 @@ class AdminDashboard(QWidget):
             QMessageBox.critical(self, "Error", f"Failed to create client: {e}")
 
     def reset_entry(self):
-  
+
         try:
             branch_name = self.branch_selector.currentText()
             selected_date = self.date_picker.date().toString("yyyy-MM-dd")
@@ -2783,7 +2787,7 @@ class AdminDashboard(QWidget):
             if reply == QMessageBox.No:
                 return
 
-   
+
             main_tables = ["daily_reports_brand_a", "daily_reports"]
             supp_tables = ["cash_float_tbl"]  # payable_tbl_brand_a preserved (contains Palawan Details B)
             found = False
@@ -2825,6 +2829,9 @@ class AdminDashboard(QWidget):
                     pass
 
             if found:
+                # Send notification to clients
+                self._notify_entry_reset(branch_name, selected_date)
+
                 QMessageBox.information(
                     self,
                     "Entry Reset",
@@ -2841,6 +2848,50 @@ class AdminDashboard(QWidget):
 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to reset entry: {e}")
+
+    def _notify_entry_reset(self, branch_name: str, selected_date: str):
+        """Send notification to clients that entry has been reset."""
+        try:
+            import requests
+            from api_config import API_URL, API_KEY
+
+            # Get auth token
+            response = requests.post(
+                f"{API_URL}/api/token",
+                json={"api_key": API_KEY},
+                timeout=5
+            )
+            if response.status_code != 200:
+                logger.warning(f"Failed to get token for notification: {response.status_code}")
+                return
+
+            token = response.json().get("token")
+            if not token:
+                logger.warning("No token in notification auth response")
+                return
+
+            # Send notification
+            headers = {"Authorization": f"Bearer {token}"}
+            response = requests.post(
+                f"{API_URL}/api/notify/reset_entry",
+                json={
+                    "branch": branch_name,
+                    "date": selected_date,
+                    "admin_name": "Administrator"
+                },
+                headers=headers,
+                timeout=5
+            )
+
+            if response.status_code == 200:
+                result = response.json()
+                clients_notified = result.get("clients_notified", 0)
+                logger.info(f"Entry reset notification sent to {clients_notified} clients for branch {branch_name}")
+            else:
+                logger.warning(f"Failed to send entry reset notification: {response.status_code}")
+
+        except Exception as e:
+            logger.warning(f"Error sending entry reset notification: {e}")
 
     def export_daily_cash_to_excel(self):
    

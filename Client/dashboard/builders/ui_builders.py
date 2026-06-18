@@ -21,19 +21,11 @@ _TEXT_MUTED = "#6B7280"
 
 
 class ButtonBuilder:
-    """Builds styled button widgets."""
+   
 
     @staticmethod
     def create_primary_button(text, callback=None):
-        """Create blue primary button.
 
-        Args:
-            text: Button text
-            callback: Optional click callback
-
-        Returns:
-            QPushButton: Styled button
-        """
         btn = QPushButton(text)
         btn.setStyleSheet(f"""
             QPushButton {{ background: {_PRIMARY}; color: {_WHITE}; border: none;
@@ -47,15 +39,7 @@ class ButtonBuilder:
 
     @staticmethod
     def create_purple_button(text, callback=None):
-        """Create purple button for transfers.
 
-        Args:
-            text: Button text
-            callback: Optional click callback
-
-        Returns:
-            QPushButton: Styled button
-        """
         btn = QPushButton(text)
         btn.setStyleSheet(f"""
             QPushButton {{ background: {_PURPLE}; color: {_WHITE}; border: none;
@@ -90,15 +74,7 @@ class ButtonBuilder:
 
     @staticmethod
     def create_danger_button_filled(text, callback=None):
-        """Create red filled danger button.
 
-        Args:
-            text: Button text
-            callback: Optional click callback
-
-        Returns:
-            QPushButton: Styled button
-        """
         btn = QPushButton(text)
         btn.setStyleSheet(f"""
             QPushButton {{ background: {_RED_LIGHT}; color: {_RED_DARK};

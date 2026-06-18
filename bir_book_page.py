@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QSpinBox, QFileDialog, QApplication, QDialog, QGridLayout
 )
 from PyQt5.QtCore import Qt, QDate
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtGui import QFont
 from api_db_manager import db_manager
 import json
 import logging
@@ -41,12 +41,14 @@ class MonthlyReportDialog(QDialog):
         # Month
         month_label = QLabel("Month:")
         month_label.setStyleSheet("font-weight: 600;")
-        self.month_spinner = QSpinBox()
-        self.month_spinner.setMinimum(1)
-        self.month_spinner.setMaximum(12)
-        self.month_spinner.setValue(QDate.currentDate().month())
+        self.month_combo = QComboBox()
+        self.month_combo.addItems([
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ])
+        self.month_combo.setCurrentIndex(QDate.currentDate().month() - 1)
         layout.addWidget(month_label, 1, 0)
-        layout.addWidget(self.month_spinner, 1, 1)
+        layout.addWidget(self.month_combo, 1, 1)
 
         # Year
         year_label = QLabel("Year:")
@@ -98,7 +100,7 @@ class MonthlyReportDialog(QDialog):
         """Return selected parameters."""
         return {
             'corporation': self.corp_combo.currentText(),
-            'month': self.month_spinner.value(),
+            'month': self.month_combo.currentIndex() + 1,
             'year': self.year_spinner.value(),
             'status': self.status_combo.currentText()
         }
@@ -223,17 +225,18 @@ class BIRBookPage(QWidget):
 
         # Transactions table
         self.table = QTableWidget()
-        self.table.setColumnCount(18)
+        self.table.setColumnCount(20)
         self.table.setHorizontalHeaderLabels([
             "Date", "Branch", "Code", "Receiver", "Sender", "Principal",
-            "Commission", "SC", "Total SC", "Income (43%)", "A/R Palawan",
-            "KYC Docs", "Business Name", "Relationship", "Source Funds", "Purpose", "Evaluation", ""
+            "Commission", "SC", "Total SC", "Cash on Hand", "Income", "A/P Palawan",
+            "KYC Docs", "Business Name", "Position", "Relationship",
+            "Source Funds", "Purpose", "Evaluation", ""
         ])
 
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.Stretch)
         # Fix last column to have more width for button
-        hh.setSectionResizeMode(17, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(19, QHeaderView.ResizeToContents)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -392,9 +395,9 @@ class BIRBookPage(QWidget):
             # Query all payable records for the selected corporation and date
             query = """
                 SELECT date, branch, corporation,
-                       sendout_detailed_principal, sendout_detailed_sc, sendout_detailed_commission,
-                       payout_detailed_principal, payout_detailed_sc, payout_detailed_commission,
-                       international_detailed_principal, international_detailed_sc, international_detailed_commission
+                       sendout_detailed_principal,
+                       payout_detailed_principal,
+                       international_detailed_principal
                 FROM payable_tbl_brand_a
                 WHERE corporation = %s AND date = %s
                 ORDER BY branch
@@ -416,34 +419,42 @@ class BIRBookPage(QWidget):
                 date = record.get("date", "")
                 branch = record.get("branch", "")
 
-                # Process all three sections (sendout, payout, international)
-                sections = [
-                    ("sendout", "Sendout"),
-                    ("payout", "Payout"),
-                    ("international", "International")
-                ]
+                # Process all three sections — read only from _principal column
+                # since that column holds the full transaction list (including sc/commission).
+                # Reading _sc and _commission would duplicate the same transactions.
+                for section_key in ("sendout", "payout", "international"):
+                    col_name = f"{section_key}_detailed_principal"
+                    json_str = record.get(col_name)
 
-                for section_key, section_name in sections:
-                    for field_type in ("principal", "sc", "commission"):
-                        col_name = f"{section_key}_detailed_{field_type}"
-                        json_str = record.get(col_name)
-
-                        if json_str:
-                            try:
-                                transactions = json.loads(json_str)
-                                logger.debug(f"[BIRBookPage] Parsed {len(transactions)} transactions from {col_name}")
-                                for txn in transactions:
-                                    txn_with_meta = {
-                                        'date': date,
-                                        'branch': branch,
-                                        '_type': section_key,  # 'sendout', 'payout', 'international'
-                                        **txn
-                                    }
-                                    self.all_transactions.append(txn_with_meta)
-                            except (json.JSONDecodeError, TypeError) as e:
-                                logger.error(f"[BIRBookPage] JSON parse error for {col_name}: {e}")
+                    if json_str:
+                        try:
+                            transactions = json.loads(json_str)
+                            logger.debug(f"[BIRBookPage] Parsed {len(transactions)} transactions from {col_name}")
+                            for txn in transactions:
+                                txn_with_meta = {
+                                    'date': date,
+                                    'branch': branch,
+                                    '_type': section_key,
+                                    **txn
+                                }
+                                self.all_transactions.append(txn_with_meta)
+                        except (json.JSONDecodeError, TypeError) as e:
+                            logger.error(f"[BIRBookPage] JSON parse error for {col_name}: {e}")
 
             logger.info(f"[BIRBookPage] Total transactions collected: {len(self.all_transactions)}")
+
+            # Deduplicate by (date, branch, type, code) to guard against double-saved data
+            seen_keys = set()
+            deduped = []
+            for txn in self.all_transactions:
+                key = (txn.get('date'), txn.get('branch'), txn.get('_type'), txn.get('code'))
+                if key not in seen_keys:
+                    seen_keys.add(key)
+                    deduped.append(txn)
+            if len(deduped) < len(self.all_transactions):
+                logger.warning(f"[BIRBookPage] Removed {len(self.all_transactions) - len(deduped)} duplicate transactions")
+            self.all_transactions = deduped
+
             self.current_page = 1
             self._display_page()
 
@@ -463,6 +474,12 @@ class BIRBookPage(QWidget):
         selected_corp = self.corporation_combo.currentData()
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
         selected_txn_type = self.txn_type_combo.currentData()
+
+        # Show/hide Cash on Hand column (col 9) and update A/P vs A/R header (col 11)
+        is_sendout = selected_txn_type == "sendout"
+        self.table.setColumnHidden(9, not is_sendout)
+        ar_ap_header = "A/P Palawan" if is_sendout else "A/R Palawan"
+        self.table.setHorizontalHeaderItem(11, QTableWidgetItem(ar_ap_header))
 
         # Filter transactions by type
         filtered_txns = [t for t in self.all_transactions if t.get('_type') == selected_txn_type]
@@ -650,20 +667,27 @@ class BIRBookPage(QWidget):
             row_idx = self.table.rowCount()
 
         # Map transaction data to table columns
+        # Cash on Hand (col 9) is only relevant for sendout; blank for payout/international
+        _txn_type = txn.get("_type", "")
+        _principal = float(txn.get("principal", 0))
+        _total_sc = float(txn.get("total_sc", 0))
+        _cash_on_hand = f"{_principal + _total_sc:.2f}" if _txn_type == "sendout" else ""
         data = [
             str(txn.get("date", "")) if show_date_branch else "",
             txn.get("branch", "") if show_date_branch else "",
             txn.get("code", ""),
             txn.get("receiver", ""),
             txn.get("sender", ""),
-            f"{txn.get('principal', 0):.2f}",
+            f"{_principal:.2f}",
             f"{txn.get('commission', 0):.2f}",
             f"{txn.get('sc', 0):.2f}",
-            f"{txn.get('total_sc', 0):.2f}",
-            f"{txn.get('income', 0):.2f}",
-            f"{txn.get('ar_palawan', 0):.2f}",
+            f"{_total_sc:.2f}",
+            _cash_on_hand,            # col 9
+            f"{txn.get('income', 0):.2f}",   # col 10
+            f"{txn.get('ar_palawan', 0):.2f}", # col 11
             txn.get("kyc_docs", ""),
             txn.get("business_name", ""),
+            txn.get("position", ""),
             txn.get("relationship", ""),
             txn.get("source_funds", ""),
             txn.get("purpose", ""),
@@ -675,7 +699,7 @@ class BIRBookPage(QWidget):
             item = QTableWidgetItem(str(value))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             # Right-align numeric columns
-            if col in [5, 6, 7, 8, 9, 10]:
+            if col in [5, 6, 7, 8, 9, 10, 11]:
                 item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             # Add light indentation for hidden rows (show_date_branch=False)
             if not show_date_branch and col == 2:
@@ -684,72 +708,63 @@ class BIRBookPage(QWidget):
 
     def _add_group_totals_row(self, transactions, row_idx):
         """Add a totals row for a specific branch group."""
-        # Calculate totals for this group only
+        txn_type = transactions[0].get("_type", "") if transactions else ""
+        is_sendout = txn_type == "sendout"
+
         total_principal = sum(float(t.get("principal", 0)) for t in transactions)
         total_commission = sum(float(t.get("commission", 0)) for t in transactions)
         total_sc = sum(float(t.get("sc", 0)) for t in transactions)
         total_total_sc = sum(float(t.get("total_sc", 0)) for t in transactions)
         total_income = sum(float(t.get("income", 0)) for t in transactions)
         total_ar = sum(float(t.get("ar_palawan", 0)) for t in transactions)
+        total_cash_on_hand = total_principal + total_total_sc
 
-        # Style for totals row
-        totals_bg = QColor("#E0E7FF")
-        totals_fg = QColor("#3730A3")
         totals_font = QFont()
         totals_font.setBold(True)
 
         def _create_totals_item(text=""):
-            """Helper to create styled totals item."""
             item = QTableWidgetItem(text)
-            item.setBackground(totals_bg)
-            item.setForeground(totals_fg)
             item.setFont(totals_font)
             item.setTextAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             return item
 
-        # Code column - "Totals" label
+        def _create_num_item(value):
+            item = _create_totals_item(f"{value:,.2f}")
+            item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            return item
+
+        # Empty cols 0-1
+        for col in range(0, 2):
+            self.table.setItem(row_idx, col, _create_totals_item())
+
+        # "Totals" label in Code column (2)
         label_item = _create_totals_item("Totals")
         label_item.setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.table.setItem(row_idx, 2, label_item)
 
-        # Empty columns before Principal
-        for col in range(0, 2):
-            self.table.setItem(row_idx, col, _create_totals_item())
+        # Empty cols 3-4
         for col in range(3, 5):
             self.table.setItem(row_idx, col, _create_totals_item())
 
-        # Principal (column 5)
-        principal_item = _create_totals_item(f"{total_principal:,.2f}")
-        principal_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.table.setItem(row_idx, 5, principal_item)
+        self.table.setItem(row_idx, 5, _create_num_item(total_principal))   # Principal
+        self.table.setItem(row_idx, 6, _create_num_item(total_commission))  # Commission
+        self.table.setItem(row_idx, 7, _create_num_item(total_sc))          # SC
+        self.table.setItem(row_idx, 8, _create_num_item(total_total_sc))    # Total SC
 
-        # Commission (column 6)
-        commission_item = _create_totals_item(f"{total_commission:,.2f}")
-        commission_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.table.setItem(row_idx, 6, commission_item)
+        # Cash on Hand (col 9) — sendout only
+        if is_sendout:
+            self.table.setItem(row_idx, 9, _create_num_item(total_cash_on_hand))
+        else:
+            self.table.setItem(row_idx, 9, _create_totals_item())
 
-        # SC (column 7)
-        sc_item = _create_totals_item(f"{total_sc:,.2f}")
-        sc_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.table.setItem(row_idx, 7, sc_item)
+        self.table.setItem(row_idx, 10, _create_num_item(total_income))     # Income
 
-        # Total SC (column 8)
-        total_sc_item = _create_totals_item(f"{total_total_sc:,.2f}")
-        total_sc_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.table.setItem(row_idx, 8, total_sc_item)
-
-        # Income (column 9)
-        income_item = _create_totals_item(f"{total_income:,.2f}")
-        income_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.table.setItem(row_idx, 9, income_item)
-
-        # A/R Palawan (column 10)
-        ar_item = _create_totals_item(f"{total_ar:,.2f}")
-        ar_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.table.setItem(row_idx, 10, ar_item)
+        # A/P Total (sendout) or A/R Total (payout/international) at col 11
+        ar_ap_item = _create_num_item(total_ar)
+        self.table.setItem(row_idx, 11, ar_ap_item)
 
         # Rest of columns
-        for col in range(11, 18):
+        for col in range(12, 19):
             self.table.setItem(row_idx, col, _create_totals_item())
 
     def _export_to_excel(self):
@@ -796,11 +811,14 @@ class BIRBookPage(QWidget):
                 bottom=Side(style='thin')
             )
 
-            # Columns
+            # Columns — labels vary by transaction type
+            _income_lbl = "Income (39%)" if selected_txn_type == 'sendout' else "Income (43%)"
+            _ar_ap_lbl = "A/P Palawan" if selected_txn_type == 'sendout' else "A/R Palawan"
             columns = [
                 "Date", "Branch", "Code", "Receiver", "Sender", "Principal",
-                "Commission", "SC", "Total SC", "Income (43%)", "A/R Palawan",
-                "KYC Docs", "Business Name", "Relationship", "Source Funds", "Purpose", "Evaluation"
+                "Commission", "SC", "Total SC", _income_lbl, _ar_ap_lbl,
+                "KYC Docs", "Business Name", "Position", "Relationship",
+                "Source Funds", "Purpose", "Evaluation"
             ]
 
             # Write headers
@@ -827,10 +845,11 @@ class BIRBookPage(QWidget):
                 ws.cell(row=row_idx, column=11).value = float(txn.get("ar_palawan", 0))
                 ws.cell(row=row_idx, column=12).value = txn.get("kyc_docs", "")
                 ws.cell(row=row_idx, column=13).value = txn.get("business_name", "")
-                ws.cell(row=row_idx, column=14).value = txn.get("relationship", "")
-                ws.cell(row=row_idx, column=15).value = txn.get("source_funds", "")
-                ws.cell(row=row_idx, column=16).value = txn.get("purpose", "")
-                ws.cell(row=row_idx, column=17).value = txn.get("evaluation", "")
+                ws.cell(row=row_idx, column=14).value = txn.get("position", "")
+                ws.cell(row=row_idx, column=15).value = txn.get("relationship", "")
+                ws.cell(row=row_idx, column=16).value = txn.get("source_funds", "")
+                ws.cell(row=row_idx, column=17).value = txn.get("purpose", "")
+                ws.cell(row=row_idx, column=18).value = txn.get("evaluation", "")
 
                 # Apply borders and formatting
                 for col in range(1, 18):
@@ -962,9 +981,9 @@ class BIRBookPage(QWidget):
             # Query all transactions for the selected month and corporation
             query = """
                 SELECT date, branch, corporation,
-                       sendout_detailed_principal, sendout_detailed_sc, sendout_detailed_commission,
-                       payout_detailed_principal, payout_detailed_sc, payout_detailed_commission,
-                       international_detailed_principal, international_detailed_sc, international_detailed_commission
+                       sendout_detailed_principal,
+                       payout_detailed_principal,
+                       international_detailed_principal
                 FROM payable_tbl_brand_a
                 WHERE corporation = %s
                 AND YEAR(date) = %s
@@ -985,26 +1004,23 @@ class BIRBookPage(QWidget):
                 date = record.get("date", "")
                 branch = record.get("branch", "")
 
-                sections = [("sendout", "Sendout"), ("payout", "Payout"), ("international", "International")]
+                for section_key in ("sendout", "payout", "international"):
+                    col_name = f"{section_key}_detailed_principal"
+                    json_str = record.get(col_name)
 
-                for section_key, _ in sections:
-                    for field_type in ("principal", "sc", "commission"):
-                        col_name = f"{section_key}_detailed_{field_type}"
-                        json_str = record.get(col_name)
-
-                        if json_str:
-                            try:
-                                transactions = json.loads(json_str)
-                                for txn in transactions:
-                                    txn_with_meta = {
-                                        'date': date,
-                                        'branch': branch,
-                                        '_type': section_key,
-                                        **txn
-                                    }
-                                    all_txns.append(txn_with_meta)
-                            except (json.JSONDecodeError, TypeError) as e:
-                                logger.error(f"JSON parse error: {e}")
+                    if json_str:
+                        try:
+                            transactions = json.loads(json_str)
+                            for txn in transactions:
+                                txn_with_meta = {
+                                    'date': date,
+                                    'branch': branch,
+                                    '_type': section_key,
+                                    **txn
+                                }
+                                all_txns.append(txn_with_meta)
+                        except (json.JSONDecodeError, TypeError) as e:
+                            logger.error(f"JSON parse error: {e}")
 
             if not all_txns:
                 QMessageBox.warning(self, "No Data", "No detailed transactions found for this period.")
@@ -1027,10 +1043,18 @@ class BIRBookPage(QWidget):
             totals_fill = PatternFill(start_color="E0E7FF", end_color="E0E7FF", fill_type="solid")
             totals_font = Font(bold=True, color="3730A3")
 
-            columns = [
+            sendout_columns = [
+                "Date", "Branch", "Code", "Receiver", "Sender", "Principal",
+                "Commission", "SC", "Total SC", "Cash on Hand", "Income (39%)", "A/P Palawan",
+                "KYC Docs", "Business Name", "Position", "Relationship",
+                "Source Funds", "Purpose", "Evaluation"
+            ]
+
+            payout_columns = [
                 "Date", "Branch", "Code", "Receiver", "Sender", "Principal",
                 "Commission", "SC", "Total SC", "Income (43%)", "A/R Palawan",
-                "KYC Docs", "Business Name", "Relationship", "Source Funds", "Purpose", "Evaluation"
+                "KYC Docs", "Business Name", "Position", "Relationship",
+                "Source Funds", "Purpose", "Evaluation"
             ]
 
             # Group by branch and apply status filter
@@ -1054,22 +1078,28 @@ class BIRBookPage(QWidget):
             for branch_name, branch_txns in sorted(branches.items()):
                 ws = wb.create_sheet(title=branch_name[:31])
 
-                # Headers for SEND-OUT (columns A-Q)
-                for col_idx, col_name in enumerate(columns, 1):
-                    cell = ws.cell(row=1, column=col_idx)
+                # Row 1: Section labels
+                send_label_cell = ws.cell(row=1, column=1)
+                send_label_cell.value = "SEND-OUT (Income 39%)"
+                send_label_cell.font = Font(bold=True, size=12, color="0284C7")
+
+                payout_label_cell = ws.cell(row=1, column=27)
+                payout_label_cell.value = "PAY-OUT (Income 43%)"
+                payout_label_cell.font = Font(bold=True, size=12, color="DC2626")
+
+                # Row 2: Headers for SEND-OUT (columns A-Q)
+                for col_idx, col_name in enumerate(sendout_columns, 1):
+                    cell = ws.cell(row=2, column=col_idx)
                     cell.value = col_name
-                    cell.fill = header_fill
-                    cell.font = header_font
+                    cell.font = Font(bold=True, size=11)
                     cell.alignment = header_alignment
                     cell.border = border
 
-                # Headers for PAY-OUT (columns AA-AQ)
-                payout_fill = PatternFill(start_color="DC2626", end_color="DC2626", fill_type="solid")  # Red
-                for col_idx, col_name in enumerate(columns, 27):  # Column 27 = AA
-                    cell = ws.cell(row=1, column=col_idx)
+                # Row 2: Headers for PAY-OUT (columns AA-AR)
+                for col_idx, col_name in enumerate(payout_columns, 27):  # Column 27 = AA
+                    cell = ws.cell(row=2, column=col_idx)
                     cell.value = col_name
-                    cell.fill = payout_fill
-                    cell.font = header_font
+                    cell.font = Font(bold=True, size=11)
                     cell.alignment = header_alignment
                     cell.border = border
 
@@ -1093,7 +1123,7 @@ class BIRBookPage(QWidget):
                     dates_payout[d].append(t)
 
                 # Write data by date with separators
-                row_idx = 2
+                row_idx = 3  # Start from row 3 (row 1 = labels, row 2 = headers)
                 all_dates = sorted(set(list(dates_sendout.keys()) + list(dates_payout.keys())))
 
                 for day_date in all_dates:
@@ -1106,101 +1136,202 @@ class BIRBookPage(QWidget):
                         # SEND-OUT (columns A-Q)
                         if idx < len(day_sendout):
                             txn = day_sendout[idx]
+                            commission = float(txn.get("commission", 0))
+                            income_39 = round(commission * 0.39, 2)
+                            principal = float(txn.get("principal", 0))
+                            total_sc_so = float(txn.get("total_sc", 0))
+                            cash_on_hand_so = principal + total_sc_so
+                            ar_palawan = cash_on_hand_so - income_39
+
                             # Show date/branch only on first transaction of the day
                             ws.cell(row=row_idx, column=1).value = day_date if idx == 0 else ""
                             ws.cell(row=row_idx, column=2).value = txn.get("branch", "") if idx == 0 else ""
                             ws.cell(row=row_idx, column=3).value = txn.get("code", "")
                             ws.cell(row=row_idx, column=4).value = txn.get("receiver", "")
                             ws.cell(row=row_idx, column=5).value = txn.get("sender", "")
-                            ws.cell(row=row_idx, column=6).value = float(txn.get("principal", 0))
-                            ws.cell(row=row_idx, column=7).value = float(txn.get("commission", 0))
+                            ws.cell(row=row_idx, column=6).value = principal
+                            ws.cell(row=row_idx, column=7).value = commission
                             ws.cell(row=row_idx, column=8).value = float(txn.get("sc", 0))
                             ws.cell(row=row_idx, column=9).value = float(txn.get("total_sc", 0))
-                            ws.cell(row=row_idx, column=10).value = float(txn.get("income", 0))
-                            ws.cell(row=row_idx, column=11).value = float(txn.get("ar_palawan", 0))
-                            ws.cell(row=row_idx, column=12).value = txn.get("kyc_docs", "")
-                            ws.cell(row=row_idx, column=13).value = txn.get("business_name", "")
-                            ws.cell(row=row_idx, column=14).value = txn.get("relationship", "")
-                            ws.cell(row=row_idx, column=15).value = txn.get("source_funds", "")
-                            ws.cell(row=row_idx, column=16).value = txn.get("purpose", "")
-                            ws.cell(row=row_idx, column=17).value = txn.get("evaluation", "")
+                            ws.cell(row=row_idx, column=10).value = cash_on_hand_so
+                            ws.cell(row=row_idx, column=11).value = income_39
+                            ws.cell(row=row_idx, column=12).value = ar_palawan
+                            ws.cell(row=row_idx, column=13).value = txn.get("kyc_docs", "")
+                            ws.cell(row=row_idx, column=14).value = txn.get("business_name", "")
+                            ws.cell(row=row_idx, column=15).value = txn.get("position", "")
+                            ws.cell(row=row_idx, column=16).value = txn.get("relationship", "")
+                            ws.cell(row=row_idx, column=17).value = txn.get("source_funds", "")
+                            ws.cell(row=row_idx, column=18).value = txn.get("purpose", "")
+                            ws.cell(row=row_idx, column=19).value = txn.get("evaluation", "")
 
-                        # PAY-OUT (columns AA-AQ)
+                        # PAY-OUT (columns AA-AR)
                         if idx < len(day_payout):
                             txn = day_payout[idx]
+                            commission = float(txn.get("commission", 0))
+                            income_43 = round(commission * 0.43, 2)
+                            principal = float(txn.get("principal", 0))
+                            total_sc = float(txn.get("total_sc", 0))
+                            ar_palawan_po = principal + total_sc - income_43
+
                             ws.cell(row=row_idx, column=27).value = day_date if idx == 0 else ""  # AA
                             ws.cell(row=row_idx, column=28).value = txn.get("branch", "") if idx == 0 else ""  # AB
                             ws.cell(row=row_idx, column=29).value = txn.get("code", "")  # AC
                             ws.cell(row=row_idx, column=30).value = txn.get("receiver", "")  # AD
                             ws.cell(row=row_idx, column=31).value = txn.get("sender", "")  # AE
-                            ws.cell(row=row_idx, column=32).value = float(txn.get("principal", 0))  # AF
-                            ws.cell(row=row_idx, column=33).value = float(txn.get("commission", 0))  # AG
+                            ws.cell(row=row_idx, column=32).value = principal  # AF
+                            ws.cell(row=row_idx, column=33).value = commission  # AG
                             ws.cell(row=row_idx, column=34).value = float(txn.get("sc", 0))  # AH
-                            ws.cell(row=row_idx, column=35).value = float(txn.get("total_sc", 0))  # AI
-                            ws.cell(row=row_idx, column=36).value = float(txn.get("income", 0))  # AJ
-                            ws.cell(row=row_idx, column=37).value = float(txn.get("ar_palawan", 0))  # AK
+                            ws.cell(row=row_idx, column=35).value = total_sc  # AI
+                            ws.cell(row=row_idx, column=36).value = income_43  # AJ
+                            ws.cell(row=row_idx, column=37).value = ar_palawan_po  # AK
                             ws.cell(row=row_idx, column=38).value = txn.get("kyc_docs", "")  # AL
                             ws.cell(row=row_idx, column=39).value = txn.get("business_name", "")  # AM
-                            ws.cell(row=row_idx, column=40).value = txn.get("relationship", "")  # AN
-                            ws.cell(row=row_idx, column=41).value = txn.get("source_funds", "")  # AO
-                            ws.cell(row=row_idx, column=42).value = txn.get("purpose", "")  # AP
-                            ws.cell(row=row_idx, column=43).value = txn.get("evaluation", "")  # AQ
+                            ws.cell(row=row_idx, column=40).value = txn.get("position", "")  # AN
+                            ws.cell(row=row_idx, column=41).value = txn.get("relationship", "")  # AO
+                            ws.cell(row=row_idx, column=42).value = txn.get("source_funds", "")  # AP
+                            ws.cell(row=row_idx, column=43).value = txn.get("purpose", "")  # AQ
+                            ws.cell(row=row_idx, column=44).value = txn.get("evaluation", "")  # AR
 
                         # Format all cells
-                        for col in list(range(1, 18)) + list(range(27, 44)):
+                        for col in list(range(1, 20)) + list(range(27, 45)):  # sendout A-S, payout AA-AR
                             cell = ws.cell(row=row_idx, column=col)
                             cell.border = border
                             cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-                            if col in [6, 7, 8, 9, 10, 11, 32, 33, 34, 35, 36, 37]:  # Number columns
+                            if col in [6, 7, 8, 9, 10, 11, 12, 32, 33, 34, 35, 36, 37]:  # Number columns
                                 cell.number_format = '#,##0.00'
                                 cell.alignment = Alignment(horizontal="right", vertical="top")
 
                         row_idx += 1
 
-                    # Add 3-5 blank rows between days for visual separation
-                    for _ in range(4):
+                    # ── Per-day totals row ─────────────────────────────────
+                    day_total_row = row_idx
+                    row_idx += 1
+
+                    # SEND-OUT daily totals
+                    if day_sendout:
+                        d_principal_so = sum(float(t.get("principal", 0)) for t in day_sendout)
+                        d_commission_so = sum(float(t.get("commission", 0)) for t in day_sendout)
+                        d_sc_so = sum(float(t.get("sc", 0)) for t in day_sendout)
+                        d_total_sc_so = sum(float(t.get("total_sc", 0)) for t in day_sendout)
+                        d_income_so = round(d_commission_so * 0.39, 2)
+                        d_cash_on_hand_so = d_principal_so + d_total_sc_so
+                        d_ap_so = d_cash_on_hand_so - d_income_so
+
+                        ws.cell(row=day_total_row, column=3).value = "Totals"
+                        ws.cell(row=day_total_row, column=6).value = d_principal_so
+                        ws.cell(row=day_total_row, column=7).value = d_commission_so
+                        ws.cell(row=day_total_row, column=8).value = d_sc_so
+                        ws.cell(row=day_total_row, column=9).value = d_total_sc_so
+                        ws.cell(row=day_total_row, column=10).value = d_cash_on_hand_so
+                        ws.cell(row=day_total_row, column=11).value = d_income_so
+                        ws.cell(row=day_total_row, column=12).value = d_ap_so
+
+                    # PAY-OUT daily totals
+                    if day_payout:
+                        d_principal_po = sum(float(t.get("principal", 0)) for t in day_payout)
+                        d_commission_po = sum(float(t.get("commission", 0)) for t in day_payout)
+                        d_sc_po = sum(float(t.get("sc", 0)) for t in day_payout)
+                        d_total_sc_po = sum(float(t.get("total_sc", 0)) for t in day_payout)
+                        d_income_po = round(d_commission_po * 0.43, 2)
+                        d_ar_po = d_principal_po + d_total_sc_po - d_income_po
+
+                        ws.cell(row=day_total_row, column=29).value = "Totals"
+                        ws.cell(row=day_total_row, column=32).value = d_principal_po
+                        ws.cell(row=day_total_row, column=33).value = d_commission_po
+                        ws.cell(row=day_total_row, column=34).value = d_sc_po
+                        ws.cell(row=day_total_row, column=35).value = d_total_sc_po
+                        ws.cell(row=day_total_row, column=36).value = d_income_po
+                        ws.cell(row=day_total_row, column=37).value = d_ar_po
+
+                    # Style the daily totals row
+                    for col in list(range(1, 20)) + list(range(27, 45)):
+                        cell = ws.cell(row=day_total_row, column=col)
+                        cell.fill = totals_fill
+                        cell.font = totals_font
+                        cell.border = border
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+                        if col in [6, 7, 8, 9, 10, 11, 12, 32, 33, 34, 35, 36, 37]:
+                            cell.number_format = '#,##0.00'
+                            cell.alignment = Alignment(horizontal="right", vertical="center")
+
+                    # Blank rows between days for visual separation
+                    for _ in range(2):
                         row_idx += 1
 
                 # Branch totals
-                totals_row = len(branch_txns) + 2
+                totals_row = row_idx + 1
                 ws.cell(row=totals_row, column=3).value = "BRANCH TOTAL"
                 ws.cell(row=totals_row, column=3).fill = totals_fill
                 ws.cell(row=totals_row, column=3).font = totals_font
 
-                for col in range(1, 18):
+                # SEND-OUT totals
+                for col in range(1, 20):
                     cell = ws.cell(row=totals_row, column=col)
                     cell.fill = totals_fill
                     cell.font = totals_font
                     cell.border = border
 
-                total_principal = sum(float(t.get("principal", 0)) for t in branch_txns)
-                total_commission = sum(float(t.get("commission", 0)) for t in branch_txns)
-                total_sc = sum(float(t.get("sc", 0)) for t in branch_txns)
-                total_total_sc = sum(float(t.get("total_sc", 0)) for t in branch_txns)
-                total_income = sum(float(t.get("income", 0)) for t in branch_txns)
-                total_ar = sum(float(t.get("ar_palawan", 0)) for t in branch_txns)
+                # PAY-OUT totals
+                for col in range(27, 45):
+                    cell = ws.cell(row=totals_row, column=col)
+                    cell.fill = totals_fill
+                    cell.font = totals_font
+                    cell.border = border
 
-                ws.cell(row=totals_row, column=6).value = total_principal
+                # Calculate totals with correct income percentages
+                total_principal_so = sum(float(t.get("principal", 0)) for t in sendout_txns)
+                total_commission_so = sum(float(t.get("commission", 0)) for t in sendout_txns)
+                total_sc_so = sum(float(t.get("sc", 0)) for t in sendout_txns)
+                total_total_sc_so = sum(float(t.get("total_sc", 0)) for t in sendout_txns)
+                total_cash_on_hand_so = total_principal_so + total_total_sc_so
+                total_income_so = round(total_commission_so * 0.39, 2)
+                total_ar_so = total_cash_on_hand_so - total_income_so
+
+                total_principal_po = sum(float(t.get("principal", 0)) for t in payout_txns)
+                total_commission_po = sum(float(t.get("commission", 0)) for t in payout_txns)
+                total_sc_po = sum(float(t.get("sc", 0)) for t in payout_txns)
+                total_total_sc_po = sum(float(t.get("total_sc", 0)) for t in payout_txns)
+                total_income_po = round(total_commission_po * 0.43, 2)
+                total_ar_po = (total_principal_po + total_total_sc_po) - total_income_po
+
+                # Write SEND-OUT totals
+                ws.cell(row=totals_row, column=6).value = total_principal_so
                 ws.cell(row=totals_row, column=6).number_format = '#,##0.00'
-                ws.cell(row=totals_row, column=7).value = total_commission
+                ws.cell(row=totals_row, column=7).value = total_commission_so
                 ws.cell(row=totals_row, column=7).number_format = '#,##0.00'
-                ws.cell(row=totals_row, column=8).value = total_sc
+                ws.cell(row=totals_row, column=8).value = total_sc_so
                 ws.cell(row=totals_row, column=8).number_format = '#,##0.00'
-                ws.cell(row=totals_row, column=9).value = total_total_sc
+                ws.cell(row=totals_row, column=9).value = total_total_sc_so
                 ws.cell(row=totals_row, column=9).number_format = '#,##0.00'
-                ws.cell(row=totals_row, column=10).value = total_income
+                ws.cell(row=totals_row, column=10).value = total_cash_on_hand_so
                 ws.cell(row=totals_row, column=10).number_format = '#,##0.00'
-                ws.cell(row=totals_row, column=11).value = total_ar
+                ws.cell(row=totals_row, column=11).value = total_income_so
                 ws.cell(row=totals_row, column=11).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=12).value = total_ar_so
+                ws.cell(row=totals_row, column=12).number_format = '#,##0.00'
 
-                # Column widths for SEND-OUT and PAY-OUT
-                for col, width in [('A', 12), ('B', 15), ('C', 12), ('D', 15), ('E', 15), ('F', 12), ('G', 12), ('H', 10), ('I', 12), ('J', 12), ('K', 12), ('L', 15), ('M', 18), ('N', 15), ('O', 15), ('P', 15), ('Q', 15)]:
+                # Write PAY-OUT totals
+                ws.cell(row=totals_row, column=32).value = total_principal_po
+                ws.cell(row=totals_row, column=32).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=33).value = total_commission_po
+                ws.cell(row=totals_row, column=33).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=34).value = total_sc_po
+                ws.cell(row=totals_row, column=34).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=35).value = total_total_sc_po
+                ws.cell(row=totals_row, column=35).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=36).value = total_income_po
+                ws.cell(row=totals_row, column=36).number_format = '#,##0.00'
+                ws.cell(row=totals_row, column=37).value = total_ar_po
+                ws.cell(row=totals_row, column=37).number_format = '#,##0.00'
+
+                # Column widths for SEND-OUT (A-S, 19 cols)
+                for col, width in [('A', 12), ('B', 15), ('C', 12), ('D', 15), ('E', 15), ('F', 12), ('G', 12), ('H', 10), ('I', 12), ('J', 12), ('K', 12), ('L', 12), ('M', 15), ('N', 18), ('O', 15), ('P', 15), ('Q', 15), ('R', 15), ('S', 15)]:
                     ws.column_dimensions[col].width = width
-                # Add spacing columns (R-Z)
-                for col in ['R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']:
-                    ws.column_dimensions[col].width = 2  # Narrow spacing
-                # Pay-Out column widths (AA-AQ)
-                for col, width in [('AA', 12), ('AB', 15), ('AC', 12), ('AD', 15), ('AE', 15), ('AF', 12), ('AG', 12), ('AH', 10), ('AI', 12), ('AJ', 12), ('AK', 12), ('AL', 15), ('AM', 18), ('AN', 15), ('AO', 15), ('AP', 15), ('AQ', 15)]:
+                # Spacing columns (T-Z) between send-out and pay-out
+                for col in ['T', 'U', 'V', 'W', 'X', 'Y', 'Z']:
+                    ws.column_dimensions[col].width = 2
+                # Pay-Out column widths (AA-AR)
+                for col, width in [('AA', 12), ('AB', 15), ('AC', 12), ('AD', 15), ('AE', 15), ('AF', 12), ('AG', 12), ('AH', 10), ('AI', 12), ('AJ', 12), ('AK', 12), ('AL', 15), ('AM', 18), ('AN', 15), ('AO', 15), ('AP', 15), ('AQ', 15), ('AR', 15)]:
                     ws.column_dimensions[col].width = width
 
             wb.save(file_path)

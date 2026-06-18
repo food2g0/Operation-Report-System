@@ -1154,8 +1154,10 @@ class SuperAdminDashboard(QWidget):
         self._stack = QStackedWidget()
         self._field_manager_page = FieldManagerPage()
         self._user_mgmt_page = self._build_user_mgmt_placeholder()
+        self._machine_page = self._build_machine_page()
         self._stack.addWidget(self._field_manager_page)   # index 0
         self._stack.addWidget(self._user_mgmt_page)       # index 1
+        self._stack.addWidget(self._machine_page)         # index 2
         sa_layout.addWidget(self._stack, 1)
         self._main_tabs.addTab(sa_widget, "🛠️ Super Admin")
 
@@ -1289,10 +1291,29 @@ class SuperAdminDashboard(QWidget):
         self._user_btn.setCheckable(True)
         self._user_btn.clicked.connect(lambda: self._switch_view(1, self._user_btn))
 
+        self._machine_btn = QPushButton("🖥️ Machines")
+        self._machine_btn.setCheckable(True)
+        self._machine_btn.clicked.connect(lambda: self._switch_view(2, self._machine_btn))
+
         layout.addWidget(self._field_btn)
         layout.addWidget(self._user_btn)
+        layout.addWidget(self._machine_btn)
         layout.addStretch()
         return nav
+
+    def _build_machine_page(self) -> QWidget:
+        """Load the machine management page."""
+        try:
+            from machine_management_page import MachinePage
+            return MachinePage()
+        except Exception as exc:
+            print(f"[SuperAdmin] Could not load MachinePage: {exc}")
+            placeholder = QWidget()
+            lbl = QLabel("🖥️ Machine Management\n\n(Module not available)")
+            lbl.setAlignment(Qt.AlignCenter)
+            lbl.setStyleSheet("font-size: 16px; color: #888;")
+            QVBoxLayout(placeholder).addWidget(lbl)
+            return placeholder
 
     def _build_user_mgmt_placeholder(self) -> QWidget:
         """Try to load the real UserManagementPage; fall back to a placeholder."""
@@ -1312,7 +1333,7 @@ class SuperAdminDashboard(QWidget):
 
     def _switch_view(self, index: int, active_btn: QPushButton):
         self._stack.setCurrentIndex(index)
-        for btn in (self._field_btn, self._user_btn):
+        for btn in (self._field_btn, self._user_btn, self._machine_btn):
             btn.setChecked(btn is active_btn)
 
     # ── Main-tab lazy loading ─────────────────────────────────────────────

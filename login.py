@@ -599,6 +599,69 @@ class LoginWindow(QWidget):
             logger.error("Database connection test failed: %s", e)
             return False
 
+    def _check_machine_access(self, username: str, branch: str, splash) -> str:
+        """Register this machine and return its access status.
+
+        Returns 'approved', 'revoked', or 'unknown' (treated as approved so
+        existing installs are never silently blocked if the server is unreachable).
+        Closes *splash* and shows an error dialog only when status == 'revoked'.
+        """
+        try:
+            import requests
+            from machine_id import get_machine_info
+            from api_config import API_URL, API_KEY
+
+            info = get_machine_info()
+            info['branch']   = branch
+            info['username'] = username
+
+            # Obtain a short-lived token for the machine API calls
+            tok_resp = requests.post(
+                f"{API_URL}/api/token",
+                json={"api_key": API_KEY},
+                timeout=5,
+            )
+            if tok_resp.status_code != 200:
+                logger.warning("Machine check: could not get token — allowing login")
+                return "approved"
+
+            token   = tok_resp.json().get("token", "")
+            headers = {"Authorization": f"Bearer {token}"}
+
+            # Register / refresh the machine record
+            requests.post(
+                f"{API_URL}/api/machine/register",
+                json=info,
+                headers=headers,
+                timeout=5,
+            )
+
+            # Verify status (register may have returned 'revoked' for an
+            # already-revoked machine, so always re-check)
+            ver_resp = requests.get(
+                f"{API_URL}/api/machine/verify/{info['machine_id']}",
+                headers=headers,
+                timeout=5,
+            )
+            status = ver_resp.json().get("status", "unknown") if ver_resp.status_code == 200 else "unknown"
+
+            if status == "revoked":
+                splash.close()
+                self.show_message(
+                    "Access Revoked",
+                    "This computer has been revoked by the administrator.\n\n"
+                    "Please contact your system administrator to regain access.",
+                    QMessageBox.Critical,
+                )
+                return "revoked"
+
+            return status   # 'approved' or 'unknown' — both allow login
+
+        except Exception as exc:
+            # Never block login due to a network/check failure
+            logger.warning("Machine access check failed (allowing login): %s", exc)
+            return "approved"
+
     def execute_database_query(self, query, params=None):
         # Client-only build: no direct DB access
         if not DB_MANAGER_AVAILABLE:
@@ -751,6 +814,13 @@ class LoginWindow(QWidget):
                             return
                     else:
                         try:
+                            # ── Machine access check ──────────────────────────
+                            machine_status = self._check_machine_access(
+                                db_username, branch, splash
+                            )
+                            if machine_status == "revoked":
+                                return   # _check_machine_access already showed the error
+
                             from api_config import API_MODE as _API_MODE
                             if _API_MODE:
                                 from Client.api_db_manager import APIDbManager

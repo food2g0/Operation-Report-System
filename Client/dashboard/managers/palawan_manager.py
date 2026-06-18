@@ -148,6 +148,17 @@ class PalawanManager:
                     if skir or skir == 0: data['palawan_suki_rebates'] = float(skir or 0)
                     if cancellation or cancellation == 0: data['palawan_cancel'] = float(cancellation or 0)
 
+                    # Pass through detailed transaction JSON so the transaction dialog
+                    # still shows existing transactions after an admin reset
+                    for _col in (
+                        "sendout_detailed_principal", "sendout_detailed_sc", "sendout_detailed_commission",
+                        "payout_detailed_principal", "payout_detailed_sc", "payout_detailed_commission",
+                        "international_detailed_principal", "international_detailed_sc", "international_detailed_commission",
+                    ):
+                        _val = payable_row.get(_col)
+                        if _val:
+                            data[_col] = _val
+
                     payable_found = True
                     logger.info(f"🔴 [restore_palawan_tab] RETURNING from payable_tbl_brand_a with {len(data)} fields: "
                                f"adjustments={data.get('palawan_pay_out_incentives')}, "

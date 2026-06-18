@@ -1,12 +1,27 @@
 import sys
 import traceback
 import ctypes
+import time
+
+# Measure startup time
+_startup_start = time.time()
+
+def _log_startup_time(step_name):
+    """Log elapsed time since startup"""
+    elapsed = time.time() - _startup_start
+    print(f"⏱️  [{elapsed:.2f}s] {step_name}")
+
+_log_startup_time("Script start")
 
 try:
     from version import __version__ as APP_VERSION
 except ImportError:
     APP_VERSION = "1.0.2"
 
+_log_startup_time("Version imported")
+
+
+_log_startup_time("Dotenv import")
 
 try:
     from dotenv import load_dotenv as _load_dotenv
@@ -14,13 +29,23 @@ try:
 except ImportError:
     pass
 
+_log_startup_time("PyQt5 imports starting")
+
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtCore import Qt
+
+_log_startup_time("Logging setup")
+
 from app_logging import setup_logging, get_logger
 setup_logging()
+
+_log_startup_time("Client/Login imports")
+
 from Client.client_dashboard import ClientDashboard
 from login import LoginWindow
 
 logger = get_logger(__name__)
+_log_startup_time("All imports complete")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,8 +103,16 @@ def exception_hook(exctype, value, tb):
 
 
 def main():
+    _log_startup_time("main() function started")
+
     # Check for single instance BEFORE creating QApplication
     if not acquire_single_instance_lock():
+        # Enable High-DPI scaling
+        QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+        QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+        import os
+        os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
+
         temp_app = QApplication(sys.argv)
         QMessageBox.warning(None, "Already Running",
             "Operation Report System is already running.\n\nCheck the taskbar for the existing window.")
@@ -87,20 +120,45 @@ def main():
 
     sys.excepthook = exception_hook
 
+    # Enable High-DPI scaling for better readability on small monitors
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    import os
+    os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
+
+    _log_startup_time("Creating QApplication")
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)   # keep running in tray when main window is hidden
+    _log_startup_time("QApplication created")
 
     # Set application name and version for proper taskbar display
     app.setApplicationName("Operation Report System")
     app.setApplicationVersion(APP_VERSION)
 
-    # ── Game-style update launcher ────────────────────────────────────────────
+    # ── Show splash screen immediately ────────────────────────────────────────
+    _log_startup_time("Showing splash screen")
+    from PyQt5.QtWidgets import QSplashScreen
+    from PyQt5.QtGui import QPixmap
+
+    # Create a simple splash screen (can be improved with a custom pixmap)
+    splash = QSplashScreen(QPixmap(400, 300))
+    splash.showMessage("Operation Report System\nLoading...", alignment=0x0004)
+    splash.show()
+    app.processEvents()
+    _log_startup_time("Splash screen shown")
+
+    # ── Game-style update launcher (background) ────────────────────────────────────────
+    _log_startup_time("Importing UpdateLauncherWindow")
     from update_launcher import UpdateLauncherWindow
 
+    _log_startup_time("Creating UpdateLauncherWindow")
     launcher = UpdateLauncherWindow(app_version=APP_VERSION)
+    _log_startup_time("UpdateLauncherWindow created")
     login_window_holder = [None]
 
     def _on_launch_ready():
         try:
+            splash.close()  # Close splash when app is ready
             lw = LoginWindow(app)
             login_window_holder[0] = lw
             lw.show()
@@ -117,7 +175,8 @@ def main():
             exception_hook(type(exc), exc, exc.__traceback__)
 
     launcher.launch_ready.connect(_on_launch_ready)
-    launcher.start()
+    _log_startup_time("Starting background update check")
+    launcher.start()  # This now runs in background while splash is visible
 
     result = app.exec_()
     release_single_instance_lock()
