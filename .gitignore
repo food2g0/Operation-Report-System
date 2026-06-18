@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Build / distribution
+build/
+dist/
+*.spec
+installer/*.exe
+
+# Runtime / generated data
+report_cache/
+logs/*.log
+logs/backup.log
+crash.log
+offline_data/
+
+# Secrets / local config
+db_config.enc
+.env
+
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
