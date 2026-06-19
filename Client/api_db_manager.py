@@ -44,14 +44,16 @@ class APIDbManager:
         self._token   = None
         self._session = requests.Session()
         retry = Retry(
-            total=2,
-            connect=2,
-            read=2,
-            backoff_factor=0.5,
+            total=3,
+            connect=3,
+            read=3,
+            backoff_factor=0.3,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["GET", "POST"],
         )
-        adapter = HTTPAdapter(max_retries=retry)
+        # pool_block=False + pool_maxsize keeps connections alive but doesn't
+        # hold stale sockets; raises_on_status=False lets us handle HTTP errors ourselves.
+        adapter = HTTPAdapter(max_retries=retry, pool_connections=4, pool_maxsize=10)
         self._session.mount("http://", adapter)
         self._session.mount("https://", adapter)
         # Disable SSL verification for self-signed certificates

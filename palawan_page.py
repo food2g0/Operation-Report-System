@@ -225,7 +225,6 @@ class PalawanPage(QWidget):
                     FROM branches b
                     LEFT JOIN corporations c ON (b.corporation_id = c.id OR b.sub_corporation_id = c.id)
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation = %s 
                         AND {date_clause}
                     WHERE (b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
                            OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
@@ -233,7 +232,7 @@ class PalawanPage(QWidget):
                     {group_by}
                     ORDER BY b.name
                 """
-                params = [filter_value] + date_params + [filter_value, filter_value]
+                params = date_params + [filter_value, filter_value]
             else:
                 # Filter by OS - show all branches in the OS group
                 if reg_filter == "registered":

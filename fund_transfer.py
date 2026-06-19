@@ -605,12 +605,11 @@ class FundTransferPage(QWidget):
                     ) b
                     LEFT JOIN corporations c ON c.id = b.corp_id
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation = %s
                         AND dr.date >= %s AND dr.date <= %s
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (filter_value, filter_value, filter_value, date_start, date_end)
+                params = (filter_value, filter_value, date_start, date_end)
             else:
                 query = f"""
                     SELECT b.name as branch,
@@ -633,12 +632,11 @@ class FundTransferPage(QWidget):
                     ) b
                     LEFT JOIN corporations c ON c.id = b.corp_id
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation = %s
                         AND dr.date = %s
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (filter_value, filter_value, filter_value, date_start)
+                params = (filter_value, filter_value, date_start)
         else:  # OS mode
             filter_value = self.os_selector.currentText()
             if not filter_value:

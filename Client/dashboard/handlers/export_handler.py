@@ -315,3 +315,331 @@ class ExportHandler:
         ws.cell(row=current_row, column=3).border = border
 
         return current_row + 2
+
+    # ── Palawan Details sheet ─────────────────────────────────────────────────
+
+    def write_palawan_sheet(self, wb, db_manager, selected_date):
+        """Add a 'Palawan Details' sheet — SEND-OUT (yellow) | PAY-OUT (green) side-by-side."""
+        import json as _json
+
+        try:
+            from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+            import openpyxl.utils as _xlutil
+        except ImportError:
+            return
+
+        result = db_manager.execute_query(
+            "SELECT sendout_detailed_principal, payout_detailed_principal "
+            "FROM payable_tbl_brand_a "
+            "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+            (selected_date, self.branch, self.corporation),
+        )
+
+        if not result:
+            return
+
+        row = result[0]
+
+        def _parse(col):
+            raw = row.get(col)
+            if not raw:
+                return []
+            try:
+                return _json.loads(raw)
+            except Exception:
+                return []
+
+        sendout_txns = _parse("sendout_detailed_principal")
+        payout_txns  = _parse("payout_detailed_principal")
+
+        if not sendout_txns and not payout_txns:
+            return
+
+        ws = wb.create_sheet(title="Palawan Details")
+
+        # ── Styles ───────────────────────────────────────────────────────────
+        thin = Side(style='thin')
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        NUM_FMT = '#,##0.00'
+
+        # Section header fills
+        yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+        green_fill  = PatternFill(start_color="00B050", end_color="00B050", fill_type="solid")
+        # Column header fill (dark blue-grey)
+        col_hdr_fill = PatternFill(start_color="1F3864", end_color="1F3864", fill_type="solid")
+        col_hdr_font = Font(bold=True, color="FFFFFF", size=10)
+        col_hdr_aln  = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        # Formula description row fill (light blue-grey)
+        formula_fill = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
+        formula_font = Font(bold=True, size=9, color="1F3864")
+        formula_aln  = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        # Totals row
+        tot_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+        tot_font = Font(bold=True, size=10)
+        tot_aln_r = Alignment(horizontal="right", vertical="center")
+        tot_aln_l = Alignment(horizontal="left",  vertical="center")
+        # Data rows
+        data_aln_l = Alignment(horizontal="left",   vertical="center", wrap_text=True)
+        data_aln_r = Alignment(horizontal="right",  vertical="center")
+        data_aln_c = Alignment(horizontal="center", vertical="center")
+
+        # ── Column layout ─────────────────────────────────────────────────────
+        # SEND-OUT : cols 1–18  (A–R)
+        # Gap      : cols 19–20 (S–T)  narrow
+        # PAY-OUT  : cols 21–37 (U–AK)
+
+        # SEND-OUT has 18 cols:  code sender receiver principal commission sc
+        #   totalsc cashonhand income appalawan relationship source purpose
+        #   kycdocs position businessname evaluation total
+        # PAY-OUT  has 17 cols (no Cash on Hand): same minus that one
+
+        SO_START = 1
+        PO_START = 21   # after 2-col gap at cols 19-20
+
+        # ── Row 1: Section header labels ──────────────────────────────────────
+        # SEND-OUT header merged A1:R1
+        ws.merge_cells(start_row=1, start_column=SO_START, end_row=1, end_column=SO_START + 17)
+        c = ws.cell(row=1, column=SO_START)
+        c.value = "REMITTANCE (SEND-OUT)"
+        c.fill  = yellow_fill
+        c.font  = Font(bold=True, size=13, color="000000")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+        # PAY-OUT header merged U1:AK1
+        ws.merge_cells(start_row=1, start_column=PO_START, end_row=1, end_column=PO_START + 16)
+        c = ws.cell(row=1, column=PO_START)
+        c.value = "PAY-OUT"
+        c.fill  = green_fill
+        c.font  = Font(bold=True, size=13, color="FFFFFF")
+        c.alignment = Alignment(horizontal="center", vertical="center")
+
+        ws.row_dimensions[1].height = 22
+
+
+
+        def _formula_cell(r, c_idx, text="", merged_end=None):
+            if merged_end:
+                ws.merge_cells(start_row=r, start_column=c_idx,
+                               end_row=r, end_column=merged_end)
+            cell = ws.cell(row=r, column=c_idx)
+            cell.value     = text
+            cell.fill      = formula_fill
+            cell.font      = formula_font
+            cell.alignment = formula_aln
+            cell.border    = border
+
+        # Fill entire row 2 for both sections first (blank)
+        for ci in range(SO_START, SO_START + 18):
+            _formula_cell(2, ci)
+        for ci in range(PO_START, PO_START + 17):
+            _formula_cell(2, ci)
+
+        # SEND-OUT formula labels
+        _formula_cell(2, SO_START + 3, "COMPUTATION", merged_end=SO_START + 5)  # D2:F2
+        _formula_cell(2, SO_START + 6, "COM. + SC")           # G: total sc
+        _formula_cell(2, SO_START + 7, "PRINCIPAL +\nTOTAL SC")  # H: cash on hand
+        _formula_cell(2, SO_START + 8, "COM. × 39%")          # I: income
+        _formula_cell(2, SO_START + 9, "COH - INCOME")        # J: A/P Palawan
+
+        # PAY-OUT formula labels (no Cash on Hand col)
+        _formula_cell(2, PO_START + 3, "COMPUTATION", merged_end=PO_START + 5)
+        _formula_cell(2, PO_START + 6, "COM. + SC")
+        _formula_cell(2, PO_START + 7, "COM. × 43%")          # income
+        _formula_cell(2, PO_START + 8, "PRIN.+SC - INCOME")   # A/R Palawan
+
+        ws.row_dimensions[2].height = 28
+
+        # ── Row 3: Column headers ─────────────────────────────────────────────
+        SO_HDRS = [
+            "TRANSACTION\nCODE", "SENDER", "RECEIVER",
+            "PRINCIPAL", "COMMISSION", "SC",
+            "TOTAL SC", "CASH ON\nHAND", "INCOME",
+            "A/P\nPALAWAN",
+            "RELATIONSHIP\n(RECEIVER /\nSENDER)",
+            "SOURCE OF\nFUNDS",
+            "PURPOSE\nOF TRANS.",
+            "KYC DOCS.\nPHOTO ID",
+            "POSITION IN\nTHE BUS. CO.",
+            "BUSINESS\nCOMPANY NAME",
+            "EVALUATION\nREMARKS",
+            "TOTAL\nTRANSACTION",
+        ]
+        PO_HDRS = [
+            "TRANSACTION\nCODE", "SENDER", "RECEIVER",
+            "PRINCIPAL", "COMMISSION", "SC",
+            "TOTAL SC", "INCOME",
+            "A/R\nPALAWAN",
+            "RELATIONSHIP\n(RECEIVER /\nSENDER)",
+            "SOURCE OF\nFUNDS",
+            "PURPOSE\nOF TRANS.",
+            "KYC DOCS.\nPHOTO ID",
+            "POSITION IN\nTHE BUS. CO.",
+            "BUSINESS\nCOMPANY NAME",
+            "EVALUATION\nREMARKS",
+            "TOTAL\nTRANSACTION",
+        ]
+
+        for i, hdr in enumerate(SO_HDRS):
+            c = ws.cell(row=3, column=SO_START + i)
+            c.value, c.fill, c.font, c.alignment, c.border = (
+                hdr, col_hdr_fill, col_hdr_font, col_hdr_aln, border)
+        for i, hdr in enumerate(PO_HDRS):
+            c = ws.cell(row=3, column=PO_START + i)
+            c.value, c.fill, c.font, c.alignment, c.border = (
+                hdr, col_hdr_fill, col_hdr_font, col_hdr_aln, border)
+
+        ws.row_dimensions[3].height = 40
+
+        # ── Data writing helpers ──────────────────────────────────────────────
+        def _dc(r, c_idx, value, is_num=False):
+            """Write a data cell."""
+            cell = ws.cell(row=r, column=c_idx)
+            cell.value  = value
+            cell.border = border
+            if is_num:
+                cell.number_format = NUM_FMT
+                cell.alignment = data_aln_r
+            else:
+                cell.alignment = data_aln_l
+
+        def _write_so_row(r, txn):
+            commission   = float(txn.get("commission", 0))
+            income_39    = round(commission * 0.39, 2)
+            principal    = float(txn.get("principal", 0))
+            total_sc     = float(txn.get("total_sc", 0))
+            cash_on_hand = principal + total_sc
+            ap_palawan   = cash_on_hand - income_39
+
+            _dc(r, SO_START + 0,  txn.get("code", ""))
+            _dc(r, SO_START + 1,  txn.get("sender", ""))
+            _dc(r, SO_START + 2,  txn.get("receiver", ""))
+            _dc(r, SO_START + 3,  principal,    True)
+            _dc(r, SO_START + 4,  commission,   True)
+            _dc(r, SO_START + 5,  float(txn.get("sc", 0)), True)
+            _dc(r, SO_START + 6,  total_sc,     True)
+            _dc(r, SO_START + 7,  cash_on_hand, True)
+            _dc(r, SO_START + 8,  income_39,    True)
+            _dc(r, SO_START + 9,  ap_palawan,   True)
+            _dc(r, SO_START + 10, txn.get("relationship", ""))
+            _dc(r, SO_START + 11, txn.get("source_funds", ""))
+            _dc(r, SO_START + 12, txn.get("purpose", ""))
+            _dc(r, SO_START + 13, txn.get("kyc_docs", ""))
+            _dc(r, SO_START + 14, txn.get("position", ""))
+            _dc(r, SO_START + 15, txn.get("business_name", ""))
+            _dc(r, SO_START + 16, txn.get("evaluation", ""))
+            _dc(r, SO_START + 17, cash_on_hand, True)   # TOTAL TRANSACTION = COH
+
+        def _write_po_row(r, txn):
+            commission = float(txn.get("commission", 0))
+            income_43  = round(commission * 0.43, 2)
+            principal  = float(txn.get("principal", 0))
+            total_sc   = float(txn.get("total_sc", 0))
+            ar_palawan = principal + total_sc - income_43
+            total_txn  = principal + total_sc
+
+            _dc(r, PO_START + 0,  txn.get("code", ""))
+            _dc(r, PO_START + 1,  txn.get("sender", ""))
+            _dc(r, PO_START + 2,  txn.get("receiver", ""))
+            _dc(r, PO_START + 3,  principal,   True)
+            _dc(r, PO_START + 4,  commission,  True)
+            _dc(r, PO_START + 5,  float(txn.get("sc", 0)), True)
+            _dc(r, PO_START + 6,  total_sc,    True)
+            _dc(r, PO_START + 7,  income_43,   True)
+            _dc(r, PO_START + 8,  ar_palawan,  True)
+            _dc(r, PO_START + 9,  txn.get("relationship", ""))
+            _dc(r, PO_START + 10, txn.get("source_funds", ""))
+            _dc(r, PO_START + 11, txn.get("purpose", ""))
+            _dc(r, PO_START + 12, txn.get("kyc_docs", ""))
+            _dc(r, PO_START + 13, txn.get("position", ""))
+            _dc(r, PO_START + 14, txn.get("business_name", ""))
+            _dc(r, PO_START + 15, txn.get("evaluation", ""))
+            _dc(r, PO_START + 16, total_txn,   True)
+
+        # ── Write data rows ───────────────────────────────────────────────────
+        max_rows = max(len(sendout_txns), len(payout_txns))
+        data_start = 4
+        for i in range(max_rows):
+            r = data_start + i
+            ws.row_dimensions[r].height = 18
+            if i < len(sendout_txns):
+                _write_so_row(r, sendout_txns[i])
+            if i < len(payout_txns):
+                _write_po_row(r, payout_txns[i])
+
+        # ── Totals row ────────────────────────────────────────────────────────
+        tot_row = data_start + max_rows + 1
+        ws.row_dimensions[tot_row].height = 20
+
+        def _tot_cell(r, c_idx, value=None, label=None):
+            cell = ws.cell(row=r, column=c_idx)
+            cell.fill   = tot_fill
+            cell.font   = tot_font
+            cell.border = border
+            if value is not None:
+                cell.value         = value
+                cell.number_format = NUM_FMT
+                cell.alignment     = tot_aln_r
+            else:
+                cell.value     = label or ""
+                cell.alignment = tot_aln_l
+
+        # Blank totals cells for all columns
+        for ci in range(SO_START, SO_START + 18):
+            _tot_cell(tot_row, ci)
+        for ci in range(PO_START, PO_START + 17):
+            _tot_cell(tot_row, ci)
+
+        # SEND-OUT totals
+        if sendout_txns:
+            _tot_cell(tot_row, SO_START, label="TOTAL")
+            comm_so  = sum(float(t.get("commission", 0)) for t in sendout_txns)
+            inc_39   = round(comm_so * 0.39, 2)
+            prin_so  = sum(float(t.get("principal", 0)) for t in sendout_txns)
+            sc_so    = sum(float(t.get("sc", 0))        for t in sendout_txns)
+            tsc_so   = sum(float(t.get("total_sc", 0))  for t in sendout_txns)
+            coh_so   = prin_so + tsc_so
+            ap_so    = coh_so - inc_39
+            _tot_cell(tot_row, SO_START + 3,  prin_so)
+            _tot_cell(tot_row, SO_START + 4,  comm_so)
+            _tot_cell(tot_row, SO_START + 5,  sc_so)
+            _tot_cell(tot_row, SO_START + 6,  tsc_so)
+            _tot_cell(tot_row, SO_START + 7,  coh_so)
+            _tot_cell(tot_row, SO_START + 8,  inc_39)
+            _tot_cell(tot_row, SO_START + 9,  ap_so)
+            _tot_cell(tot_row, SO_START + 17, coh_so)
+
+        # PAY-OUT totals
+        if payout_txns:
+            _tot_cell(tot_row, PO_START, label="TOTAL")
+            comm_po = sum(float(t.get("commission", 0)) for t in payout_txns)
+            inc_43  = round(comm_po * 0.43, 2)
+            prin_po = sum(float(t.get("principal", 0)) for t in payout_txns)
+            sc_po   = sum(float(t.get("sc", 0))        for t in payout_txns)
+            tsc_po  = sum(float(t.get("total_sc", 0))  for t in payout_txns)
+            ar_po   = prin_po + tsc_po - inc_43
+            _tot_cell(tot_row, PO_START + 3,  prin_po)
+            _tot_cell(tot_row, PO_START + 4,  comm_po)
+            _tot_cell(tot_row, PO_START + 5,  sc_po)
+            _tot_cell(tot_row, PO_START + 6,  tsc_po)
+            _tot_cell(tot_row, PO_START + 7,  inc_43)
+            _tot_cell(tot_row, PO_START + 8,  ar_po)
+            _tot_cell(tot_row, PO_START + 16, prin_po + tsc_po)
+
+        # ── Column widths ─────────────────────────────────────────────────────
+        SO_W = [18, 15, 15, 12, 12, 8, 12, 14, 12, 12, 18, 15, 15, 14, 18, 20, 16, 14]
+        PO_W = [18, 15, 15, 12, 12, 8, 12, 12, 12, 18, 15, 15, 14, 18, 20, 16, 14]
+        for i, w in enumerate(SO_W):
+            ws.column_dimensions[_xlutil.get_column_letter(SO_START + i)].width = w
+        # gap cols S-T
+        ws.column_dimensions[_xlutil.get_column_letter(SO_START + 18)].width = 2
+        ws.column_dimensions[_xlutil.get_column_letter(SO_START + 19)].width = 2
+        for i, w in enumerate(PO_W):
+            ws.column_dimensions[_xlutil.get_column_letter(PO_START + i)].width = w
+
+        # Freeze pane at row 4 (headers stay visible)
+        ws.freeze_panes = "A4"
+
+        logger.info(
+            "Palawan Details sheet: %d sendout, %d payout",
+            len(sendout_txns), len(payout_txns),
+        )

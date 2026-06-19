@@ -280,8 +280,19 @@ class VarianceReviewPage(QWidget):
             params = []
 
             if corp:
-                query += " AND corporation = %s"
-                params.append(corp)
+                query += """ AND (
+                    corporation = %s
+                    OR branch COLLATE utf8mb4_general_ci IN (
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations mc ON br.corporation_id = mc.id
+                        WHERE mc.name = %s
+                        UNION
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations sc ON br.sub_corporation_id = sc.id
+                        WHERE sc.name = %s
+                    )
+                )"""
+                params.extend([corp, corp, corp])
 
             if is_range:
                 query += " AND date >= %s AND date <= %s"

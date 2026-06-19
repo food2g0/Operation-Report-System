@@ -217,14 +217,13 @@ class MCPage(QWidget):
                            SUM(COALESCE(dr.mc_in, 0)) as mc_selling
                     FROM branches b
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation = %s
                         AND dr.date >= %s AND dr.date <= %s
                     WHERE b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
                        OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s)
                     GROUP BY b.name
                     ORDER BY b.name
                 """
-                params = (corp, date_start, date_end, corp, corp)
+                params = (date_start, date_end, corp, corp)
             else:
                 query = f"""
                     SELECT b.name as branch,
@@ -232,14 +231,13 @@ class MCPage(QWidget):
                            SUM(COALESCE(dr.mc_in, 0)) as mc_selling
                     FROM branches b
                     LEFT JOIN {self.daily_table} dr ON b.name COLLATE utf8mb4_general_ci = dr.branch COLLATE utf8mb4_general_ci
-                        AND dr.corporation = %s
                         AND dr.date = %s
                     WHERE b.corporation_id = (SELECT id FROM corporations WHERE name = %s)
                        OR b.sub_corporation_id = (SELECT id FROM corporations WHERE name = %s)
                     GROUP BY b.name
                     ORDER BY b.name
                 """
-                params = (corp, date_start, corp, corp)
+                params = (date_start, corp, corp)
 
         try:
             run_query_async(

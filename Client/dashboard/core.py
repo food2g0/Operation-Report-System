@@ -2255,22 +2255,7 @@ class ClientDashboard(QWidget):
             )
 
     def closeEvent(self, event):
-        """Hide to system tray on close; only truly quit via tray → Quit."""
-        if not self._force_quit:
-            event.ignore()
-            self.hide()
-            from PyQt5.QtWidgets import QSystemTrayIcon
-            if hasattr(self, '_tray_icon'):
-                self._tray_icon.showMessage(
-                    "Operation Report System",
-                    "App is still running in the background.\n"
-                    "Right-click the tray icon to quit.",
-                    QSystemTrayIcon.Information,
-                    3000,
-                )
-            return
-
-        # True quit — hide tray icon then clean up
+        """Close the app completely — stop all threads and exit."""
         if hasattr(self, '_tray_icon'):
             self._tray_icon.hide()
 
@@ -2705,6 +2690,7 @@ class ClientDashboard(QWidget):
                 # Now load brand data - recalculate_all() will include palawan amounts
                 self._load_brand_report_data("Brand A", sd)
                 self._load_brand_report_data("Brand B", sd)
+                self._apply_carry_over_to_brand_b()
             finally:
                 try:
                     if hasattr(self, 'loading_overlay'):
@@ -3968,14 +3954,10 @@ class ClientDashboard(QWidget):
 
     def _connect_shared_fields(self):
         try:
-            import json as _json, re as _re, os as _os, sys as _sys
-            if getattr(_sys, 'frozen', False):
-                _base = _os.path.dirname(_sys.executable)
-            else:
-                _base = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-            _cfg_path = _os.path.join(_base, "field_config.json")
-            with open(_cfg_path, "r", encoding="utf-8") as _f:
-                cfg = _json.load(_f)
+            import re as _re
+            # Use the same loader as CashFlowTab so the config source (DB or file) matches
+            from Client.cash_flow_tab import _load_field_config
+            cfg = _load_field_config(getattr(self, 'db_manager', None))
 
             def _col(entry):
                 return entry[2] if len(entry) >= 3 else \
@@ -4046,6 +4028,7 @@ class ClientDashboard(QWidget):
             logger.debug("Shared fields after exclusions: %s", shared)
             
             self._shared_carry_map = []
+            self._shared_field_pairs = []   # (a_w, b_w, a_lotes, b_lotes) for post-load sync
 
             for col in shared:
                 a_w, a_l = a_col_widget[col]
@@ -4073,8 +4056,37 @@ class ClientDashboard(QWidget):
                     a_l.textChanged.connect(fl)
                     self._shared_carry_map.append(fl)
 
+                self._shared_field_pairs.append((a_w, b_w, a_l, b_l))
+
         except Exception as e:
             logger.warning("_connect_shared_fields error (non-fatal): %s", e)
+
+    def _apply_carry_over_to_brand_b(self):
+        """After loading both brands from DB, copy Brand A → Brand B for any
+        shared field that Brand B left empty or zero.  Brand B can still edit
+        these fields freely after load.
+        """
+        if not hasattr(self, '_shared_field_pairs'):
+            return
+        _empty = {'', '0', '0.0', '0.00'}
+        changed = False
+        for a_w, b_w, a_l, b_l in self._shared_field_pairs:
+            a_val = a_w.text().strip()
+            b_val = b_w.text().strip()
+            if a_val and b_val in _empty:
+                b_w.blockSignals(True)
+                b_w.setText(a_val)
+                b_w.blockSignals(False)
+                changed = True
+            if a_l and b_l:
+                a_lot = a_l.text().strip()
+                b_lot = b_l.text().strip()
+                if a_lot and b_lot in _empty:
+                    b_l.blockSignals(True)
+                    b_l.setText(a_lot)
+                    b_l.blockSignals(False)
+        if changed:
+            self.recalculate_all()
 
     def _connect_palawan_adjustments_to_brand_b(self):
         self.palawan_manager.connect_palawan_adjustments_to_brand_b(
@@ -5201,9 +5213,8 @@ class ClientDashboard(QWidget):
                 self.date_picker.blockSignals(False)
             
             self._load_brand_report_data("Brand A", date_str)
-            
             self._load_brand_report_data("Brand B", date_str)
-            
+            self._apply_carry_over_to_brand_b()
             self.recalculate_all()
 
             self._toggle_inputs(False)
@@ -5715,6 +5726,8 @@ class ClientDashboard(QWidget):
                 wb, {"Brand A": data_a, "Brand B": data_b},
                 selected_date, self.user_email, brands_to_export
             )
+
+            self.export_handler.write_palawan_sheet(wb, self.db_manager, selected_date)
 
             wb.save(file_path)
 

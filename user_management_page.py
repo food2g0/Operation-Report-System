@@ -1302,6 +1302,7 @@ class UserManagementPage(QWidget):
         self.admin_role_combo = QComboBox()
         self.admin_role_combo.addItem("admin",       "admin")
         self.admin_role_combo.addItem("super_admin", "super_admin")
+        self.admin_role_combo.addItem("accounting",  "accounting")
         self.admin_role_combo.setMinimumWidth(130)
         self.admin_role_combo.setStyleSheet(
             "QComboBox { font-weight:bold; } "
@@ -1514,7 +1515,7 @@ class UserManagementPage(QWidget):
                 "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (username, hashed, role, "", "", account_type, os_group or None)
             )
-            label = "Super Admin" if role == "super_admin" else "Admin"
+            label = {"super_admin": "Super Admin", "accounting": "Accounting"}.get(role, "Admin")
             brand_info = f" ({self.admin_brand_combo.currentText()})" if role == 'admin' else ""
             group_info = f" — Group: {os_group}" if os_group else ""
             QMessageBox.information(
@@ -1549,6 +1550,7 @@ class UserManagementPage(QWidget):
         self.admin_brand_combo.setVisible(is_admin)
         self.admin_group_label.setVisible(is_admin)
         self.admin_group_combo.setVisible(is_admin)
+        # accounting and super_admin don't need branch/brand fields — nothing extra to show
 
     def _edit_admin_brand(self, user_id: int, username: str, current_type: int):
         """Dialog to change an admin's brand/account_type."""

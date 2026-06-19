@@ -399,10 +399,21 @@ class BIRBookPage(QWidget):
                        payout_detailed_principal,
                        international_detailed_principal
                 FROM payable_tbl_brand_a
-                WHERE corporation = %s AND date = %s
+                WHERE (
+                    corporation = %s
+                    OR branch COLLATE utf8mb4_general_ci IN (
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations mc ON br.corporation_id = mc.id
+                        WHERE mc.name = %s
+                        UNION
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations sc ON br.sub_corporation_id = sc.id
+                        WHERE sc.name = %s
+                    )
+                ) AND date = %s
                 ORDER BY branch
             """
-            result = self.db.execute_query(query, (selected_corp, selected_date))
+            result = self.db.execute_query(query, (selected_corp, selected_corp, selected_corp, selected_date))
 
             if not result:
                 self.all_transactions = []
@@ -985,13 +996,24 @@ class BIRBookPage(QWidget):
                        payout_detailed_principal,
                        international_detailed_principal
                 FROM payable_tbl_brand_a
-                WHERE corporation = %s
+                WHERE (
+                    corporation = %s
+                    OR branch COLLATE utf8mb4_general_ci IN (
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations mc ON br.corporation_id = mc.id
+                        WHERE mc.name = %s
+                        UNION
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations sc ON br.sub_corporation_id = sc.id
+                        WHERE sc.name = %s
+                    )
+                )
                 AND YEAR(date) = %s
                 AND MONTH(date) = %s
                 ORDER BY date, branch
             """
 
-            result = self.db.execute_query(query, (selected_corp, year, month))
+            result = self.db.execute_query(query, (selected_corp, selected_corp, selected_corp, year, month))
 
             if not result:
                 QMessageBox.warning(self, "No Data", f"No transactions found for {selected_corp} in {year}-{month:02d}")

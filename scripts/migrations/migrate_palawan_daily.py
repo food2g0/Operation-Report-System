@@ -1,15 +1,4 @@
-#!/usr/bin/env python3
-"""
-Automatic daily migration of palawan details from daily_reports to payable_tbl_brand_a.
-Scheduled to run at 8:30 AM every day.
 
-This script:
-1. Migrates palawan details from daily_reports (Brand B) to payable_tbl_brand_a
-2. Migrates palawan details from daily_reports_brand_a (Brand A) to payable_tbl_brand_a
-3. Checks for duplicates to avoid re-migration
-4. DELETES successfully migrated records from daily_reports tables
-5. Logs all activity to a file with timestamp
-"""
 
 from api_db_manager import db_manager
 from device_trust import get_device_fingerprint, is_device_trusted, check_operation_allowed, audit_operation

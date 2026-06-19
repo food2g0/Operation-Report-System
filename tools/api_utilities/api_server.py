@@ -44,6 +44,20 @@ _RUNNING_WITH_GUNICORN = "gunicorn" in sys.modules or any("gunicorn" in arg for 
 from db_connect_pooled import DatabaseManagerPooled
 from error_tracker import error_tracker, audit_logger, log_exception, log_audit
 from notification_manager import notification_manager
+import bcrypt
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    """bcrypt verify with legacy plaintext fallback."""
+    if not password or not hashed:
+        return False
+    try:
+        if hashed.startswith("$2b$") or hashed.startswith("$2a$"):
+            return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+        return password == hashed  # legacy plaintext
+    except Exception as exc:
+        log.error("Password verification error: %s", exc)
+        return False
 
 
 API_KEY    = os.environ.get("ORS_API_KEY",    "")
@@ -700,25 +714,61 @@ async def _raise_thread_limiter():
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 def _make_token() -> str:
+    """API-key-level token (machine/service auth, no user claims)."""
     payload = {
-        "iat": datetime.datetime.utcnow(),
-        "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_HOURS),
+        "type": "api_key",
+        "iat":  datetime.datetime.utcnow(),
+        "exp":  datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_HOURS),
     }
     return pyjwt.encode(payload, SECRET_KEY, algorithm="HS256")
 
 
-def _require_token(request: Request) -> None:
-    """FastAPI dependency: validate JWT in Authorization header."""
+def _make_user_token(user: dict) -> str:
+    """User-level token — embeds role and identity claims."""
+    payload = {
+        "type":         "user",
+        "sub":          str(user["id"]),
+        "username":     user["username"],
+        "role":         user["role"],
+        "branch":       user.get("branch") or "",
+        "corporation":  user.get("corporation") or "",
+        "account_type": user.get("account_type") or 2,
+        "os_group":     user.get("os_group") or "",
+        "iat":          datetime.datetime.utcnow(),
+        "exp":          datetime.datetime.utcnow() + datetime.timedelta(hours=JWT_HOURS),
+    }
+    return pyjwt.encode(payload, SECRET_KEY, algorithm="HS256")
+
+
+def _decode_token(request: Request) -> dict:
+    """Decode and return the JWT payload; raise 401 on any failure."""
     auth  = request.headers.get("Authorization", "")
     token = auth.replace("Bearer ", "").strip()
     if not token:
         raise HTTPException(status_code=401, detail="Missing token")
     try:
-        pyjwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+        return pyjwt.decode(token, SECRET_KEY, algorithms=["HS256"])
     except pyjwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except pyjwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+def _require_token(request: Request) -> None:
+    """FastAPI dependency: validate any JWT (api_key or user)."""
+    _decode_token(request)
+
+
+def _require_role(*roles: str):
+    """FastAPI dependency factory: allow only user tokens whose role is in *roles*."""
+    def _dep(request: Request) -> dict:
+        payload = _decode_token(request)
+        if payload.get("type") != "user":
+            raise HTTPException(status_code=403, detail="User authentication required")
+        if payload.get("role") not in roles:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return payload
+    return _dep
 
 
 # ── Blocked DDL ───────────────────────────────────────────────────────────────
@@ -956,6 +1006,89 @@ def get_token(body: TokenRequest, request: Request):
     token = _make_token()
     log.info(f"Token issued to {remote}")
     return {"token": token, "expires_hours": JWT_HOURS}
+
+
+# ── User authentication ───────────────────────────────────────────────────────
+
+class UserLoginRequest(BaseModel):
+    username:    str
+    password:    str
+    # Optional machine info — if provided, the machine record is updated
+    # server-side so the client doesn't need a separate _update_machine_record call.
+    machine_id:  Optional[str] = None
+    hostname:    Optional[str] = None
+    mac_address: Optional[str] = None
+    cpu_info:    Optional[str] = None
+
+_VALID_ROLES = {"super_admin", "admin", "user", "accounting"}
+
+@app.post("/api/auth/login")
+def user_login(body: UserLoginRequest, request: Request):
+    """Authenticate a user and return a role-bearing JWT.
+    Also updates the machine record (branch + username) when machine_id is supplied,
+    so the client needs zero extra calls after a successful login.
+    """
+    remote = request.client.host if request.client else "unknown"
+    _token_rate_check(remote)
+
+    rows = _db.execute_query(
+        """SELECT id, username, password, branch, corporation, role,
+                  account_type, COALESCE(os_group,'') AS os_group
+           FROM users
+           WHERE username = %s AND role IN ('admin','super_admin','user','accounting')
+           LIMIT 1""",
+        [body.username],
+    )
+    if not rows:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    user = rows[0]
+    if not _verify_password(body.password, user["password"]):
+        log.warning("Failed login for user '%s' from %s", body.username, remote)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    if user.get("role") not in _VALID_ROLES:
+        raise HTTPException(status_code=403, detail="Role not permitted")
+
+    # Update machine record with now-known username + branch (fire-and-forget, non-fatal)
+    if body.machine_id:
+        try:
+            _db.execute_query(
+                """UPDATE machines
+                   SET username = %s, branch = %s, last_seen = NOW()
+                   WHERE machine_id = %s""",
+                [user["username"], user.get("branch") or "", body.machine_id],
+            )
+        except Exception as _e:
+            log.warning("Machine record update failed during login: %s", _e)
+
+    _token_rate_clear(remote)
+    token = _make_user_token(user)
+    log.info("User '%s' (role=%s) authenticated from %s", body.username, user["role"], remote)
+    return {
+        "token":        token,
+        "user_id":      user["id"],
+        "username":     user["username"],
+        "role":         user["role"],
+        "branch":       user.get("branch") or "",
+        "corporation":  user.get("corporation") or "",
+        "account_type": user.get("account_type") or 2,
+        "os_group":     user.get("os_group") or "",
+        "expires_hours": JWT_HOURS,
+    }
+
+
+@app.get("/api/auth/verify")
+def verify_user_token(payload: dict = Depends(_require_role(
+    "super_admin", "admin", "user", "accounting"
+))):
+    """Verify that a user JWT is still valid and return its claims."""
+    return {
+        "valid":    True,
+        "username": payload.get("username"),
+        "role":     payload.get("role"),
+        "branch":   payload.get("branch"),
+    }
 
 
 @app.post("/api/exec")
@@ -1264,6 +1397,44 @@ def notification_stats(_: None = Depends(_require_token)):
 
 # ── Machine access control ────────────────────────────────────────────────────
 
+class MachineStatusRequest(BaseModel):
+    """Startup check: combine token fetch + machine register into a single call."""
+    api_key:    str
+    machine_id: str
+    hostname:   Optional[str] = None
+    mac_address: Optional[str] = None
+    cpu_info:   Optional[str] = None
+
+
+@app.post("/api/machine/status")
+def machine_status(body: MachineStatusRequest, request: Request):
+    """Single startup call: validate API key, register/refresh machine, return status.
+    Replaces the two-step  POST /api/token  →  POST /api/machine/register  flow.
+    """
+    if body.api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    existing = _db.execute_query(
+        "SELECT status FROM machines WHERE machine_id = %s LIMIT 1",
+        [body.machine_id],
+    )
+    if existing:
+        _db.execute_query(
+            "UPDATE machines SET last_seen = NOW(), hostname = %s WHERE machine_id = %s",
+            [body.hostname, body.machine_id],
+        )
+        return {"status": existing[0]["status"]}
+
+    # New machine → pending
+    _db.execute_query(
+        """INSERT INTO machines
+           (machine_id, hostname, mac_address, cpu_info, status, registered_at, last_seen)
+           VALUES (%s, %s, %s, %s, 'pending', NOW(), NOW())""",
+        [body.machine_id, body.hostname, body.mac_address, body.cpu_info],
+    )
+    return {"status": "pending"}
+
+
 class MachineRegisterRequest(BaseModel):
     machine_id:  str
     hostname:    Optional[str] = None
@@ -1293,15 +1464,20 @@ def machine_register(body: MachineRegisterRequest, _: None = Depends(_require_to
         )
         return {"status": existing[0]["status"]}
     else:
+        # ORS_MACHINE_AUTO_APPROVE=true  → first-time machines get 'approved' immediately
+        #   (keep this ON until all existing clients have registered, then turn OFF)
+        # ORS_MACHINE_AUTO_APPROVE=false → new machines get 'pending' until admin approves
+        auto_approve = os.environ.get("ORS_MACHINE_AUTO_APPROVE", "false").lower() == "true"
+        initial_status = "approved" if auto_approve else "pending"
         _db.execute_query(
             """INSERT INTO machines
                (machine_id, hostname, branch, username, mac_address, cpu_info,
                 status, registered_at, last_seen)
-               VALUES (%s, %s, %s, %s, %s, %s, 'approved', NOW(), NOW())""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW(), NOW())""",
             [body.machine_id, body.hostname, body.branch, body.username,
-             body.mac_address, body.cpu_info]
+             body.mac_address, body.cpu_info, initial_status]
         )
-        return {"status": "approved"}
+        return {"status": initial_status}
 
 
 @app.get("/api/machine/verify/{machine_id}")

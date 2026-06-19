@@ -2,7 +2,7 @@
 Machine Management Page — Super Admin Dashboard
 
 Lists all registered machines with their approval status.
-Super admin can revoke or re-approve any machine.
+Super admin can revoke, approve, or bulk-approve all pending machines.
 """
 import logging
 from PyQt5.QtWidgets import (
@@ -10,15 +10,14 @@ from PyQt5.QtWidgets import (
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
     QFrame, QLineEdit, QComboBox
 )
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QColor, QFont
 
 logger = logging.getLogger(__name__)
 
-_GREEN  = "#16A34A"
-_RED    = "#DC2626"
-_AMBER  = "#D97706"
-_SLATE  = "#64748B"
+_GREEN = "#16A34A"
+_RED   = "#DC2626"
+_AMBER = "#D97706"
 
 
 class MachinePage(QWidget):
@@ -53,13 +52,24 @@ class MachinePage(QWidget):
         title_row.addWidget(self._search)
 
         self._status_filter = QComboBox()
-        self._status_filter.addItems(["All", "Approved", "Revoked"])
+        self._status_filter.addItems(["All", "Approved", "Pending", "Revoked"])
         self._status_filter.setFixedWidth(110)
         self._status_filter.setStyleSheet(
             "border:1px solid #CBD5E1; border-radius:6px; padding:5px 8px; font-size:12px;"
         )
         self._status_filter.currentIndexChanged.connect(self._filter)
         title_row.addWidget(self._status_filter)
+
+        self._approve_all_btn = QPushButton("Approve All Pending")
+        self._approve_all_btn.setStyleSheet(
+            "QPushButton{background:#FEF3C7;color:#92400E;border:1px solid #F59E0B;"
+            "border-radius:6px;padding:6px 14px;font-weight:700;font-size:12px;}"
+            "QPushButton:hover{background:#FDE68A;}"
+            "QPushButton:disabled{background:#F1F5F9;color:#94A3B8;border-color:#E2E8F0;}"
+        )
+        self._approve_all_btn.setEnabled(False)
+        self._approve_all_btn.clicked.connect(self._approve_all_pending)
+        title_row.addWidget(self._approve_all_btn)
 
         refresh_btn = QPushButton("Refresh")
         refresh_btn.setStyleSheet(
@@ -134,16 +144,16 @@ class MachinePage(QWidget):
 
     def _filter(self):
         query  = self._search.text().lower()
-        status = self._status_filter.currentText().lower()   # all / approved / revoked
+        status = self._status_filter.currentText().lower()   # all / approved / pending / revoked
 
         visible = []
         for m in self._machines:
             if status != "all" and m.get("status", "") != status:
                 continue
             haystack = " ".join([
-                str(m.get("hostname") or ""),
-                str(m.get("branch")   or ""),
-                str(m.get("username") or ""),
+                str(m.get("hostname")    or ""),
+                str(m.get("branch")      or ""),
+                str(m.get("username")    or ""),
                 str(m.get("mac_address") or ""),
             ]).lower()
             if query and query not in haystack:
@@ -154,13 +164,20 @@ class MachinePage(QWidget):
 
         total    = len(self._machines)
         approved = sum(1 for m in self._machines if m.get("status") == "approved")
-        revoked  = total - approved
+        pending  = sum(1 for m in self._machines if m.get("status") == "pending")
+        revoked  = sum(1 for m in self._machines if m.get("status") == "revoked")
         self._summary.setText(
             f"{total} machine(s) total  •  "
             f"<span style='color:{_GREEN}'>{approved} approved</span>  •  "
+            f"<span style='color:{_AMBER}'>{pending} pending</span>  •  "
             f"<span style='color:{_RED}'>{revoked} revoked</span>"
         )
         self._summary.setTextFormat(Qt.RichText)
+
+        self._approve_all_btn.setEnabled(pending > 0)
+        self._approve_all_btn.setText(
+            f"Approve All Pending ({pending})" if pending > 0 else "Approve All Pending"
+        )
 
     def _populate(self, machines):
         self._table.setRowCount(0)
@@ -170,6 +187,13 @@ class MachinePage(QWidget):
 
             status = m.get("status", "unknown")
             reg    = (m.get("registered_at") or "")[:10]
+
+            if status == "approved":
+                status_color = _GREEN
+            elif status == "pending":
+                status_color = _AMBER
+            else:
+                status_color = _RED
 
             for col, text in enumerate([
                 m.get("hostname")    or "—",
@@ -181,40 +205,47 @@ class MachinePage(QWidget):
             ]):
                 item = QTableWidgetItem(text)
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-                if col == 4:   # status column
-                    color = _GREEN if status == "approved" else _RED
-                    item.setForeground(QColor(color))
-                    item.setFont(self._bold_font())
+                if col == 4:
+                    item.setForeground(QColor(status_color))
+                    f = QFont()
+                    f.setBold(True)
+                    item.setFont(f)
                 self._table.setItem(row, col, item)
 
-            # Action button
-            if status == "approved":
-                btn = QPushButton("Revoke")
-                btn.setStyleSheet(
-                    "QPushButton{background:#FEE2E2;color:#DC2626;border:none;"
-                    "border-radius:5px;padding:4px 12px;font-weight:700;font-size:11px;}"
-                    "QPushButton:hover{background:#FECACA;}"
-                )
-                btn.clicked.connect(lambda _, mid=m["machine_id"], h=m.get("hostname",""):
-                                    self._revoke(mid, h))
-            else:
-                btn = QPushButton("Approve")
-                btn.setStyleSheet(
+            # Action buttons
+            btn_layout = QHBoxLayout()
+            btn_layout.setContentsMargins(4, 2, 4, 2)
+            btn_layout.setSpacing(4)
+            cell_widget = QWidget()
+            cell_widget.setLayout(btn_layout)
+
+            if status != "approved":
+                approve_btn = QPushButton("Approve")
+                approve_btn.setStyleSheet(
                     "QPushButton{background:#DCFCE7;color:#16A34A;border:none;"
-                    "border-radius:5px;padding:4px 12px;font-weight:700;font-size:11px;}"
+                    "border-radius:5px;padding:4px 10px;font-weight:700;font-size:11px;}"
                     "QPushButton:hover{background:#BBF7D0;}"
                 )
-                btn.clicked.connect(lambda _, mid=m["machine_id"], h=m.get("hostname",""):
-                                    self._approve(mid, h))
-            self._table.setCellWidget(row, 6, btn)
+                approve_btn.clicked.connect(
+                    lambda _, mid=m["machine_id"], h=m.get("hostname", ""): self._approve(mid, h)
+                )
+                btn_layout.addWidget(approve_btn)
+
+            if status != "revoked":
+                revoke_btn = QPushButton("Revoke")
+                revoke_btn.setStyleSheet(
+                    "QPushButton{background:#FEE2E2;color:#DC2626;border:none;"
+                    "border-radius:5px;padding:4px 10px;font-weight:700;font-size:11px;}"
+                    "QPushButton:hover{background:#FECACA;}"
+                )
+                revoke_btn.clicked.connect(
+                    lambda _, mid=m["machine_id"], h=m.get("hostname", ""): self._revoke(mid, h)
+                )
+                btn_layout.addWidget(revoke_btn)
+
+            self._table.setCellWidget(row, 6, cell_widget)
 
         self._table.resizeRowsToContents()
-
-    def _bold_font(self):
-        from PyQt5.QtGui import QFont
-        f = QFont()
-        f.setBold(True)
-        return f
 
     # ── Actions ───────────────────────────────────────────────────────────────
 
@@ -222,7 +253,7 @@ class MachinePage(QWidget):
         r = QMessageBox.question(
             self, "Revoke Machine",
             f"Revoke access for <b>{hostname or machine_id}</b>?<br><br>"
-            "The machine will be blocked on the next login attempt.",
+            "The machine will be blocked on the next app launch.",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if r != QMessageBox.Yes:
@@ -231,6 +262,43 @@ class MachinePage(QWidget):
 
     def _approve(self, machine_id: str, hostname: str):
         self._call("approve", machine_id)
+
+    def _approve_all_pending(self):
+        pending = [m for m in self._machines if m.get("status") == "pending"]
+        if not pending:
+            return
+        r = QMessageBox.question(
+            self, "Approve All Pending",
+            f"Approve all <b>{len(pending)}</b> pending machine(s)?<br><br>"
+            "These machines will be allowed to use the application immediately.",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+        )
+        if r != QMessageBox.Yes:
+            return
+        failed = 0
+        for m in pending:
+            try:
+                import requests
+                from api_config import API_URL, API_KEY
+
+                tok = requests.post(
+                    f"{API_URL}/api/token", json={"api_key": API_KEY}, timeout=5
+                ).json().get("token", "")
+                resp = requests.post(
+                    f"{API_URL}/api/machine/approve/{m['machine_id']}",
+                    headers={"Authorization": f"Bearer {tok}"},
+                    timeout=5,
+                )
+                if resp.status_code != 200:
+                    failed += 1
+            except Exception as exc:
+                logger.error("Approve failed for %s: %s", m.get("hostname"), exc)
+                failed += 1
+
+        if failed:
+            QMessageBox.warning(self, "Partial Success",
+                                f"{len(pending) - failed} approved, {failed} failed.")
+        self._load()
 
     def _call(self, action: str, machine_id: str):
         try:

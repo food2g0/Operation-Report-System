@@ -21,7 +21,7 @@ except ImportError:
     logger.info("Direct database access not available (client-only build)")
 
 from security import (
-    verify_password, hash_password, is_password_hashed,
+    hash_password, is_password_hashed,
     login_rate_limiter, format_lockout_time
 )
 from offline_manager import offline_manager
@@ -520,10 +520,7 @@ class LoginWindow(QWidget):
                 return
 
 
-            if self.check_admin_login(username, password):
-                return
-
-            self.authenticate_user(username, password)
+            self._authenticate_via_api(username, password)
         except Exception as e:
             logger.error("Login Error: %s", e)
             self.show_message("Error", "An error occurred during login. Please try again.", QMessageBox.Critical)
@@ -599,68 +596,6 @@ class LoginWindow(QWidget):
             logger.error("Database connection test failed: %s", e)
             return False
 
-    def _check_machine_access(self, username: str, branch: str, splash) -> str:
-        """Register this machine and return its access status.
-
-        Returns 'approved', 'revoked', or 'unknown' (treated as approved so
-        existing installs are never silently blocked if the server is unreachable).
-        Closes *splash* and shows an error dialog only when status == 'revoked'.
-        """
-        try:
-            import requests
-            from machine_id import get_machine_info
-            from api_config import API_URL, API_KEY
-
-            info = get_machine_info()
-            info['branch']   = branch
-            info['username'] = username
-
-            # Obtain a short-lived token for the machine API calls
-            tok_resp = requests.post(
-                f"{API_URL}/api/token",
-                json={"api_key": API_KEY},
-                timeout=5,
-            )
-            if tok_resp.status_code != 200:
-                logger.warning("Machine check: could not get token — allowing login")
-                return "approved"
-
-            token   = tok_resp.json().get("token", "")
-            headers = {"Authorization": f"Bearer {token}"}
-
-            # Register / refresh the machine record
-            requests.post(
-                f"{API_URL}/api/machine/register",
-                json=info,
-                headers=headers,
-                timeout=5,
-            )
-
-            # Verify status (register may have returned 'revoked' for an
-            # already-revoked machine, so always re-check)
-            ver_resp = requests.get(
-                f"{API_URL}/api/machine/verify/{info['machine_id']}",
-                headers=headers,
-                timeout=5,
-            )
-            status = ver_resp.json().get("status", "unknown") if ver_resp.status_code == 200 else "unknown"
-
-            if status == "revoked":
-                splash.close()
-                self.show_message(
-                    "Access Revoked",
-                    "This computer has been revoked by the administrator.\n\n"
-                    "Please contact your system administrator to regain access.",
-                    QMessageBox.Critical,
-                )
-                return "revoked"
-
-            return status   # 'approved' or 'unknown' — both allow login
-
-        except Exception as exc:
-            # Never block login due to a network/check failure
-            logger.warning("Machine access check failed (allowing login): %s", exc)
-            return "approved"
 
     def execute_database_query(self, query, params=None):
         # Client-only build: no direct DB access
@@ -686,201 +621,126 @@ class LoginWindow(QWidget):
             except Exception as e:
                 logger.error("Failed to migrate password: %s", e)
 
-    def check_admin_login(self, username, password):
-
+    def _authenticate_via_api(self, username: str, password: str):
+        """Single API-level login path for all roles."""
         try:
-            query = """
-                    SELECT id, username, password, branch, corporation, role, account_type,
-                           COALESCE(os_group, '') AS os_group
-                    FROM users
-                    WHERE username = %s
-                      AND role IN ('admin', 'super_admin') LIMIT 1
-                    """
+            import requests
+            from machine_id import get_machine_info
+            from api_config import API_URL
 
-            result = self.execute_database_query(query, [username])
-
-            if result:
-                user_data = result[0]
-                stored_password = user_data['password']
-                user_id = user_data['id']
-
-                if verify_password(password, stored_password):
-
-                    self._migrate_password_if_needed(user_id, password, stored_password)
-                    login_rate_limiter.reset(username)
-                    role = user_data.get('role', 'admin')
-                    try:
-                        # ── Build and show splash screen immediately ──────────────
-                        splash = self._make_splash(username, role, user_data)
-                        splash.show()
-                        QApplication.processEvents()
-
-                        self.save_credentials(username)
-
-                        if role == 'super_admin':
-                            from super_admin_dashboard import SuperAdminDashboard
-                            self.dashboard = SuperAdminDashboard()
-                        else:
-                            from admin_dashboard import AdminDashboard
-                            account_type = user_data.get('account_type', 2)
-                            os_group = user_data.get('os_group', '') or ''
-                            self.dashboard = AdminDashboard(account_type=account_type, os_group=os_group)
-
-                        role = user_data.get('role', 'admin')
-                        # ping_monitor removed
-                        if hasattr(self.dashboard, 'logout_requested'):
-                            self.dashboard.logout_requested.connect(self.handle_logout)
-                        self.dashboard.showMaximized()
-                        splash.close()
-                        self.hide()
-                        return True
-                    except Exception as e:
-                        logger.error("Error loading dashboard: %s", e)
-                        self.show_message("Error", "Failed to load dashboard.", QMessageBox.Critical)
-                        return False
+            _minfo = get_machine_info()
+            resp = requests.post(
+                f"{API_URL}/api/auth/login",
+                json={
+                    "username":    username,
+                    "password":    password,
+                    "machine_id":  _minfo.get("machine_id"),
+                    "hostname":    _minfo.get("hostname"),
+                    "mac_address": _minfo.get("mac_address"),
+                    "cpu_info":    _minfo.get("cpu_info"),
+                },
+                timeout=8,
+            )
         except Exception as e:
-            logger.error("Database Error during admin check (users table may be missing): %s", e)
+            logger.error("Auth API unreachable: %s", e)
+            self.show_message(
+                "Connection Error",
+                "Could not reach the authentication server.\nPlease check your network connection.",
+                QMessageBox.Critical,
+            )
+            return
 
-        return False
+        if resp.status_code == 401:
+            is_locked, remaining, lockout_time = login_rate_limiter.record_failed_attempt(username)
+            if is_locked:
+                self.show_message(
+                    "Account Locked",
+                    f"Too many failed attempts.\n\nPlease wait {format_lockout_time(lockout_time)} before trying again.",
+                    QMessageBox.Warning,
+                )
+            elif remaining > 0:
+                self.show_message(
+                    "Login Failed",
+                    f"Incorrect username or password.\n{remaining} attempt(s) remaining.",
+                    QMessageBox.Warning,
+                )
+            else:
+                self.show_message("Login Failed", "Incorrect username or password.", QMessageBox.Warning)
+            return
 
-    def authenticate_user(self, username, password):
+        if resp.status_code != 200:
+            self.show_message(
+                "Login Error",
+                f"Server returned an unexpected error (HTTP {resp.status_code}).",
+                QMessageBox.Critical,
+            )
+            return
+
+        data        = resp.json()
+        role        = data["role"]
+        db_username = data["username"]
+        branch      = data.get("branch") or "Unknown"
+        corporation = data.get("corporation") or "Unknown"
+        account_type = data.get("account_type") or 2
+        os_group    = data.get("os_group") or ""
+
+        login_rate_limiter.reset(username)
+
+        if role not in ("admin", "super_admin"):
+            offline_manager.cache_credentials(db_username, password, {
+                "branch": branch, "corporation": corporation, "role": role,
+            })
+
+        self.save_credentials(db_username)
+
+        # Build splash immediately so the user sees feedback while the dashboard loads
+        user_data = {
+            "username": db_username, "role": role, "branch": branch,
+            "corporation": corporation, "account_type": account_type, "os_group": os_group,
+        }
+        splash = self._make_splash(db_username, role, user_data)
+        splash.show()
+        QApplication.processEvents()
 
         try:
+            if role == "super_admin":
+                from super_admin_dashboard import SuperAdminDashboard
+                self.dashboard = SuperAdminDashboard()
 
-            query_users = """
-                    SELECT id, username, password, branch, corporation, role, account_type
-                    FROM users
-                    WHERE username = %s LIMIT 1
-                    """
+            elif role == "admin":
+                from admin_dashboard import AdminDashboard
+                self.dashboard = AdminDashboard(account_type=account_type, os_group=os_group)
 
-            result = None
-            try:
-                result = self.execute_database_query(query_users, [username])
-            except Exception as e:
-                logger.error("users table query failed, falling back to clients: %s", e)
+            elif role == "accounting":
+                from accounting_dashboard import AccountingDashboard
+                self.dashboard = AccountingDashboard(branch=branch, corporation=corporation)
 
-            if result:
-                user_data = result[0]
-                user_id = user_data['id']
-                db_username = user_data['username']
-                stored_password = user_data['password']
-                branch = user_data.get('branch') or "Unknown"
-                corporation = user_data.get('corporation') or "Unknown"
-                role = user_data.get('role', 'user')
-
-                if verify_password(password, stored_password):
-  
-                    self._migrate_password_if_needed(user_id, password, stored_password)
-                    login_rate_limiter.reset(username) 
-                    
-             
-                    if role not in ('admin', 'super_admin'):
-                        offline_manager.cache_credentials(db_username, password, {
-                            "branch": branch,
-                            "corporation": corporation,
-                            "role": role
-                        })
-                    
-                    # ping_monitor removed
-                    self.save_credentials(db_username)
-
-                    # Show splash immediately — no blocking dialog before loading
-                    splash = self._make_splash(db_username, role, user_data)
-                    splash.show()
-                    QApplication.processEvents()
-
-                    if role == 'super_admin':
-                        try:
-                            from super_admin_dashboard import SuperAdminDashboard
-                            self.dashboard = SuperAdminDashboard()
-                            if hasattr(self.dashboard, 'logout_requested'):
-                                self.dashboard.logout_requested.connect(self.handle_logout)
-                        except Exception as e:
-                            splash.close()
-                            logger.error("Error loading SuperAdminDashboard: %s", e)
-                            self.show_message("Error", "Failed to load super admin dashboard.", QMessageBox.Critical)
-                            return
-                    elif role == 'admin':
-                        try:
-                            from admin_dashboard import AdminDashboard
-                            acct_type = user_data.get('account_type', 2)
-                            self.dashboard = AdminDashboard(account_type=acct_type)
-                            if hasattr(self.dashboard, 'logout_requested'):
-                                self.dashboard.logout_requested.connect(self.handle_logout)
-                        except Exception as e:
-                            splash.close()
-                            logger.error("Error loading AdminDashboard: %s", e)
-                            self.show_message("Error", "Failed to load admin dashboard.", QMessageBox.Critical)
-                            return
-                    else:
-                        try:
-                            # ── Machine access check ──────────────────────────
-                            machine_status = self._check_machine_access(
-                                db_username, branch, splash
-                            )
-                            if machine_status == "revoked":
-                                return   # _check_machine_access already showed the error
-
-                            from api_config import API_MODE as _API_MODE
-                            if _API_MODE:
-                                from Client.api_db_manager import APIDbManager
-                                _client_db = APIDbManager()
-                                if not _client_db.connect():
-                                    splash.close()
-                                    self.show_message(
-                                        "API Connection Failed",
-                                        "Could not connect to the API server.\n"
-                                        "Please check ORS_API_URL and ORS_API_KEY settings.",
-                                        QMessageBox.Critical,
-                                    )
-                                    return
-                            else:
-                                # Non-API mode: use direct database
-                                if not DB_MANAGER_AVAILABLE:
-                                    splash.close()
-                                    self.show_message(
-                                        "Database Connection Failed",
-                                        "API mode is disabled but direct database access is not available.\n"
-                                        "This is a client-only build. Please enable API mode.",
-                                        QMessageBox.Critical,
-                                    )
-                                    return
-                                _client_db = db_manager
-                            from Client.client_dashboard import ClientDashboard
-                            self.dashboard = ClientDashboard(db_username, branch, corporation, _client_db)
-                            self.dashboard.logout_requested.connect(self.handle_logout)
-                        except Exception as e:
-                            splash.close()
-                            logger.error("Error loading ClientDashboard: %s", e, exc_info=True)
-                            self.show_message("Error", "Failed to load client dashboard.", QMessageBox.Critical)
-                            return
-
-                    self.dashboard.showMaximized()
+            else:
+                # role == 'user' (or any future user-level role)
+                from Client.api_db_manager import APIDbManager
+                _client_db = APIDbManager()
+                if not _client_db.connect():
                     splash.close()
-                    self.hide()
-                else:
-        
-                    is_locked, remaining, lockout_time = login_rate_limiter.record_failed_attempt(username)
-                    # ping_monitor removed
-                    if is_locked:
-                        self.show_message(
-                            "Account Locked",
-                            f"Too many failed attempts.\n\nPlease wait {format_lockout_time(lockout_time)} before trying again.",
-                            QMessageBox.Warning
-                        )
-                    elif remaining > 0:
-                        self.show_message("Login Failed", f"Incorrect password.\n{remaining} attempts remaining.", QMessageBox.Warning)
-                    else:
-                        self.show_message("Login Failed", "Incorrect password.", QMessageBox.Warning)
-                return
-            
-            login_rate_limiter.record_failed_attempt(username)
-            # ping_monitor removed
-            self.show_message("Login Failed", "Invalid username or password.", QMessageBox.Warning)
+                    self.show_message(
+                        "API Connection Failed",
+                        "Could not connect to the API server.",
+                        QMessageBox.Critical,
+                    )
+                    return
+                from Client.client_dashboard import ClientDashboard
+                self.dashboard = ClientDashboard(db_username, branch, corporation, _client_db)
+
+            if hasattr(self.dashboard, "logout_requested"):
+                self.dashboard.logout_requested.connect(self.handle_logout)
+
+            self.dashboard.showMaximized()
+            splash.close()
+            self.hide()
 
         except Exception as e:
-            logger.error("Database Error during authentication: %s", e)
-            self.show_message("Connection Error", "Failed to connect to the database.", QMessageBox.Critical)
+            splash.close()
+            logger.error("Error loading dashboard for role '%s': %s", role, e, exc_info=True)
+            self.show_message("Error", f"Failed to load dashboard.\n{e}", QMessageBox.Critical)
 
     def _make_splash(self, username: str, role: str, user_data: dict) -> QSplashScreen:
         """Build a branded splash screen shown while the dashboard loads."""

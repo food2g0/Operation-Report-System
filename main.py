@@ -128,7 +128,7 @@ def main():
 
     _log_startup_time("Creating QApplication")
     app = QApplication(sys.argv)
-    app.setQuitOnLastWindowClosed(False)   # keep running in tray when main window is hidden
+    app.setQuitOnLastWindowClosed(True)
     _log_startup_time("QApplication created")
 
     # Set application name and version for proper taskbar display
@@ -159,6 +159,32 @@ def main():
     def _on_launch_ready():
         try:
             splash.close()  # Close splash when app is ready
+
+            # ── Machine access check (before login window) ────────────────────
+            machine_status = _check_machine_startup()
+            if machine_status == "revoked":
+                QMessageBox.critical(
+                    None,
+                    "Access Revoked",
+                    "This computer's access has been revoked by the administrator.\n\n"
+                    "Please contact your system administrator.",
+                )
+                release_single_instance_lock()
+                sys.exit(0)
+                return
+            if machine_status == "pending":
+                QMessageBox.information(
+                    None,
+                    "Pending Approval",
+                    "This computer is not yet authorized to use this application.\n\n"
+                    "Your request has been sent to the administrator.\n"
+                    "Please wait for approval before trying again.",
+                )
+                release_single_instance_lock()
+                sys.exit(0)
+                return
+            # 'approved' or 'bypass' (server unreachable) → show login normally
+
             lw = LoginWindow(app)
             login_window_holder[0] = lw
             lw.show()
@@ -176,11 +202,50 @@ def main():
 
     launcher.launch_ready.connect(_on_launch_ready)
     _log_startup_time("Starting background update check")
-    launcher.start()  # This now runs in background while splash is visible
+    launcher.start()  # runs in background while splash is visible
 
     result = app.exec_()
     release_single_instance_lock()
     sys.exit(result)
+
+
+def _check_machine_startup() -> str:
+    """
+    Called once at app startup (before the login window).
+    Registers this machine if unknown, then returns its status:
+      'approved' → proceed to login
+      'pending'  → show waiting screen and exit
+      'revoked'  → show error and exit
+      'bypass'   → server unreachable, allow through silently
+    """
+    try:
+        import requests
+        from machine_id import get_machine_info
+        from api_config import API_URL, API_KEY
+
+        info = get_machine_info()
+
+        # Single call — no separate /api/token step needed
+        resp = requests.post(
+            f"{API_URL}/api/machine/status",
+            json={
+                "api_key":    API_KEY,
+                "machine_id": info["machine_id"],
+                "hostname":   info.get("hostname"),
+                "mac_address": info.get("mac_address"),
+                "cpu_info":   info.get("cpu_info"),
+            },
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            return resp.json().get("status", "bypass")
+
+        return "bypass"
+    except Exception as exc:
+        # Never block startup due to network errors
+        logger.warning("Machine startup check failed (bypass): %s", exc)
+        return "bypass"
+
 
 # In your main.py or login manager file
 class LoginManager:

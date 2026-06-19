@@ -277,13 +277,29 @@ class ReportPage(QWidget):
                 date_clause = "dr.date = %s"
                 date_params = (date_start,)
 
-            # Build corp filter clause - Global Reliance uses global_tag, others use corporation name
+            # Build corp filter clause.
+            # Global Reliance uses global_tag. For all other corporations we match
+            # reports where EITHER the stored corporation name matches OR the branch
+            # belongs to the selected corporation (as main or sub-corporation), so
+            # that branches whose daily reports are saved under a sub-corp name are
+            # still included when filtering by the main corp (and vice versa).
             if is_global_reliance:
                 corp_clause = "b.global_tag = 'GLOBAL'"
                 corp_params = ()
             else:
-                corp_clause = "dr.corporation = %s"
-                corp_params = (corp,)
+                corp_clause = """(
+                    dr.corporation = %s
+                    OR dr.branch COLLATE utf8mb4_general_ci IN (
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations mc ON br.corporation_id = mc.id
+                        WHERE mc.name = %s
+                        UNION
+                        SELECT br.name FROM branches br
+                        INNER JOIN corporations sc ON br.sub_corporation_id = sc.id
+                        WHERE sc.name = %s
+                    )
+                )"""
+                corp_params = (corp, corp, corp)
 
             # Build query based on registration filter
             # Fallback approach: Try payable_tbl_brand_a first, then fall back to daily_reports
@@ -314,7 +330,6 @@ class ReportPage(QWidget):
                     SELECT {_pal_select}
                     FROM {self.daily_table} dr
                     INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                     {_pal_join}
                     WHERE {corp_clause}
                       AND {date_clause}
@@ -325,7 +340,6 @@ class ReportPage(QWidget):
                     SELECT {_pal_select}
                     FROM {self.daily_table} dr
                     INNER JOIN branches b ON dr.branch COLLATE utf8mb4_general_ci = b.name COLLATE utf8mb4_general_ci
-                    INNER JOIN corporations c ON b.corporation_id = c.id AND dr.corporation COLLATE utf8mb4_general_ci = c.name COLLATE utf8mb4_general_ci
                     {_pal_join}
                     WHERE {corp_clause}
                       AND {date_clause}
