@@ -26,15 +26,18 @@ def _get_physical_mac() -> str:
             )
             # wmic outputs UTF-16 LE — strip null bytes so ASCII chars are clean
             out = raw_bytes.replace(b'\x00', b'').decode("ascii", errors="ignore")
+            _INVALID = {"00:00:00:00:00:00", "FF:FF:FF:FF:FF:FF"}
             macs = sorted(
-                line.strip().replace("-", ":").upper()
-                for line in out.splitlines()
-                if line.strip() and line.strip() != "MACAddress"
+                m for m in (
+                    line.strip().replace("-", ":").upper()
+                    for line in out.splitlines()
+                    if line.strip() and line.strip() != "MACAddress"
+                )
+                if len(m) == 17 and m not in _INVALID
             )
             if macs:
-                # Always pick the alphabetically smallest MAC so the result is
-                # stable even when wmic enumerates multiple physical adapters
-                # (Ethernet + WiFi) in a different order across reboots.
+                # Alphabetically smallest physical MAC — deterministic across
+                # reboots even when wmic enumeration order changes.
                 return macs[0]
         except Exception:
             pass

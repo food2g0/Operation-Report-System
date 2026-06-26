@@ -26,25 +26,27 @@ class PopupCombo(QComboBox):
 
 
 import sys as _sys
+import threading as _threading
+import time as _time
 
 def _get_config_dir() -> str:
-
     if getattr(_sys, 'frozen', False):
-
         return os.path.dirname(_sys.executable)
- 
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _BASE_DIR = _get_config_dir()
 FIELD_CONFIG_PATH = os.path.join(_BASE_DIR, "field_config.json")
 
+# Thread-safe field-config cache.  Double-checked locking: fast path skips the
+# lock on a warm cache; slow path serialises concurrent cold-start DB queries so
+# only one thread hits the database when the TTL expires simultaneously.
+_field_config_cache: dict | None = None
+_field_config_cache_time: float = 0.0
+_CACHE_TTL: int = 300  # seconds
+_field_config_lock = _threading.Lock()
 
-_field_config_cache = None
-_field_config_cache_time = 0
-_CACHE_TTL = 300 
 
-
-def _load_field_config_from_db(db_manager=None) -> dict:
+def _load_field_config_from_db(db_manager=None) -> dict | None:
     if db_manager is None:
         return None
     try:
@@ -59,44 +61,45 @@ def _load_field_config_from_db(db_manager=None) -> dict:
 
 
 def _load_field_config(db_manager=None) -> dict:
-
     global _field_config_cache, _field_config_cache_time
-    import time
-    
 
-    current_time = time.time()
-    if _field_config_cache and (current_time - _field_config_cache_time) < _CACHE_TTL:
+    # Fast path — no lock needed when the cache is warm.
+    now = _time.time()
+    if _field_config_cache is not None and (now - _field_config_cache_time) < _CACHE_TTL:
         return _field_config_cache
-    
 
-    db_cfg = _load_field_config_from_db(db_manager)
-    if db_cfg:
+    with _field_config_lock:
+        # Re-check inside lock — another thread may have populated it while we waited.
+        now = _time.time()
+        if _field_config_cache is not None and (now - _field_config_cache_time) < _CACHE_TTL:
+            return _field_config_cache
 
-        for brand in ("Brand A", "Brand B"):
-            db_cfg.setdefault(brand, {})
-            db_cfg[brand].setdefault("debit", [])
-            db_cfg[brand].setdefault("credit", [])
-        _field_config_cache = db_cfg
-        _field_config_cache_time = current_time
-        return db_cfg
-    
+        db_cfg = _load_field_config_from_db(db_manager)
+        if db_cfg:
+            for brand in ("Brand A", "Brand B"):
+                db_cfg.setdefault(brand, {})
+                db_cfg[brand].setdefault("debit", [])
+                db_cfg[brand].setdefault("credit", [])
+            _field_config_cache = db_cfg
+            _field_config_cache_time = now
+            return db_cfg
 
-    try:
-        with open(FIELD_CONFIG_PATH, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-        _field_config_cache = cfg
-        _field_config_cache_time = current_time
-        return cfg
-    except Exception:
-        return {"Brand A": {"debit": [], "credit": []},
-                "Brand B": {"debit": [], "credit": []}}
+        try:
+            with open(FIELD_CONFIG_PATH, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            _field_config_cache = cfg
+            _field_config_cache_time = now
+            return cfg
+        except Exception:
+            return {"Brand A": {"debit": [], "credit": []},
+                    "Brand B": {"debit": [], "credit": []}}
 
 
-def refresh_field_config_cache():
-
+def refresh_field_config_cache() -> None:
     global _field_config_cache, _field_config_cache_time
-    _field_config_cache = None
-    _field_config_cache_time = 0
+    with _field_config_lock:
+        _field_config_cache = None
+        _field_config_cache_time = 0.0
 
 
 def _sanitize_column(name: str) -> str:

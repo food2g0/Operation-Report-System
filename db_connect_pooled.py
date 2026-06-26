@@ -181,20 +181,23 @@ class DatabaseManagerPooled:
         return query, params or {}
 
     def execute_query(self, query: str, params: Optional[tuple] = None) -> Optional[Any]:
-        # Only take the lock to guard the engine-is-None case (rare: first call
-        # or after idle teardown).  The SQLAlchemy pool is fully thread-safe, so
-        # normal query execution runs lock-free — this was the source of the 25 s
-        # P95/P99 spikes under 400-branch concurrent load.
-        if not self.engine:
+        # Fast path: capture a local reference while the engine is live.
+        # Idle monitor can set self.engine = None at any time (under self.lock);
+        # using a local avoids a TOCTOU crash between the None-check and connect().
+        engine = self.engine
+        if engine is None:
             with self.lock:
                 if not self.reconnect_if_needed():
                     self.logger.error("Failed to connect to database")
                     return None
+                engine = self.engine
+        if engine is None:
+            return None
         self.last_used = time.time()
 
         try:
             prepared_query, param_dict = self._prepare_params(query, params)
-            with self.engine.connect() as conn:
+            with engine.connect() as conn:
                 result = conn.execute(text(prepared_query), param_dict)
 
                 if query.strip().upper().startswith("SELECT"):
@@ -215,17 +218,15 @@ class DatabaseManagerPooled:
             return None
 
     def execute_query_with_exception(self, query: str, params: Optional[tuple] = None) -> Tuple[Optional[Any], Optional[Exception]]:
-
         with self.lock:
-
             if not self.reconnect_if_needed():
                 return None, Exception("Failed to connect to database")
-
-            self.last_used = time.time()  
+            self.last_used = time.time()
+            engine = self.engine  # capture inside lock — idle monitor cannot null it now
 
         try:
             prepared_query, param_dict = self._prepare_params(query, params)
-            with self.engine.connect() as conn:
+            with engine.connect() as conn:
                 result = conn.execute(text(prepared_query), param_dict)
                 
                 if query.strip().upper().startswith("SELECT"):
@@ -254,26 +255,26 @@ class DatabaseManagerPooled:
         self.logger.info("Query cache cleared")
 
     def execute_many(self, query: str, params_list: List[tuple], chunk_size: int = 100) -> Optional[int]:
-
         if not params_list:
             return 0
-            
+
         with self.lock:
             if not self.reconnect_if_needed():
                 self.logger.error("Failed to connect to database")
                 return None
             self.last_used = time.time()
+            engine = self.engine  # capture inside lock
 
         try:
             modified_query, _ = self._prepare_params(query, tuple(range(query.count("%s"))))
 
-            param_dicts = []
-            for params in params_list:
-                param_dict = {f"param{i}": val for i, val in enumerate(params)}
-                param_dicts.append(param_dict)
-            
+            param_dicts = [
+                {f"param{i}": val for i, val in enumerate(p)}
+                for p in params_list
+            ]
+
             total_rows = 0
-            with self.engine.connect() as conn:
+            with engine.connect() as conn:
                 for i in range(0, len(param_dicts), chunk_size):
                     chunk = param_dicts[i:i + chunk_size]
                     for param_dict in chunk:
@@ -288,14 +289,14 @@ class DatabaseManagerPooled:
             return None
 
     def test_connection(self) -> bool:
-
         with self.lock:
             if not self.reconnect_if_needed():
                 return False
             self.last_used = time.time()
-        
+            engine = self.engine  # capture inside lock
+
         try:
-            with self.engine.connect() as conn:
+            with engine.connect() as conn:
                 result = conn.execute(text("SELECT 1 AS test"))
                 row = result.fetchone()
                 return row and row[0] == 1
@@ -355,7 +356,9 @@ class RemoteDatabaseManager:
             connect=2,
             read=2,
             backoff_factor=0.5,
-            status_forcelist=[429, 500, 502, 503, 504],
+            # 503 = server busy — retrying makes overload worse, skip it.
+            # 500 = server error — often not transient, skip it.
+            status_forcelist=[429, 502, 504],
             allowed_methods=["GET", "POST"],
         )
         adapter = HTTPAdapter(max_retries=retry)
