@@ -8,9 +8,9 @@ import logging
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QMessageBox,
-    QFrame, QLineEdit, QComboBox
+    QFrame, QLineEdit, QComboBox, QSizePolicy
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QColor, QFont
 
 logger = logging.getLogger(__name__)
@@ -20,11 +20,81 @@ _RED   = "#DC2626"
 _AMBER = "#D97706"
 
 
+# ── Background workers ────────────────────────────────────────────────────────
+
+class _LoadWorker(QThread):
+    done    = pyqtSignal(list)
+    error   = pyqtSignal(str)
+
+    def run(self):
+        try:
+            import requests
+            from api_config import API_URL, API_KEY
+            tok = _get_token(API_URL, API_KEY)
+            resp = requests.get(
+                f"{API_URL}/api/machine/list",
+                headers={"Authorization": f"Bearer {tok}"},
+                timeout=10,
+            )
+            if resp.status_code == 200:
+                self.done.emit(resp.json().get("machines", []))
+            else:
+                self.error.emit(f"machine/list returned HTTP {resp.status_code}")
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class _ActionWorker(QThread):
+    done    = pyqtSignal()
+    error   = pyqtSignal(str)
+
+    def __init__(self, action: str, machine_ids: list, parent=None):
+        super().__init__(parent)
+        self._action = action
+        self._machine_ids = machine_ids
+
+    def run(self):
+        try:
+            import requests
+            from api_config import API_URL, API_KEY
+            tok = _get_token(API_URL, API_KEY)
+            headers = {"Authorization": f"Bearer {tok}"}
+            failed = []
+            for mid in self._machine_ids:
+                resp = requests.post(
+                    f"{API_URL}/api/machine/{self._action}/{mid}",
+                    headers=headers,
+                    timeout=5,
+                )
+                if resp.status_code != 200:
+                    failed.append(mid)
+            if failed:
+                self.error.emit(f"{len(failed)} machine(s) failed to {self._action}.")
+            else:
+                self.done.emit()
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+def _get_token(api_url: str, api_key: str) -> str:
+    import requests
+    return requests.post(
+        f"{api_url}/api/token", json={"api_key": api_key}, timeout=5
+    ).json().get("token", "")
+
+
+# ── Page ─────────────────────────────────────────────────────────────────────
+
 class MachinePage(QWidget):
+
+    _PAGE_SIZE = 10
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._machines = []
+        self._machines         = []
+        self._filtered_machines = []
+        self._current_page     = 1
+        self._worker           = None   # keep reference so GC doesn't kill the thread
         self._build_ui()
         self._load()
 
@@ -71,18 +141,19 @@ class MachinePage(QWidget):
         self._approve_all_btn.clicked.connect(self._approve_all_pending)
         title_row.addWidget(self._approve_all_btn)
 
-        refresh_btn = QPushButton("Refresh")
-        refresh_btn.setStyleSheet(
+        self._refresh_btn = QPushButton("Refresh")
+        self._refresh_btn.setStyleSheet(
             "QPushButton{background:#3B82F6;color:white;border:none;border-radius:6px;"
             "padding:6px 16px;font-weight:700;font-size:12px;}"
             "QPushButton:hover{background:#2563EB;}"
+            "QPushButton:disabled{background:#93C5FD;color:white;border:none;}"
         )
-        refresh_btn.clicked.connect(self._load)
-        title_row.addWidget(refresh_btn)
+        self._refresh_btn.clicked.connect(self._load)
+        title_row.addWidget(self._refresh_btn)
         root.addLayout(title_row)
 
         # Summary bar
-        self._summary = QLabel("")
+        self._summary = QLabel("Loading…")
         self._summary.setStyleSheet("font-size: 12px; color: #64748B;")
         root.addWidget(self._summary)
 
@@ -104,6 +175,7 @@ class MachinePage(QWidget):
         self._table.setEditTriggers(QTableWidget.NoEditTriggers)
         self._table.setAlternatingRowColors(True)
         self._table.verticalHeader().setVisible(False)
+        self._table.setSortingEnabled(False)
         self._table.setStyleSheet("""
             QTableWidget {
                 border: 1px solid #E2E8F0; border-radius: 8px;
@@ -118,33 +190,72 @@ class MachinePage(QWidget):
         """)
         root.addWidget(self._table)
 
-    # ── Data ─────────────────────────────────────────────────────────────────
+        # Pagination controls
+        page_row = QHBoxLayout()
+        page_row.addStretch()
+
+        self._prev_btn = QPushButton("◀ Prev")
+        self._prev_btn.setFixedWidth(80)
+        self._prev_btn.setStyleSheet(
+            "QPushButton{background:#F1F5F9;color:#1E293B;border:1px solid #CBD5E1;"
+            "border-radius:6px;padding:5px 10px;font-weight:700;font-size:12px;}"
+            "QPushButton:hover{background:#E2E8F0;}"
+            "QPushButton:disabled{color:#CBD5E1;border-color:#E2E8F0;}"
+        )
+        self._prev_btn.clicked.connect(self._prev_page)
+        page_row.addWidget(self._prev_btn)
+
+        self._page_label = QLabel("Page 1 of 1")
+        self._page_label.setStyleSheet("font-size:12px;color:#475569;font-weight:600;padding:0 12px;")
+        self._page_label.setAlignment(Qt.AlignCenter)
+        page_row.addWidget(self._page_label)
+
+        self._next_btn = QPushButton("Next ▶")
+        self._next_btn.setFixedWidth(80)
+        self._next_btn.setStyleSheet(
+            "QPushButton{background:#F1F5F9;color:#1E293B;border:1px solid #CBD5E1;"
+            "border-radius:6px;padding:5px 10px;font-weight:700;font-size:12px;}"
+            "QPushButton:hover{background:#E2E8F0;}"
+            "QPushButton:disabled{color:#CBD5E1;border-color:#E2E8F0;}"
+        )
+        self._next_btn.clicked.connect(self._next_page)
+        page_row.addWidget(self._next_btn)
+
+        page_row.addStretch()
+        root.addLayout(page_row)
+
+    # ── Data (background thread) ──────────────────────────────────────────────
 
     def _load(self):
-        try:
-            import requests
-            from api_config import API_URL, API_KEY
+        self._set_busy(True)
+        self._worker = _LoadWorker()
+        self._worker.done.connect(self._on_loaded)
+        self._worker.error.connect(self._on_load_error)
+        self._worker.start()
 
-            tok = requests.post(
-                f"{API_URL}/api/token", json={"api_key": API_KEY}, timeout=5
-            ).json().get("token", "")
-            resp = requests.get(
-                f"{API_URL}/api/machine/list",
-                headers={"Authorization": f"Bearer {tok}"},
-                timeout=8,
-            )
-            if resp.status_code == 200:
-                self._machines = resp.json().get("machines", [])
-                self._filter()
-            else:
-                logger.error("machine/list returned %s", resp.status_code)
-        except Exception as exc:
-            logger.error("Failed to load machines: %s", exc)
-            QMessageBox.warning(self, "Error", f"Could not load machine list:\n{exc}")
+    def _on_loaded(self, machines: list):
+        self._machines = machines
+        self._filter()
+        self._set_busy(False)
+
+    def _on_load_error(self, msg: str):
+        logger.error("Failed to load machines: %s", msg)
+        self._summary.setText(f"Error: {msg}")
+        self._set_busy(False)
+
+    def _set_busy(self, busy: bool):
+        self._refresh_btn.setEnabled(not busy)
+        self._approve_all_btn.setEnabled(not busy)
+        if busy:
+            self._refresh_btn.setText("Loading…")
+        else:
+            self._refresh_btn.setText("Refresh")
+
+    # ── Filter / populate ─────────────────────────────────────────────────────
 
     def _filter(self):
         query  = self._search.text().lower()
-        status = self._status_filter.currentText().lower()   # all / approved / pending / revoked
+        status = self._status_filter.currentText().lower()
 
         visible = []
         for m in self._machines:
@@ -160,7 +271,9 @@ class MachinePage(QWidget):
                 continue
             visible.append(m)
 
-        self._populate(visible)
+        self._filtered_machines = visible
+        self._current_page = 1
+        self._render_page()
 
         total    = len(self._machines)
         approved = sum(1 for m in self._machines if m.get("status") == "approved")
@@ -174,26 +287,53 @@ class MachinePage(QWidget):
         )
         self._summary.setTextFormat(Qt.RichText)
 
-        self._approve_all_btn.setEnabled(pending > 0)
+        self._approve_all_btn.setEnabled(pending > 0 and self._refresh_btn.isEnabled())
         self._approve_all_btn.setText(
             f"Approve All Pending ({pending})" if pending > 0 else "Approve All Pending"
         )
 
-    def _populate(self, machines):
-        self._table.setRowCount(0)
+    def _render_page(self):
+        total_pages = max(1, (len(self._filtered_machines) + self._PAGE_SIZE - 1) // self._PAGE_SIZE)
+        self._current_page = max(1, min(self._current_page, total_pages))
+
+        start = (self._current_page - 1) * self._PAGE_SIZE
+        end   = start + self._PAGE_SIZE
+        self._populate(self._filtered_machines[start:end])
+
+        self._page_label.setText(f"Page {self._current_page} of {total_pages}")
+        self._prev_btn.setEnabled(self._current_page > 1)
+        self._next_btn.setEnabled(self._current_page < total_pages)
+
+    def _prev_page(self):
+        if self._current_page > 1:
+            self._current_page -= 1
+            self._render_page()
+
+    def _next_page(self):
+        total_pages = max(1, (len(self._filtered_machines) + self._PAGE_SIZE - 1) // self._PAGE_SIZE)
+        if self._current_page < total_pages:
+            self._current_page += 1
+            self._render_page()
+
+    def _populate(self, machines: list):
+        tbl = self._table
+        tbl.setUpdatesEnabled(False)
+        tbl.setSortingEnabled(False)
+        tbl.setRowCount(0)
+
+        bold = QFont()
+        bold.setBold(True)
+
         for m in machines:
-            row = self._table.rowCount()
-            self._table.insertRow(row)
+            row = tbl.rowCount()
+            tbl.insertRow(row)
 
             status = m.get("status", "unknown")
             reg    = (m.get("registered_at") or "")[:10]
-
-            if status == "approved":
-                status_color = _GREEN
-            elif status == "pending":
-                status_color = _AMBER
-            else:
-                status_color = _RED
+            status_color = (
+                _GREEN if status == "approved" else
+                _AMBER if status == "pending"  else _RED
+            )
 
             for col, text in enumerate([
                 m.get("hostname")    or "—",
@@ -207,17 +347,14 @@ class MachinePage(QWidget):
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
                 if col == 4:
                     item.setForeground(QColor(status_color))
-                    f = QFont()
-                    f.setBold(True)
-                    item.setFont(f)
-                self._table.setItem(row, col, item)
+                    item.setFont(bold)
+                tbl.setItem(row, col, item)
 
             # Action buttons
-            btn_layout = QHBoxLayout()
+            cell_widget = QWidget()
+            btn_layout = QHBoxLayout(cell_widget)
             btn_layout.setContentsMargins(4, 2, 4, 2)
             btn_layout.setSpacing(4)
-            cell_widget = QWidget()
-            cell_widget.setLayout(btn_layout)
 
             if status != "approved":
                 approve_btn = QPushButton("Approve")
@@ -243,11 +380,12 @@ class MachinePage(QWidget):
                 )
                 btn_layout.addWidget(revoke_btn)
 
-            self._table.setCellWidget(row, 6, cell_widget)
+            tbl.setCellWidget(row, 6, cell_widget)
 
-        self._table.resizeRowsToContents()
+        tbl.setUpdatesEnabled(True)
+        tbl.resizeRowsToContents()
 
-    # ── Actions ───────────────────────────────────────────────────────────────
+    # ── Actions (background thread) ───────────────────────────────────────────
 
     def _revoke(self, machine_id: str, hostname: str):
         r = QMessageBox.question(
@@ -258,13 +396,13 @@ class MachinePage(QWidget):
         )
         if r != QMessageBox.Yes:
             return
-        self._call("revoke", machine_id)
+        self._run_action("revoke", [machine_id])
 
     def _approve(self, machine_id: str, hostname: str):
-        self._call("approve", machine_id)
+        self._run_action("approve", [machine_id])
 
     def _approve_all_pending(self):
-        pending = [m for m in self._machines if m.get("status") == "pending"]
+        pending = [m["machine_id"] for m in self._machines if m.get("status") == "pending"]
         if not pending:
             return
         r = QMessageBox.question(
@@ -275,48 +413,22 @@ class MachinePage(QWidget):
         )
         if r != QMessageBox.Yes:
             return
-        failed = 0
-        for m in pending:
-            try:
-                import requests
-                from api_config import API_URL, API_KEY
+        self._run_action("approve", pending)
 
-                tok = requests.post(
-                    f"{API_URL}/api/token", json={"api_key": API_KEY}, timeout=5
-                ).json().get("token", "")
-                resp = requests.post(
-                    f"{API_URL}/api/machine/approve/{m['machine_id']}",
-                    headers={"Authorization": f"Bearer {tok}"},
-                    timeout=5,
-                )
-                if resp.status_code != 200:
-                    failed += 1
-            except Exception as exc:
-                logger.error("Approve failed for %s: %s", m.get("hostname"), exc)
-                failed += 1
+    def _run_action(self, action: str, machine_ids: list):
+        self._set_busy(True)
+        worker = _ActionWorker(action, machine_ids)
+        worker.done.connect(lambda: self._on_action_done(worker))
+        worker.error.connect(lambda msg: self._on_action_error(worker, msg))
+        # Keep reference alive until finished
+        worker._keep_alive = worker
+        worker.start()
 
-        if failed:
-            QMessageBox.warning(self, "Partial Success",
-                                f"{len(pending) - failed} approved, {failed} failed.")
+    def _on_action_done(self, worker):
+        worker._keep_alive = None
         self._load()
 
-    def _call(self, action: str, machine_id: str):
-        try:
-            import requests
-            from api_config import API_URL, API_KEY
-
-            tok = requests.post(
-                f"{API_URL}/api/token", json={"api_key": API_KEY}, timeout=5
-            ).json().get("token", "")
-            resp = requests.post(
-                f"{API_URL}/api/machine/{action}/{machine_id}",
-                headers={"Authorization": f"Bearer {tok}"},
-                timeout=5,
-            )
-            if resp.status_code == 200:
-                self._load()
-            else:
-                QMessageBox.warning(self, "Error",
-                                    f"Action failed (HTTP {resp.status_code})")
-        except Exception as exc:
-            QMessageBox.warning(self, "Error", str(exc))
+    def _on_action_error(self, worker, msg: str):
+        worker._keep_alive = None
+        QMessageBox.warning(self, "Error", msg)
+        self._load()

@@ -802,17 +802,29 @@ class ClientDashboard(QWidget):
         lay.addWidget(self._build_summary_strip())
         lay.addWidget(self._build_footer())
         
-        # Load global_tag for this branch
+        # Load branch flags
         self.global_tag = ''
+        self.line_of_business = ''
+        self.has_payroll = False
         try:
-            _gt = self.db_manager.execute_query(
-                "SELECT COALESCE(global_tag, '') AS global_tag FROM branches WHERE name = %s LIMIT 1",
+            _br = self.db_manager.execute_query(
+                "SELECT COALESCE(global_tag, '') AS global_tag, "
+                "COALESCE(line_of_business, '') AS line_of_business, "
+                "COALESCE(payroll, '') AS payroll "
+                "FROM branches WHERE name = %s LIMIT 1",
                 (self.branch,)
             )
-            if _gt:
-                self.global_tag = str(_gt[0].get('global_tag') or '').strip()
+            if _br:
+                self.global_tag = str(_br[0].get('global_tag') or '').strip()
+                self.line_of_business = str(_br[0].get('line_of_business') or '').strip()
+                self.has_payroll = str(_br[0].get('payroll') or '').strip().upper() == 'YES'
         except Exception:
             pass
+        # Propagate LOB flag to export handler so VAT column appears for Group 1
+        self.export_handler.line_of_business = self.line_of_business
+        self.export_handler._has_vat = (
+            str(self.line_of_business or '').strip().lower().replace(' ', '') == 'group1'
+        )
 
         self._connect_shared_fields()
         self._connect_palawan_adjustments_to_brand_b()
@@ -885,8 +897,6 @@ class ClientDashboard(QWidget):
             logger.error("_setup_pc_salary_button error: %s", e)
 
         from PyQt5.QtCore import QTimer as _QT
-        _QT.singleShot(300, self._load_draft)
-
 
         self.loading_overlay = LoadingOverlay(self)
 
@@ -2259,6 +2269,55 @@ class ClientDashboard(QWidget):
         if hasattr(self, '_tray_icon'):
             self._tray_icon.hide()
 
+        # Auto-save the draft silently so Palawan transaction details entered
+        # via the dialog survive app close without requiring a manual Save Draft.
+        # Skip if the entry is already submitted (locked) — no draft needed.
+        try:
+            sd = self.date_picker.date().toString("yyyy-MM-dd")
+            _skip = False
+            if self._is_connected:
+                _sa = self.check_existing_entry(sd, "Brand A")
+                _sb = self.check_existing_entry(sd, "Brand B")
+                if _sa == "locked" and _sb == "locked":
+                    _skip = True
+            if not _skip:
+                draft = {
+                    "saved_at": datetime.datetime.now().isoformat(),
+                    "date": sd,
+                    "brand_a": {
+                        "beginning_balance": self.beginning_balance_input_a.text(),
+                        "beginning_balance_auto_filled": self.beginning_balance_auto_filled_a,
+                        "cash_count": self.cash_count_input_a.text(),
+                        "cash_flow": self.cash_flow_tab_a.get_raw_field_values(),
+                        "bank_account": self.cash_flow_tab_a.selected_bank_account,
+                    },
+                    "brand_b": {
+                        "beginning_balance": self.beginning_balance_input_b.text(),
+                        "beginning_balance_auto_filled": self.beginning_balance_auto_filled_b,
+                        "cash_count": self.cash_count_input_b.text(),
+                        "cash_flow": self.cash_flow_tab_b.get_raw_field_values(),
+                        "bank_account": self.cash_flow_tab_b.selected_bank_account,
+                    },
+                    "palawan": self._collect_palawan_for_draft(),
+                    "mc_in": self._collect_mc_details_for_draft("MC In"),
+                    "mc_out": self._collect_mc_details_for_draft("MC Out"),
+                }
+                path = self._get_draft_path()
+                all_drafts = {}
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        existing = json.load(f)
+                    if "date" in existing and "saved_at" in existing:
+                        old_date = existing["date"]
+                        all_drafts[old_date] = existing
+                    else:
+                        all_drafts = existing
+                all_drafts[sd] = draft
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(all_drafts, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass  # Never block app close due to draft save failure
+
         # Stop notification listener
         if self._notification_listener:
             try:
@@ -2585,7 +2644,19 @@ class ClientDashboard(QWidget):
         )
 
     def on_date_changed(self):
-        # Skip entirely when offline — no network calls, no lag
+        # Always clear in-memory state when the date changes, even offline.
+        # Without this, _detailed_transactions from the previous date persists
+        # and gets saved under the new date when the user clicks Save offline.
+        self._clear_all_dialog_caches()
+        for tab in (self.cash_flow_tab_a, self.cash_flow_tab_b, self.palawan_tab):
+            if hasattr(tab, 'clear_fields'):
+                tab.clear_fields()
+        for bb in (self.beginning_balance_input_a, self.beginning_balance_input_b):
+            bb.clear()
+        for cc in (self.cash_count_input_a, self.cash_count_input_b):
+            cc.clear()
+
+        # Skip DB queries when offline — no network calls, no lag
         if not self._is_connected:
             return
 
@@ -2636,6 +2707,11 @@ class ClientDashboard(QWidget):
                 self._msg("Error", f"Failed to reload: {exc}", QMessageBox.Critical)
 
     def _on_date_changed_inner(self, sd):
+        # Reset locked-view guard — set True below only when BOTH brands are locked.
+        # While True, recalculate_all() is a no-op so DB-saved balances/variance
+        # are never overwritten by a fresh formula pass.
+        self._viewing_locked = False
+
         # Clear all cached dialogs and breakdowns FIRST to prevent stale data
         self._clear_all_dialog_caches()
 
@@ -2677,6 +2753,10 @@ class ClientDashboard(QWidget):
         logger.debug(f"on_date_changed: date={sd} branch={self.branch} corp={self.corporation} status_a={status_a} status_b={status_b}")
 
         if status_a == "locked" and status_b == "locked":
+            # Block formula recalculation for the entire locked-view session so
+            # the DB-saved ending balance, cash result, and variance status are
+            # displayed exactly as they were at the time of posting.
+            self._viewing_locked = True
 
             try:
                 if hasattr(self, 'loading_overlay'):
@@ -2690,7 +2770,8 @@ class ClientDashboard(QWidget):
                 # Now load brand data - recalculate_all() will include palawan amounts
                 self._load_brand_report_data("Brand A", sd)
                 self._load_brand_report_data("Brand B", sd)
-                self._apply_carry_over_to_brand_b()
+                # Do NOT carry over Brand A → Brand B for locked reports — each brand's
+                # fields must show exactly what was saved in the database at posting time.
             finally:
                 try:
                     if hasattr(self, 'loading_overlay'):
@@ -2703,20 +2784,18 @@ class ClientDashboard(QWidget):
             self.auto_fill_button_a.setEnabled(False)
             self.auto_fill_button_b.setEnabled(False)
             self.post_button.setEnabled(False)
-            # Prevent loading draft for submitted reports
-            if hasattr(self, 'load_draft_button'):
-                self.load_draft_button.setEnabled(False)
             self._toggle_inputs(False)
             # Make cash float read-only when viewing locked report
             if hasattr(self, 'cash_float_input_a') and self.cash_float_input_a:
                 self.cash_float_input_a.setReadOnly(True)
+            # Refresh TCR / TCO display labels from the now-loaded field values.
+            # recalculate_all() is blocked for locked reports so we do this targeted pass.
+            self._recalculate_locked_totals()
             # Silently remove drafts for all submitted dates
             self._purge_submitted_drafts()
             return
 
         self._toggle_inputs(True)
-        if hasattr(self, 'load_draft_button'):
-            self.load_draft_button.setEnabled(True)
 
         any_unlocked = False
         for brand, status, bf in [("A", status_a, "Brand A"), ("B", status_b, "Brand B")]:
@@ -2792,10 +2871,14 @@ class ClientDashboard(QWidget):
         if any_unlocked or not status_a or not status_b:
             self.post_button.setEnabled(True)
 
-        try:
-            self._restore_palawan_tab(sd)
-        except Exception as e:
-            logger.error(f"Error restoring palawan tab for date {sd}: {e}")
+        # Only restore palawan data when the date actually has a submitted or
+        # unlocked entry. For brand-new (empty) dates, leave the tab blank so
+        # no stale transactions from a previous date can carry over.
+        if status_a in ("locked", "unlocked") or status_b in ("locked", "unlocked"):
+            try:
+                self._restore_palawan_tab(sd)
+            except Exception as e:
+                logger.error(f"Error restoring palawan tab for date {sd}: {e}")
 
         self.recalculate_all()
 
@@ -2804,6 +2887,17 @@ class ClientDashboard(QWidget):
 
     def _restore_palawan_tab(self, date_str):
         """Load palawan data from database (delegates to PalawanManager)."""
+        # Guard against re-entrancy: if the date picker has already moved to a
+        # different date (e.g. user changed date while loading overlay was open),
+        # skip this restore so stale data from the OLD date never lands in
+        # _detailed_transactions while the user is looking at the NEW date.
+        current = self.date_picker.date().toString("yyyy-MM-dd")
+        if current != date_str:
+            logger.debug(
+                "_restore_palawan_tab: skipping stale load for %s (current date is %s)",
+                date_str, current,
+            )
+            return
         data = self.palawan_manager.restore_palawan_tab(date_str)
         if data:
             self.palawan_tab.load_data(data)
@@ -2927,9 +3021,34 @@ class ClientDashboard(QWidget):
     def enable_all_inputs(self):
         self._toggle_inputs(True)
 
+    def _recalculate_locked_totals(self):
+        """Refresh TCR / TCO summary labels after loading a locked report.
+
+        Intentionally narrow: only calls update_totals() so the Total Cash Receipt
+        and Total Cash Out labels reflect the DB-loaded field values.  Does NOT
+        touch ending balance, variance, SC, or any other auto-calculated field.
+        Safe to call even when _viewing_locked is True.
+        """
+        for brand in ("a", "b"):
+            bb  = getattr(self, f"beginning_balance_input_{brand}")
+            cft = getattr(self, f"cash_flow_tab_{brand}")
+            try:
+                beg = float(bb.text().strip().replace(",", "") or 0)
+            except ValueError:
+                beg = 0.0
+            deb  = cft.get_debit_total()
+            cred = cft.get_credit_total()
+            cft.update_totals(beg, deb, cred)
+
     def recalculate_all(self):
-        # Skip if we're in the middle of loading a report - don't overwrite database values
+        # Skip while loading to avoid overwriting database values mid-load
         if getattr(self, '_skip_ending_balance_recalc', False):
+            return
+        # Skip entirely when viewing a locked (submitted) report — the DB-saved
+        # ending balance, cash result, and variance must be shown as-is; running
+        # the formula here would overwrite them with a freshly computed value that
+        # may not match what was saved at posting time.
+        if getattr(self, '_viewing_locked', False):
             return
 
         for brand in ("a", "b"):
@@ -2954,6 +3073,8 @@ class ClientDashboard(QWidget):
         self.update_cash_result()
 
     def update_cash_result(self):
+        if getattr(self, '_viewing_locked', False):
+            return
         ready_a = self._update_brand_variance("A")
         ready_b = self._update_brand_variance("B")
         # Never re-enable post button while offline
@@ -4036,6 +4157,8 @@ class ClientDashboard(QWidget):
 
                 def _amt_carry(bw):
                     def _carry(text):
+                        if getattr(self, '_viewing_locked', False):
+                            return
                         if not bw.hasFocus():
                             bw.blockSignals(True); bw.setText(text); bw.blockSignals(False)
                             self.recalculate_all()
@@ -4043,6 +4166,8 @@ class ClientDashboard(QWidget):
 
                 def _lot_carry(bw):
                     def _carry(text):
+                        if getattr(self, '_viewing_locked', False):
+                            return
                         if bw and not bw.hasFocus():
                             bw.blockSignals(True); bw.setText(text); bw.blockSignals(False)
                     return _carry
@@ -4200,6 +4325,8 @@ class ClientDashboard(QWidget):
                 nonlocal recalc_enabled
                 if not recalc_enabled:
                     return
+                if getattr(self, '_viewing_locked', False):
+                    return
 
                 lotes_jew_new = _get_value("credit", "empeno_jew_new", c_lots, ["Empeno JEW. (NEW)"])
                 lotes_jew_renew = _get_value("credit", "empeno_jew_renew", c_lots, ["Empeno JEW (RENEW)"])
@@ -4298,6 +4425,8 @@ class ClientDashboard(QWidget):
 
             def _update_jew_ai_a():
                 """Update Jew. A.I for Brand A"""
+                if getattr(self, '_viewing_locked', False):
+                    return
                 total = sum(self._jew_computed.values())
                 jew_ai = d_inp_a.get("Jew. A.I")
                 if jew_ai:
@@ -4308,6 +4437,8 @@ class ClientDashboard(QWidget):
 
             def _update_jew_ai_b():
                 """Update Jew. A.I for Brand B"""
+                if getattr(self, '_viewing_locked', False):
+                    return
                 total = sum(self._jew_computed_b.values())
                 jew_ai_b = d_inp_b.get("Jew. A.I")
                 if jew_ai_b:
@@ -4318,26 +4449,28 @@ class ClientDashboard(QWidget):
 
             def _calculate_sc_b():
                 """Calculate S.C. for Brand B: (Lotes JEW NEW + Lotes JEW RENEW) × 5"""
+                if getattr(self, '_viewing_locked', False):
+                    return
                 try:
                     lotes_new = 0.0
                     lotes_renew = 0.0
-                    
+
                     lotes_new_field = c_lotes_b.get("Empeno JEW. (NEW)")
                     if lotes_new_field:
                         try:
                             lotes_new = float(lotes_new_field.text().strip() or 0)
                         except ValueError:
                             lotes_new = 0.0
-                    
+
                     lotes_renew_field = c_lotes_b.get("Empeno JEW (RENEW)")
                     if lotes_renew_field:
                         try:
                             lotes_renew = float(lotes_renew_field.text().strip() or 0)
                         except ValueError:
                             lotes_renew = 0.0
-                    
+
                     sc_value = (lotes_new + lotes_renew) * 5
-                    
+
                     sc_b = d_inp_b.get("S.C")
                     if sc_b:
                         sc_b.blockSignals(True)
@@ -4846,7 +4979,7 @@ class ClientDashboard(QWidget):
 
     def _load_draft(self):
         try:
-            # Purge first — DB is guaranteed available at this point
+            # Purge submitted drafts first so they never appear in the list
             self._purge_submitted_drafts()
 
             path = self._get_draft_path()
@@ -4929,6 +5062,11 @@ class ClientDashboard(QWidget):
 
             for key, val in draft.get("palawan", {}).items():
                 section, label = key.split(":", 1)
+                if section == "transactions":
+                    # Restore per-transaction detail entries from the dialog
+                    if isinstance(val, list):
+                        self.palawan_tab._detailed_transactions[label] = val
+                    continue
                 w = (self.palawan_tab.lotes_inputs.get(label) if section == "lotes"
                      else getattr(self.palawan_tab, f"{section}_inputs", {}).get(label))
                 if w:

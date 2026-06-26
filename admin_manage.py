@@ -158,6 +158,16 @@ def create_corporation(name: str):
         return row[0]['id']
 
 
+def ensure_payroll_column():
+    """Add payroll VARCHAR column to branches table if it doesn't already exist."""
+    try:
+        db_manager.execute_query(
+            "ALTER TABLE branches ADD COLUMN payroll VARCHAR(10) NULL DEFAULT NULL"
+        )
+    except Exception:
+        pass  # Column already exists
+
+
 def create_branch(name: str, corporation_id: int, os_name: str = None, sub_corporation_id: int = None):
     if os_name and sub_corporation_id:
         q = "INSERT INTO branches (corporation_id, name, os_name, sub_corporation_id) VALUES (%s, %s, %s, %s)"

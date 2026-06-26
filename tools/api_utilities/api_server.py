@@ -65,6 +65,16 @@ SECRET_KEY = os.environ.get("ORS_SECRET_KEY", "")
 API_HOST   = os.environ.get("ORS_API_HOST",   "0.0.0.0")
 API_PORT   = int(os.environ.get("ORS_API_PORT", 5000))
 JWT_HOURS  = int(os.environ.get("ORS_JWT_HOURS", 12))
+
+if not SECRET_KEY:
+    import sys as _sys
+    print("FATAL: ORS_SECRET_KEY is not set. All JWT tokens would be signed with an empty key, "
+          "allowing anyone to forge admin credentials. Set ORS_SECRET_KEY in your .env file.", flush=True)
+    _sys.exit(1)
+if not API_KEY:
+    import sys as _sys
+    print("FATAL: ORS_API_KEY is not set. The API is effectively open to anyone.", flush=True)
+    _sys.exit(1)
 CACHE_TTL   = int(os.environ.get("ORS_CACHE_TTL",  30))    # seconds; 0 = disabled
 CACHE_MAX   = int(os.environ.get("ORS_CACHE_MAX",  2000))   # in-memory fallback max entries
 REDIS_URL   = os.environ.get("ORS_REDIS_URL",  "redis://127.0.0.1:6379/0")
@@ -127,6 +137,67 @@ def _extract_table_name(sql: str) -> Optional[str]:
     return "unknown"
 
 
+# ── Row-Level Security ────────────────────────────────────────────────────────
+# Tables that contain per-branch data. Non-admin clients can only access rows
+# where the branch column matches the branch claim in their JWT token.
+_BRANCH_SCOPED_TABLES = frozenset({
+    "daily_reports", "daily_reports_brand_a",
+    "payable_tbl", "payable_tbl_brand_a",
+    "global_other_services_tbl", "other_services_tbl_brand_a",
+    "cash_float_tbl", "pending_notifications",
+})
+
+_ADMIN_ROLES = frozenset({"admin", "super_admin"})
+
+
+def _enforce_rls(payload: dict, sql: str, params) -> None:
+    """Raise HTTP 403 if a non-admin client queries another branch's data.
+
+    Skipped for:
+      - api_key tokens (machine/service auth — no branch claim)
+      - admin / super_admin roles
+      - tables that are not branch-scoped
+    """
+    if payload.get("type") == "api_key":
+        return
+    if payload.get("role", "") in _ADMIN_ROLES:
+        return
+
+    token_branch = payload.get("branch", "")
+    if not token_branch:
+        return  # token has no branch claim — cannot enforce
+
+    table = (_extract_table_name(sql) or "").lower()
+
+    # Fail closed: if table name cannot be parsed but SQL mentions a scoped table
+    # keyword, block the request rather than letting it through.
+    if table == "unknown" or not table:
+        sql_upper = sql.upper()
+        if any(t.upper() in sql_upper for t in _BRANCH_SCOPED_TABLES):
+            log.warning("RLS: unparseable SQL mentions a scoped table — blocked. role=%s sql=%.80s",
+                        payload.get("role"), sql)
+            raise HTTPException(status_code=403, detail="Access denied: query could not be validated.")
+        return
+
+    if table not in _BRANCH_SCOPED_TABLES:
+        return  # not a branch-scoped table
+
+    params_list = list(params) if params else []
+    # Require both: token branch in params AND the SQL contains a branch filter.
+    # This prevents embedding the branch as a non-filter param to satisfy the check.
+    sql_upper = sql.upper()
+    branch_in_sql = "BRANCH" in sql_upper
+    if not branch_in_sql or token_branch not in params_list:
+        log.warning(
+            "RLS violation blocked: role=%s branch=%s table=%s branch_in_sql=%s params=%s",
+            payload.get("role"), token_branch, table, branch_in_sql, params_list[:6],
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: you can only access your own branch data.",
+        )
+
+
 def _make_cache_key(sql: str, params) -> str:
     raw = f"{sql}|{params}"
     return "ors:" + hashlib.sha256(raw.encode()).hexdigest()
@@ -183,7 +254,14 @@ def _cache_clear_all() -> None:
     global _cache
     if _redis_ok and _redis is not None:
         try:
-            _redis.delete(*_redis.keys("ors:*"))
+            # SCAN is non-blocking; KEYS blocks the Redis event loop for O(N) time
+            cursor = 0
+            while True:
+                cursor, keys = _redis.scan(cursor, match="ors:*", count=200)
+                if keys:
+                    _redis.delete(*keys)
+                if cursor == 0:
+                    break
         except Exception:
             pass
     with _cache_lock:
@@ -254,7 +332,9 @@ _server_start = datetime.datetime.utcnow()
 _KNOWN_PATHS = frozenset({
     "/api/token", "/api/exec", "/api/exec_safe", "/api/batch",
     "/api/health", "/api/stats", "/api/config", "/api/cache/clear",
-    "/api/enqueue",
+    "/api/enqueue", "/api/task",
+    "/api/notify/pending", "/api/notify/reset_entry", "/api/notify/stats", "/api/notify/capabilities",
+    "/api/machine/status", "/api/machine/list", "/api/machine/register",
     "/docs", "/openapi.json", "/redoc",
 })
 
@@ -577,15 +657,18 @@ class _TrackingMiddleware(BaseHTTPMiddleware):
             _counters[endpoint] += 1
             if is_error:
                 _errors[endpoint] += 1
-            _recent.append({
-                "request_id": req_id,
-                "time":       start.strftime("%Y-%m-%d %H:%M:%S"),
-                "method":     request.method,
-                "path":       endpoint,
-                "status":     response.status_code,
-                "ms":         ms,
-                "ip":         ip,
-            })
+            # Long-poll endpoints intentionally hold the connection open for up to 29 s.
+            # Including them in latency percentiles would make P95/P99 meaningless.
+            if endpoint != "/api/notify/pending":
+                _recent.append({
+                    "request_id": req_id,
+                    "time":       start.strftime("%Y-%m-%d %H:%M:%S"),
+                    "method":     request.method,
+                    "path":       endpoint,
+                    "status":     response.status_code,
+                    "ms":         ms,
+                    "ip":         ip,
+                })
         return response
 
 
@@ -710,6 +793,14 @@ async def _raise_thread_limiter():
     # Start background cleanup (memory leak prevention)
     _start_background_cleanup()
 
+    # Create notifications table once at startup per worker — avoids the race
+    # where multiple concurrent first-requests all see _notifications_table_ready=False
+    # and all call CREATE TABLE IF NOT EXISTS simultaneously.
+    import asyncio as _asyncio
+    await _asyncio.to_thread(_ensure_notifications_table)
+    global _notifications_table_ready
+    _notifications_table_ready = True
+
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
@@ -754,9 +845,9 @@ def _decode_token(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 
-def _require_token(request: Request) -> None:
-    """FastAPI dependency: validate any JWT (api_key or user)."""
-    _decode_token(request)
+def _require_token(request: Request) -> dict:
+    """FastAPI dependency: validate any JWT and return the decoded payload."""
+    return _decode_token(request)
 
 
 def _require_role(*roles: str):
@@ -901,59 +992,68 @@ def stats(_: None = Depends(_require_token)):
             if ts
         ]
 
+    # Snapshot shared state under the lock, build the response dict outside.
+    # Holding _stats_lock while constructing a large dict with list comprehensions
+    # blocks _TrackingMiddleware from appending to _recent on every request.
     with _stats_lock, _cache_lock:
-        return {
-            "uptime":       f"{h}h {m}m {s}s",
-            "total_hits":   dict(_counters),
-            "total_errors": dict(_errors),
-            "recent":       list(reversed(_recent)),  # newest first
-            "cache": {
-                "backend":      "redis" if _redis_ok else "memory",
-                "redis_url":    REDIS_URL if _redis_ok else None,
-                "ttl_seconds":  CACHE_TTL,
-                "entries":      redis_entries if _redis_ok else len(_cache),
-                "hits":         _cache_hits,
-                "misses":       _cache_misses,
-                "hit_rate_pct": hit_rate,
-            },
-            "db_pool":      pool_stats,
-            "bot_blocker": {
-                "window_secs":   _BOT_WINDOW_SECS,
-                "probe_limit":   _BOT_PROBE_LIMIT,
-                "ban_secs":      _BOT_BAN_SECS,
-                "banned_count":  len(banned_list),
-                "banned":        banned_list,
-                "probing_count": len(probing_list),
-                "probing":       probing_list,
-            },
-            "ip_blocklist": {
-                "blocked_count": len(_IP_BLOCKLIST),
-                "blocked_ips":   sorted(_IP_BLOCKLIST),
-            },
-            "token_rate_limiter": {
-                "window_secs":    _TOKEN_WINDOW,
-                "limit":          _TOKEN_LIMIT,
-                "lockout_secs":   _TOKEN_LOCKOUT,
-                "locked_out_count": len(_token_locked),
-                "locked_out_ips": [
-                    {"ip": ip, "expires_in": max(0, int(exp - time.monotonic()))}
-                    for ip, exp in list(_token_locked.items())
-                ],
-            },
-            "exec_rate_limiter": {
-                "window_secs":  _EXEC_WINDOW,
-                "limit":        _EXEC_LIMIT,
-                "ban_secs":     _EXEC_BAN_SECS,
-                "banned_count": sum(
-                    1 for exp in _exec_banned_until.values() if exp > time.monotonic()
-                ),
-                "banned_ips": [
-                    {"ip": ip, "expires_in": max(0, int(exp - time.monotonic()))}
-                    for ip, exp in list(_exec_banned_until.items())
-                    if exp > time.monotonic()
-                ],
-            },
-        }
+        snap_counters = dict(_counters)
+        snap_errors   = dict(_errors)
+        snap_recent   = list(reversed(_recent))
+        snap_cache_entries = len(_cache)
+        snap_hits     = _cache_hits
+        snap_misses   = _cache_misses
+
+    now = time.monotonic()
+    return {
+        "uptime":       f"{h}h {m}m {s}s",
+        "total_hits":   snap_counters,
+        "total_errors": snap_errors,
+        "recent":       snap_recent,
+        "cache": {
+            "backend":      "redis" if _redis_ok else "memory",
+            "redis_url":    REDIS_URL if _redis_ok else None,
+            "ttl_seconds":  CACHE_TTL,
+            "entries":      redis_entries if _redis_ok else snap_cache_entries,
+            "hits":         snap_hits,
+            "misses":       snap_misses,
+            "hit_rate_pct": hit_rate,
+        },
+        "db_pool":      pool_stats,
+        "bot_blocker": {
+            "window_secs":   _BOT_WINDOW_SECS,
+            "probe_limit":   _BOT_PROBE_LIMIT,
+            "ban_secs":      _BOT_BAN_SECS,
+            "banned_count":  len(banned_list),
+            "banned":        banned_list,
+            "probing_count": len(probing_list),
+            "probing":       probing_list,
+        },
+        "ip_blocklist": {
+            "blocked_count": len(_IP_BLOCKLIST),
+            "blocked_ips":   sorted(_IP_BLOCKLIST),
+        },
+        "token_rate_limiter": {
+            "window_secs":    _TOKEN_WINDOW,
+            "limit":          _TOKEN_LIMIT,
+            "lockout_secs":   _TOKEN_LOCKOUT,
+            "locked_out_count": len(_token_locked),
+            "locked_out_ips": [
+                {"ip": ip, "expires_in": max(0, int(exp - now))}
+                for ip, exp in list(_token_locked.items())
+            ],
+        },
+        "exec_rate_limiter": {
+            "window_secs":  _EXEC_WINDOW,
+            "limit":        _EXEC_LIMIT,
+            "ban_secs":     _EXEC_BAN_SECS,
+            "banned_count": sum(1 for exp in _exec_banned_until.values() if exp > now),
+            "banned_ips": [
+                {"ip": ip, "expires_in": max(0, int(exp - now))}
+                for ip, exp in list(_exec_banned_until.items())
+                if exp > now
+            ],
+        },
+    }
 
 
 @app.post("/api/cache/clear")
@@ -1092,13 +1192,14 @@ def verify_user_token(payload: dict = Depends(_require_role(
 
 
 @app.post("/api/exec")
-def exec_query(body: ExecRequest, request: Request, _: None = Depends(_require_token)):
+def exec_query(body: ExecRequest, request: Request, token: dict = Depends(_require_token)):
 
     remote = request.client.host if request.client else "unknown"
     _exec_rate_check(remote)
     _check_blocked(body.sql, remote)
 
     params = tuple(body.params) if body.params else None
+    _enforce_rls(token, body.sql, params)
     is_write = not _is_select(body.sql)
     operation = "INSERT" if "INSERT" in body.sql.upper() else "UPDATE" if "UPDATE" in body.sql.upper() else "DELETE" if "DELETE" in body.sql.upper() else "SELECT"
     table_name = _extract_table_name(body.sql)
@@ -1114,6 +1215,17 @@ def exec_query(body: ExecRequest, request: Request, _: None = Depends(_require_t
         result = _db.execute_query(body.sql, params)
         duration_ms = (time.time() - start_time) * 1000
 
+        # execute_query() swallows exceptions and returns None on failure.
+        # For writes, rowcount is always an int on success — None means the
+        # query failed (e.g. lock timeout 1205).  Return 503 so clients retry.
+        if is_write and result is None:
+            log.warning(f"{operation} on {table_name} returned None (likely lock timeout) from {remote}")
+            return JSONResponse(
+                content={"result": None, "error": "Write failed — database may be busy", "cached": False},
+                status_code=503,
+                headers={"Retry-After": "2"},
+            )
+
         # Log audit trail for writes
         if is_write:
             affected_rows = result if isinstance(result, int) else 0
@@ -1123,7 +1235,6 @@ def exec_query(body: ExecRequest, request: Request, _: None = Depends(_require_t
             if not is_write:
                 _cache_set(key, result, ttl=body.ttl)
             else:
-                # Clear cache after writes so fresh reads don't get stale data
                 _cache_clear_all()
 
         log.debug(f"{operation} on {table_name}: {duration_ms:.1f}ms from {remote}")
@@ -1133,7 +1244,6 @@ def exec_query(body: ExecRequest, request: Request, _: None = Depends(_require_t
         error_id = log_exception(e, source="api_exec", remote_ip=remote)
         log.error(f"Query error (ID:{error_id}): {e} | SQL: {body.sql[:120]}")
 
-        # Log failed audit
         if is_write:
             log_audit(operation, table_name, body.sql, remote_ip=remote, status="error", error_msg=str(e), duration_ms=duration_ms)
 
@@ -1141,13 +1251,14 @@ def exec_query(body: ExecRequest, request: Request, _: None = Depends(_require_t
 
 
 @app.post("/api/exec_safe")
-def exec_query_safe(body: ExecRequest, request: Request, _: None = Depends(_require_token)):
+def exec_query_safe(body: ExecRequest, request: Request, token: dict = Depends(_require_token)):
 
     remote = request.client.host if request.client else "unknown"
     _exec_rate_check(remote)
-    _check_blocked(body.sql, remote)  # SECURITY: Include remote IP for audit logging
+    _check_blocked(body.sql, remote)
 
     params = tuple(body.params) if body.params else None
+    _enforce_rls(token, body.sql, params)
 
     # FIX: Define key outside conditional to avoid NameError
     key = None
@@ -1178,7 +1289,7 @@ def exec_query_safe(body: ExecRequest, request: Request, _: None = Depends(_requ
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 @app.post("/api/batch")
-def exec_batch(body: BatchRequest, request: Request, _: None = Depends(_require_token)):
+def exec_batch(body: BatchRequest, request: Request, token: dict = Depends(_require_token)):
     """Execute multiple SQL statements in one HTTP round-trip.
 
     Each item may include an optional ``ttl`` to extend caching for
@@ -1192,6 +1303,7 @@ def exec_batch(body: BatchRequest, request: Request, _: None = Depends(_require_
     for item in body.queries:
         _check_blocked(item.sql, remote)
         params = tuple(item.params) if item.params else None
+        _enforce_rls(token, item.sql, params)
         # Try cache for SELECT statements
         if CACHE_TTL > 0 and _is_select(item.sql):
             key = _make_cache_key(item.sql, params)
@@ -1217,16 +1329,17 @@ def exec_batch(body: BatchRequest, request: Request, _: None = Depends(_require_
 
 
 @app.post("/api/enqueue")
-def enqueue(body: ExecRequest, _: None = Depends(_require_token)):
+def enqueue(body: ExecRequest, request: Request, token: dict = Depends(_require_token)):
 
-    _check_blocked(body.sql)
+    _check_blocked(body.sql, request.client.host if request.client else "unknown")
+    params = tuple(body.params) if body.params else None
+    _enforce_rls(token, body.sql, params)
     if _is_select(body.sql):
         raise HTTPException(status_code=400, detail="Use /api/exec for SELECT queries")
     if _task_queue.full():
         raise HTTPException(status_code=503, detail="Task queue full, try again shortly")
 
     task_id = str(uuid.uuid4())
-    params  = tuple(body.params) if body.params else ()
     with _task_lock:
         _task_results[task_id] = {"status": "queued", "result": None, "error": None, "finished_at": None}
     _task_queue.put(BackgroundTask(task_id, body.sql, params))
@@ -1325,46 +1438,58 @@ def notify_reset_entry(body: NotificationRequest, request: Request, _: None = De
 
 
 @app.get("/api/notify/pending")
-def get_pending_notifications(branch: str, timeout: int = 0, _: None = Depends(_require_token)):
+async def get_pending_notifications(branch: str, timeout: int = 0, token: dict = Depends(_require_token)):
     """Return and consume pending notifications for a branch.
 
     With timeout=0  → regular poll (returns immediately, empty or not).
-    With timeout>0  → long poll: holds the request open for up to `timeout` seconds,
-                       checking every 0.5 s. Returns as soon as a notification arrives.
-                       Capped at 29 s to stay within Gunicorn's default worker timeout.
+    With timeout>0  → long poll: suspends (not blocks) for up to `timeout` seconds,
+                       waking every 0.5 s. Capped at 29 s.
+
+    Uses async def + asyncio.sleep so 400 simultaneous long-poll connections
+    consume zero threads while waiting — previously each blocked a thread for
+    up to 29 s, exhausting the sync thread pool and causing 25 s+ latency.
     """
-    import time as _time
+    import asyncio
+
+    # Non-admin clients may only poll their own branch's notifications
+    if token.get("type") != "api_key" and token.get("role", "") not in _ADMIN_ROLES:
+        token_branch = token.get("branch", "")
+        if token_branch and token_branch != branch:
+            raise HTTPException(status_code=403, detail="Access denied: you can only poll your own branch.")
 
     global _notifications_table_ready
     if not _notifications_table_ready:
-        _ensure_notifications_table()
+        await asyncio.to_thread(_ensure_notifications_table)
         _notifications_table_ready = True
 
     max_wait = min(max(timeout, 0), 29)
-    deadline = _time.monotonic() + max_wait
+    deadline = time.monotonic() + max_wait
 
-    def _fetch():
+    async def _fetch():
         try:
-            rows = _db.execute_query(
+            rows = await asyncio.to_thread(
+                _db.execute_query,
                 "SELECT id, branch, date, admin_name, created_at FROM pending_notifications "
                 "WHERE branch = %s AND expires_at > NOW() ORDER BY created_at",
-                [branch]
+                [branch],
             )
             if rows:
                 ids = [r["id"] for r in rows]
                 placeholders = ",".join(["%s"] * len(ids))
-                _db.execute_query(
-                    f"DELETE FROM pending_notifications WHERE id IN ({placeholders})", ids
+                await asyncio.to_thread(
+                    _db.execute_query,
+                    f"DELETE FROM pending_notifications WHERE id IN ({placeholders})",
+                    ids,
                 )
             return rows or []
         except Exception as e:
             log.warning(f"Could not fetch pending notifications: {e}")
             return []
 
-    rows = _fetch()
-    while not rows and _time.monotonic() < deadline:
-        _time.sleep(0.5)
-        rows = _fetch()
+    rows = await _fetch()
+    while not rows and time.monotonic() < deadline:
+        await asyncio.sleep(0.5)
+        rows = await _fetch()
 
     notifications = [
         {
@@ -1425,14 +1550,19 @@ def machine_status(body: MachineStatusRequest, request: Request):
         )
         return {"status": existing[0]["status"]}
 
-    # New machine → pending
+    # New machine — respect ORS_MACHINE_AUTO_APPROVE (same as /api/machine/register).
+    # Set ORS_MACHINE_AUTO_APPROVE=true on the server while rolling out v2.0.0 so
+    # existing machines are auto-approved on first contact; set it back to false
+    # afterwards to require manual approval for genuinely new machines.
+    auto_approve = os.environ.get("ORS_MACHINE_AUTO_APPROVE", "false").lower() == "true"
+    initial_status = "approved" if auto_approve else "pending"
     _db.execute_query(
         """INSERT INTO machines
            (machine_id, hostname, mac_address, cpu_info, status, registered_at, last_seen)
-           VALUES (%s, %s, %s, %s, 'pending', NOW(), NOW())""",
-        [body.machine_id, body.hostname, body.mac_address, body.cpu_info],
+           VALUES (%s, %s, %s, %s, %s, NOW(), NOW())""",
+        [body.machine_id, body.hostname, body.mac_address, body.cpu_info, initial_status],
     )
-    return {"status": "pending"}
+    return {"status": initial_status}
 
 
 class MachineRegisterRequest(BaseModel):

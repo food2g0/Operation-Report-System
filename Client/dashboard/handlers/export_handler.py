@@ -10,15 +10,18 @@ logger = logging.getLogger(__name__)
 class ExportHandler:
     """Handles report export to Excel files."""
 
-    def __init__(self, branch, corporation):
+    def __init__(self, branch, corporation, line_of_business=''):
         """Initialize export handler.
 
         Args:
             branch: Branch name
             corporation: Corporation name
+            line_of_business: Branch LOB tag; VAT column added when 'GROUP 1'
         """
         self.branch = branch
         self.corporation = corporation
+        self.line_of_business = line_of_business
+        self._has_vat = str(line_of_business or '').strip().lower().replace(' ', '') == 'group1'
 
     def validate_file_path(self, file_path):
         """Validate file path for security (prevent directory traversal).
@@ -384,29 +387,25 @@ class ExportHandler:
         data_aln_c = Alignment(horizontal="center", vertical="center")
 
         # ── Column layout ─────────────────────────────────────────────────────
-        # SEND-OUT : cols 1–18  (A–R)
-        # Gap      : cols 19–20 (S–T)  narrow
-        # PAY-OUT  : cols 21–37 (U–AK)
-
-        # SEND-OUT has 18 cols:  code sender receiver principal commission sc
-        #   totalsc cashonhand income appalawan relationship source purpose
-        #   kycdocs position businessname evaluation total
-        # PAY-OUT  has 17 cols (no Cash on Hand): same minus that one
-
+        # Without VAT: SO cols 1-18, gap 19-20, PO cols 21-37
+        # With VAT:    SO cols 1-19, gap 20-21, PO cols 22-38
+        has_vat = self._has_vat
         SO_START = 1
-        PO_START = 21   # after 2-col gap at cols 19-20
+        SO_COLS  = 19 if has_vat else 18   # SO section width
+        PO_COLS  = 18 if has_vat else 17   # PO section width
+        PO_START = SO_START + SO_COLS + 2  # 2-col gap
 
-        # ── Row 1: Section header labels ──────────────────────────────────────
-        # SEND-OUT header merged A1:R1
-        ws.merge_cells(start_row=1, start_column=SO_START, end_row=1, end_column=SO_START + 17)
+        # ── Row 1: Section headers ─────────────────────────────────────────────
+        ws.merge_cells(start_row=1, start_column=SO_START,
+                       end_row=1, end_column=SO_START + SO_COLS - 1)
         c = ws.cell(row=1, column=SO_START)
         c.value = "REMITTANCE (SEND-OUT)"
         c.fill  = yellow_fill
         c.font  = Font(bold=True, size=13, color="000000")
         c.alignment = Alignment(horizontal="center", vertical="center")
 
-        # PAY-OUT header merged U1:AK1
-        ws.merge_cells(start_row=1, start_column=PO_START, end_row=1, end_column=PO_START + 16)
+        ws.merge_cells(start_row=1, start_column=PO_START,
+                       end_row=1, end_column=PO_START + PO_COLS - 1)
         c = ws.cell(row=1, column=PO_START)
         c.value = "PAY-OUT"
         c.fill  = green_fill
@@ -414,8 +413,6 @@ class ExportHandler:
         c.alignment = Alignment(horizontal="center", vertical="center")
 
         ws.row_dimensions[1].height = 22
-
-
 
         def _formula_cell(r, c_idx, text="", merged_end=None):
             if merged_end:
@@ -428,56 +425,57 @@ class ExportHandler:
             cell.alignment = formula_aln
             cell.border    = border
 
-        # Fill entire row 2 for both sections first (blank)
-        for ci in range(SO_START, SO_START + 18):
+        # ── Row 2: Formula description row ────────────────────────────────────
+        for ci in range(SO_START, SO_START + SO_COLS):
             _formula_cell(2, ci)
-        for ci in range(PO_START, PO_START + 17):
+        for ci in range(PO_START, PO_START + PO_COLS):
             _formula_cell(2, ci)
 
-        # SEND-OUT formula labels
-        _formula_cell(2, SO_START + 3, "COMPUTATION", merged_end=SO_START + 5)  # D2:F2
-        _formula_cell(2, SO_START + 6, "COM. + SC")           # G: total sc
-        _formula_cell(2, SO_START + 7, "PRINCIPAL +\nTOTAL SC")  # H: cash on hand
-        _formula_cell(2, SO_START + 8, "COM. × 39%")          # I: income
-        _formula_cell(2, SO_START + 9, "COH - INCOME")        # J: A/P Palawan
+        # SO formula labels
+        _formula_cell(2, SO_START + 3, "COMPUTATION", merged_end=SO_START + 5)
+        _formula_cell(2, SO_START + 6, "COM. + SC")
+        _formula_cell(2, SO_START + 7, "PRINCIPAL +\nTOTAL SC")  # cash on hand
+        _formula_cell(2, SO_START + 8, "COM. × 39%")             # income
+        if has_vat:
+            _formula_cell(2, SO_START + 9,  "INCOME / 1.12\n× 12%")  # VAT
+            _formula_cell(2, SO_START + 10, "COH - INCOME")           # A/P
+        else:
+            _formula_cell(2, SO_START + 9, "COH - INCOME")            # A/P
 
-        # PAY-OUT formula labels (no Cash on Hand col)
+        # PO formula labels (no Cash on Hand)
         _formula_cell(2, PO_START + 3, "COMPUTATION", merged_end=PO_START + 5)
         _formula_cell(2, PO_START + 6, "COM. + SC")
-        _formula_cell(2, PO_START + 7, "COM. × 43%")          # income
-        _formula_cell(2, PO_START + 8, "PRIN.+SC - INCOME")   # A/R Palawan
+        _formula_cell(2, PO_START + 7, "COM. × 43%")              # income
+        if has_vat:
+            _formula_cell(2, PO_START + 8, "INCOME / 1.12\n× 12%")   # VAT
+            _formula_cell(2, PO_START + 9, "PRIN. + INCOME")          # A/R
+        else:
+            _formula_cell(2, PO_START + 8, "PRIN. + INCOME")          # A/R
 
         ws.row_dimensions[2].height = 28
 
         # ── Row 3: Column headers ─────────────────────────────────────────────
+        _text_hdrs = [
+            "RELATIONSHIP\n(RECEIVER /\nSENDER)",
+            "SOURCE OF\nFUNDS",
+            "PURPOSE\nOF TRANS.",
+            "KYC DOCS.\nPHOTO ID",
+            "POSITION IN\nTHE BUS. CO.",
+            "BUSINESS\nCOMPANY NAME",
+            "EVALUATION\nREMARKS",
+            "TOTAL\nTRANSACTION",
+        ]
         SO_HDRS = [
             "TRANSACTION\nCODE", "SENDER", "RECEIVER",
             "PRINCIPAL", "COMMISSION", "SC",
             "TOTAL SC", "CASH ON\nHAND", "INCOME",
-            "A/P\nPALAWAN",
-            "RELATIONSHIP\n(RECEIVER /\nSENDER)",
-            "SOURCE OF\nFUNDS",
-            "PURPOSE\nOF TRANS.",
-            "KYC DOCS.\nPHOTO ID",
-            "POSITION IN\nTHE BUS. CO.",
-            "BUSINESS\nCOMPANY NAME",
-            "EVALUATION\nREMARKS",
-            "TOTAL\nTRANSACTION",
-        ]
+        ] + (["VAT\n(12%)"] if has_vat else []) + ["A/P\nPALAWAN"] + _text_hdrs
+
         PO_HDRS = [
             "TRANSACTION\nCODE", "SENDER", "RECEIVER",
             "PRINCIPAL", "COMMISSION", "SC",
             "TOTAL SC", "INCOME",
-            "A/R\nPALAWAN",
-            "RELATIONSHIP\n(RECEIVER /\nSENDER)",
-            "SOURCE OF\nFUNDS",
-            "PURPOSE\nOF TRANS.",
-            "KYC DOCS.\nPHOTO ID",
-            "POSITION IN\nTHE BUS. CO.",
-            "BUSINESS\nCOMPANY NAME",
-            "EVALUATION\nREMARKS",
-            "TOTAL\nTRANSACTION",
-        ]
+        ] + (["VAT\n(12%)"] if has_vat else []) + ["A/R\nPALAWAN"] + _text_hdrs
 
         for i, hdr in enumerate(SO_HDRS):
             c = ws.cell(row=3, column=SO_START + i)
@@ -492,7 +490,6 @@ class ExportHandler:
 
         # ── Data writing helpers ──────────────────────────────────────────────
         def _dc(r, c_idx, value, is_num=False):
-            """Write a data cell."""
             cell = ws.cell(row=r, column=c_idx)
             cell.value  = value
             cell.border = border
@@ -505,55 +502,63 @@ class ExportHandler:
         def _write_so_row(r, txn):
             commission   = float(txn.get("commission", 0))
             income_39    = round(commission * 0.39, 2)
+            vat_so       = float(txn.get("vat", income_39 / 1.12 * 0.12))
             principal    = float(txn.get("principal", 0))
             total_sc     = float(txn.get("total_sc", 0))
             cash_on_hand = principal + total_sc
             ap_palawan   = cash_on_hand - income_39
 
-            _dc(r, SO_START + 0,  txn.get("code", ""))
-            _dc(r, SO_START + 1,  txn.get("sender", ""))
-            _dc(r, SO_START + 2,  txn.get("receiver", ""))
-            _dc(r, SO_START + 3,  principal,    True)
-            _dc(r, SO_START + 4,  commission,   True)
-            _dc(r, SO_START + 5,  float(txn.get("sc", 0)), True)
-            _dc(r, SO_START + 6,  total_sc,     True)
-            _dc(r, SO_START + 7,  cash_on_hand, True)
-            _dc(r, SO_START + 8,  income_39,    True)
-            _dc(r, SO_START + 9,  ap_palawan,   True)
-            _dc(r, SO_START + 10, txn.get("relationship", ""))
-            _dc(r, SO_START + 11, txn.get("source_funds", ""))
-            _dc(r, SO_START + 12, txn.get("purpose", ""))
-            _dc(r, SO_START + 13, txn.get("kyc_docs", ""))
-            _dc(r, SO_START + 14, txn.get("position", ""))
-            _dc(r, SO_START + 15, txn.get("business_name", ""))
-            _dc(r, SO_START + 16, txn.get("evaluation", ""))
-            _dc(r, SO_START + 17, cash_on_hand, True)   # TOTAL TRANSACTION = COH
+            _dc(r, SO_START + 0, txn.get("code", ""))
+            _dc(r, SO_START + 1, txn.get("sender", ""))
+            _dc(r, SO_START + 2, txn.get("receiver", ""))
+            _dc(r, SO_START + 3, principal,    True)
+            _dc(r, SO_START + 4, commission,   True)
+            _dc(r, SO_START + 5, float(txn.get("sc", 0)), True)
+            _dc(r, SO_START + 6, total_sc,     True)
+            _dc(r, SO_START + 7, cash_on_hand, True)
+            _dc(r, SO_START + 8, income_39,    True)
+            o = 1 if has_vat else 0          # column offset after optional VAT
+            if has_vat:
+                _dc(r, SO_START + 9, vat_so, True)
+            _dc(r, SO_START + 9  + o, ap_palawan,                   True)
+            _dc(r, SO_START + 10 + o, txn.get("relationship", ""))
+            _dc(r, SO_START + 11 + o, txn.get("source_funds", ""))
+            _dc(r, SO_START + 12 + o, txn.get("purpose", ""))
+            _dc(r, SO_START + 13 + o, txn.get("kyc_docs", ""))
+            _dc(r, SO_START + 14 + o, txn.get("position", ""))
+            _dc(r, SO_START + 15 + o, txn.get("business_name", ""))
+            _dc(r, SO_START + 16 + o, txn.get("evaluation", ""))
+            _dc(r, SO_START + 17 + o, cash_on_hand, True)           # TOTAL = COH
 
         def _write_po_row(r, txn):
             commission = float(txn.get("commission", 0))
             income_43  = round(commission * 0.43, 2)
+            vat_po     = float(txn.get("vat", income_43 / 1.12 * 0.12))
             principal  = float(txn.get("principal", 0))
             total_sc   = float(txn.get("total_sc", 0))
-            ar_palawan = principal + total_sc - income_43
+            ar_palawan = principal + income_43
             total_txn  = principal + total_sc
 
-            _dc(r, PO_START + 0,  txn.get("code", ""))
-            _dc(r, PO_START + 1,  txn.get("sender", ""))
-            _dc(r, PO_START + 2,  txn.get("receiver", ""))
-            _dc(r, PO_START + 3,  principal,   True)
-            _dc(r, PO_START + 4,  commission,  True)
-            _dc(r, PO_START + 5,  float(txn.get("sc", 0)), True)
-            _dc(r, PO_START + 6,  total_sc,    True)
-            _dc(r, PO_START + 7,  income_43,   True)
-            _dc(r, PO_START + 8,  ar_palawan,  True)
-            _dc(r, PO_START + 9,  txn.get("relationship", ""))
-            _dc(r, PO_START + 10, txn.get("source_funds", ""))
-            _dc(r, PO_START + 11, txn.get("purpose", ""))
-            _dc(r, PO_START + 12, txn.get("kyc_docs", ""))
-            _dc(r, PO_START + 13, txn.get("position", ""))
-            _dc(r, PO_START + 14, txn.get("business_name", ""))
-            _dc(r, PO_START + 15, txn.get("evaluation", ""))
-            _dc(r, PO_START + 16, total_txn,   True)
+            _dc(r, PO_START + 0, txn.get("code", ""))
+            _dc(r, PO_START + 1, txn.get("sender", ""))
+            _dc(r, PO_START + 2, txn.get("receiver", ""))
+            _dc(r, PO_START + 3, principal,  True)
+            _dc(r, PO_START + 4, commission, True)
+            _dc(r, PO_START + 5, float(txn.get("sc", 0)), True)
+            _dc(r, PO_START + 6, total_sc,   True)
+            _dc(r, PO_START + 7, income_43,  True)
+            o = 1 if has_vat else 0
+            if has_vat:
+                _dc(r, PO_START + 8, vat_po, True)
+            _dc(r, PO_START + 8  + o, ar_palawan,                   True)
+            _dc(r, PO_START + 9  + o, txn.get("relationship", ""))
+            _dc(r, PO_START + 10 + o, txn.get("source_funds", ""))
+            _dc(r, PO_START + 11 + o, txn.get("purpose", ""))
+            _dc(r, PO_START + 12 + o, txn.get("kyc_docs", ""))
+            _dc(r, PO_START + 13 + o, txn.get("position", ""))
+            _dc(r, PO_START + 14 + o, txn.get("business_name", ""))
+            _dc(r, PO_START + 15 + o, txn.get("evaluation", ""))
+            _dc(r, PO_START + 16 + o, total_txn, True)
 
         # ── Write data rows ───────────────────────────────────────────────────
         max_rows = max(len(sendout_txns), len(payout_txns))
@@ -583,32 +588,35 @@ class ExportHandler:
                 cell.value     = label or ""
                 cell.alignment = tot_aln_l
 
-        # Blank totals cells for all columns
-        for ci in range(SO_START, SO_START + 18):
+        for ci in range(SO_START, SO_START + SO_COLS):
             _tot_cell(tot_row, ci)
-        for ci in range(PO_START, PO_START + 17):
+        for ci in range(PO_START, PO_START + PO_COLS):
             _tot_cell(tot_row, ci)
 
-        # SEND-OUT totals
+        o = 1 if has_vat else 0
+
         if sendout_txns:
             _tot_cell(tot_row, SO_START, label="TOTAL")
-            comm_so  = sum(float(t.get("commission", 0)) for t in sendout_txns)
-            inc_39   = round(comm_so * 0.39, 2)
-            prin_so  = sum(float(t.get("principal", 0)) for t in sendout_txns)
-            sc_so    = sum(float(t.get("sc", 0))        for t in sendout_txns)
-            tsc_so   = sum(float(t.get("total_sc", 0))  for t in sendout_txns)
-            coh_so   = prin_so + tsc_so
-            ap_so    = coh_so - inc_39
-            _tot_cell(tot_row, SO_START + 3,  prin_so)
-            _tot_cell(tot_row, SO_START + 4,  comm_so)
-            _tot_cell(tot_row, SO_START + 5,  sc_so)
-            _tot_cell(tot_row, SO_START + 6,  tsc_so)
-            _tot_cell(tot_row, SO_START + 7,  coh_so)
-            _tot_cell(tot_row, SO_START + 8,  inc_39)
-            _tot_cell(tot_row, SO_START + 9,  ap_so)
-            _tot_cell(tot_row, SO_START + 17, coh_so)
+            comm_so = sum(float(t.get("commission", 0)) for t in sendout_txns)
+            inc_39  = round(comm_so * 0.39, 2)
+            prin_so = sum(float(t.get("principal", 0)) for t in sendout_txns)
+            sc_so   = sum(float(t.get("sc", 0))        for t in sendout_txns)
+            tsc_so  = sum(float(t.get("total_sc", 0))  for t in sendout_txns)
+            coh_so  = prin_so + tsc_so
+            ap_so   = coh_so - inc_39
+            _tot_cell(tot_row, SO_START + 3, prin_so)
+            _tot_cell(tot_row, SO_START + 4, comm_so)
+            _tot_cell(tot_row, SO_START + 5, sc_so)
+            _tot_cell(tot_row, SO_START + 6, tsc_so)
+            _tot_cell(tot_row, SO_START + 7, coh_so)
+            _tot_cell(tot_row, SO_START + 8, inc_39)
+            if has_vat:
+                vat_so_tot = sum(float(t.get("vat", float(t.get("income", 0)) / 1.12 * 0.12))
+                                 for t in sendout_txns)
+                _tot_cell(tot_row, SO_START + 9, vat_so_tot)
+            _tot_cell(tot_row, SO_START + 9  + o, ap_so)
+            _tot_cell(tot_row, SO_START + 17 + o, coh_so)   # TOTAL TRANSACTION
 
-        # PAY-OUT totals
         if payout_txns:
             _tot_cell(tot_row, PO_START, label="TOTAL")
             comm_po = sum(float(t.get("commission", 0)) for t in payout_txns)
@@ -616,23 +624,31 @@ class ExportHandler:
             prin_po = sum(float(t.get("principal", 0)) for t in payout_txns)
             sc_po   = sum(float(t.get("sc", 0))        for t in payout_txns)
             tsc_po  = sum(float(t.get("total_sc", 0))  for t in payout_txns)
-            ar_po   = prin_po + tsc_po - inc_43
-            _tot_cell(tot_row, PO_START + 3,  prin_po)
-            _tot_cell(tot_row, PO_START + 4,  comm_po)
-            _tot_cell(tot_row, PO_START + 5,  sc_po)
-            _tot_cell(tot_row, PO_START + 6,  tsc_po)
-            _tot_cell(tot_row, PO_START + 7,  inc_43)
-            _tot_cell(tot_row, PO_START + 8,  ar_po)
-            _tot_cell(tot_row, PO_START + 16, prin_po + tsc_po)
+            ar_po   = prin_po + inc_43
+            if has_vat:
+                vat_po_tot = sum(float(t.get("vat", float(t.get("income", 0)) / 1.12 * 0.12))
+                                 for t in payout_txns)
+                _tot_cell(tot_row, PO_START + 8, vat_po_tot)
+            _tot_cell(tot_row, PO_START + 3,      prin_po)
+            _tot_cell(tot_row, PO_START + 4,      comm_po)
+            _tot_cell(tot_row, PO_START + 5,      sc_po)
+            _tot_cell(tot_row, PO_START + 6,      tsc_po)
+            _tot_cell(tot_row, PO_START + 7,      inc_43)
+            _tot_cell(tot_row, PO_START + 8  + o, ar_po)
+            _tot_cell(tot_row, PO_START + 16 + o, prin_po + tsc_po)
 
         # ── Column widths ─────────────────────────────────────────────────────
-        SO_W = [18, 15, 15, 12, 12, 8, 12, 14, 12, 12, 18, 15, 15, 14, 18, 20, 16, 14]
-        PO_W = [18, 15, 15, 12, 12, 8, 12, 12, 12, 18, 15, 15, 14, 18, 20, 16, 14]
+        if has_vat:
+            SO_W = [18, 15, 15, 12, 12, 8, 12, 14, 12, 10, 12, 18, 15, 15, 14, 18, 20, 16, 14]
+            PO_W = [18, 15, 15, 12, 12, 8, 12, 12, 10, 12, 18, 15, 15, 14, 18, 20, 16, 14]
+        else:
+            SO_W = [18, 15, 15, 12, 12, 8, 12, 14, 12, 12, 18, 15, 15, 14, 18, 20, 16, 14]
+            PO_W = [18, 15, 15, 12, 12, 8, 12, 12, 12, 18, 15, 15, 14, 18, 20, 16, 14]
         for i, w in enumerate(SO_W):
             ws.column_dimensions[_xlutil.get_column_letter(SO_START + i)].width = w
-        # gap cols S-T
-        ws.column_dimensions[_xlutil.get_column_letter(SO_START + 18)].width = 2
-        ws.column_dimensions[_xlutil.get_column_letter(SO_START + 19)].width = 2
+        # gap cols (2 narrow cols after SO section)
+        ws.column_dimensions[_xlutil.get_column_letter(SO_START + SO_COLS)].width = 2
+        ws.column_dimensions[_xlutil.get_column_letter(SO_START + SO_COLS + 1)].width = 2
         for i, w in enumerate(PO_W):
             ws.column_dimensions[_xlutil.get_column_letter(PO_START + i)].width = w
 

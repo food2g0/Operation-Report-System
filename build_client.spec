@@ -57,15 +57,12 @@ a = Analysis(
 # BUILD CONFIGURATION
 # ========================================================================
 
-cipher = None  # No encryption for open source project
-
-pyz = PYZ(a.pure, a.zipped_data, cipher=cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
-    a.zipfiles,
     a.datas,
 
     [],

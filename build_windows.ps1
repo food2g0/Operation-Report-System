@@ -5,8 +5,6 @@ Prerequisites:
 - Inno Setup (optional) to produce an installer (ISCC on PATH)
 #>
 
-set -e
-
 Write-Host "Starting Windows production build..."
 
 # Create a virtual environment for builds

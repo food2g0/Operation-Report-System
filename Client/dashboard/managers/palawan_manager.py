@@ -572,6 +572,10 @@ class PalawanManager:
                 draft_data[f"{section}:{k}"] = w.text()
         for k, w in getattr(palawan_tab, "lotes_inputs", {}).items():
             draft_data[f"lotes:{k}"] = w.text()
+        # Persist the per-transaction detail entries from the dialog so they
+        # survive app close/reopen (stored under a special "transactions" prefix).
+        for detail_key, txns in getattr(palawan_tab, "_detailed_transactions", {}).items():
+            draft_data[f"transactions:{detail_key}"] = txns
         return draft_data
 
     def connect_palawan_adjustments_to_brand_b(self, palawan_tab, cash_flow_tab_b, recalc_callback):

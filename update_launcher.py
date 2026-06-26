@@ -131,10 +131,15 @@ class _UpdateWorker(QThread):
             self.sub_status.emit("Please wait while the update is being downloaded.")
 
             filename = installer_filename or f"ORS_Update_v{latest}.exe"
-            dest = os.path.join(tempfile.gettempdir(), filename)
+            # Use APPDATA update dir — temp dirs can be restricted on some PCs
+            _appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+            _update_dir = os.path.join(_appdata, 'OperationReportSystem', 'update')
+            os.makedirs(_update_dir, exist_ok=True)
+            dest = os.path.join(_update_dir, filename)
             partial = dest + ".part"
 
-            resp2 = session.get(download_url, stream=True, timeout=120)
+            # (connect_timeout=15s, read_timeout=300s) — handles slow connections
+            resp2 = session.get(download_url, stream=True, timeout=(15, 300))
             resp2.raise_for_status()
             total = int(resp2.headers.get("content-length", 0))
             done = 0
@@ -573,20 +578,29 @@ class UpdateLauncherWindow(QWidget):
             # Remove Zone.Identifier so installer runs without DLL restrictions
             self._unblock_file(path)
 
-            appdata_local = os.environ.get('LOCALAPPDATA', '')
-            new_exe = os.path.join(appdata_local, 'ORS', 'main.exe')
-            bat_path = os.path.join(tempfile.gettempdir(), 'ors_update_relay.bat')
+            # Resolve install directory from running executable so the path
+            # is always correct regardless of where the user installed.
+            if getattr(sys, 'frozen', False):
+                install_root = os.path.dirname(sys.executable)
+            else:
+                install_root = os.environ.get('ORS_APP_ROOT', r'D:\OperationReportSystem')
+            new_exe = os.path.join(install_root, 'main.exe')
+
+            _appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+            _update_dir = os.path.join(_appdata, 'OperationReportSystem', 'update')
+            os.makedirs(_update_dir, exist_ok=True)
+            bat_path = os.path.join(_update_dir, 'ors_update_relay.bat')
 
             bat = (
                 '@echo off\r\n'
                 # 3 s delay — gives old process time to fully exit
-                'ping -n 4 127.0.0.1 > nul\r\n'
-                # Run installer silently; batch WAITS for it to complete
+                'timeout /t 3 /nobreak > nul\r\n'
+                # Run installer silently; batch WAITS for it to finish
                 f'"{path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART\r\n'
-                # Extra 2 s for file writes to flush
-                'ping -n 3 127.0.0.1 > nul\r\n'
-                # Launch the new version via explorer to get a clean user context
-                f'explorer.exe "{new_exe}"\r\n'
+                # Extra 2 s for installer file writes to flush
+                'timeout /t 2 /nobreak > nul\r\n'
+                # Launch the new version directly (not via explorer)
+                f'START "" "{new_exe}"\r\n'
                 # Self-delete
                 'del "%~f0"\r\n'
             )

@@ -25,7 +25,10 @@ from fund_transfer import FundTransferPage
 from payable_page import PayablesPage
 from global_payable_page import GlobalPayablePage
 from report_page import ReportPage
-from admin_manage import create_corporation, create_branch, create_client, get_all_supervisors
+from admin_manage import (
+    create_corporation, create_branch, create_client, get_all_supervisors,
+    ensure_payroll_column,
+)
 from variance_review_page import VarianceReviewPage
 from user_management_page import UserManagementPage
 from daily_transaction_page import DailyTransactionPage
@@ -63,6 +66,8 @@ class AdminDashboard(QWidget):
         self.db = db_manager
         self._update_checker_threads = []
         self._loading_report = False  # Flag to prevent recalculation during load
+
+        ensure_payroll_column()
 
         # Zoom functionality
         self.zoom_level = 100
@@ -2482,11 +2487,12 @@ class AdminDashboard(QWidget):
             self.corp_list_display.setText(f"Error loading corporations: {e}")
 
     def _refresh_branch_display(self):
- 
+
         try:
             query = """
                 SELECT b.id, b.name, b.corporation_id, c.name as corp_name, b.created_at,
-                       b.sub_corporation_id, sc.name as sub_corp_name
+                       b.sub_corporation_id, sc.name as sub_corp_name,
+                       COALESCE(b.payroll, '') as payroll
                 FROM branches b
                 LEFT JOIN corporations c ON b.corporation_id = c.id
                 LEFT JOIN corporations sc ON b.sub_corporation_id = sc.id
@@ -2496,26 +2502,29 @@ class AdminDashboard(QWidget):
             if not rows:
                 self.branch_list_display.setText("No branches found")
                 return
-            
-            display_text = "┌─────┬──────────────────────┬──────────────────────────────────────┬─────────────────────┐\n"
-            display_text += "│ ID  │ Branch Name          │ Corporation                          │ Created At          │\n"
-            display_text += "├─────┼──────────────────────┼──────────────────────────────────────┼─────────────────────┤\n"
-            
+
+            display_text = "┌─────┬──────────────────────┬─┬────────────────────────────────────┬─────────────────────┐\n"
+            display_text += "│ ID  │ Branch Name          │P│ Corporation                        │ Created At          │\n"
+            display_text += "├─────┼──────────────────────┼─┼────────────────────────────────────┼─────────────────────┤\n"
+
             for r in rows:
                 branch_id = str(r['id']).ljust(3)
                 name = str(r['name'])[:20].ljust(20)
+                payroll_flag = "★" if str(r.get('payroll') or '').upper() == 'YES' else " "
                 corp_display = str(r.get('corp_name', 'N/A'))
                 if r.get('sub_corp_name'):
                     corp_display += f" + {r.get('sub_corp_name')}"
-                corp_display = corp_display[:36].ljust(36)
+                corp_display = corp_display[:34].ljust(34)
                 created = str(r.get('created_at', 'N/A'))[:19].ljust(19)
-                display_text += f"│ {branch_id} │ {name} │ {corp_display} │ {created} │\n"
-            
-            display_text += "└─────┴──────────────────────┴──────────────────────────────────────┴─────────────────────┘"
+                display_text += f"│ {branch_id} │ {name} │{payroll_flag}│ {corp_display} │ {created} │\n"
+
+            display_text += "└─────┴──────────────────────┴─┴────────────────────────────────────┴─────────────────────┘"
+            display_text += "\n★ = Payroll branch (Import from Excel enabled)"
             self.branch_list_display.setText(display_text)
-            
+
         except Exception as e:
             self.branch_list_display.setText(f"Error loading branches: {e}")
+
 
     def _refresh_client_display(self):
         """Refresh the client list display"""

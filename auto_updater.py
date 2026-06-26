@@ -7,6 +7,7 @@ Supports both interactive and silent (automatic) updates.
 import os
 import sys
 import json
+import time
 import hashlib
 import requests
 import tempfile
@@ -66,6 +67,9 @@ def _create_retry_session():
     adapter = HTTPAdapter(max_retries=retries)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
+    session.headers.update({
+        "User-Agent": f"OperationReportSystem/{CURRENT_VERSION} (github.com/{GITHUB_REPO})"
+    })
     return session
 
 
@@ -155,6 +159,39 @@ def _find_release_checksum(session, release_data, installer_filename):
             except Exception as e:
                 logger.warning(f"Failed to read checksum asset {name}: {e}")
     return None
+
+_VERSION_CHECK_CACHE_TTL = 86400  # 24 hours — one GitHub call per machine per day
+
+
+def _get_version_cache_path() -> str:
+    appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+    base = os.path.join(appdata, 'OperationReportSystem', 'update')
+    os.makedirs(base, exist_ok=True)
+    return os.path.join(base, 'version_check_cache.json')
+
+
+def _read_version_cache() -> "dict | None":
+    """Return cached {latest_version, checked_at} if still fresh, else None."""
+    try:
+        path = _get_version_cache_path()
+        if not os.path.exists(path):
+            return None
+        with open(path, 'r') as f:
+            data = json.load(f)
+        if time.time() - data.get('checked_at', 0) < _VERSION_CHECK_CACHE_TTL:
+            return data
+    except Exception:
+        pass
+    return None
+
+
+def _write_version_cache(latest_version: str) -> None:
+    try:
+        with open(_get_version_cache_path(), 'w') as f:
+            json.dump({'latest_version': latest_version, 'checked_at': time.time()}, f)
+    except Exception:
+        pass
+
 
 # Version tracking file path (to detect successful updates)
 def _get_version_file_path():
@@ -441,12 +478,16 @@ class SilentUpdater(QThread):
             self.status_changed.emit(f"Downloading v{latest_version}...")
             logger.info(f"Silent updater: Downloading from {download_url}")
             
-            temp_dir = tempfile.gettempdir()
+            # Use APPDATA update dir — temp dirs can be restricted on some PCs
+            appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+            update_dir = os.path.join(appdata, 'OperationReportSystem', 'update')
+            os.makedirs(update_dir, exist_ok=True)
             filename = f"ORS_Update_v{latest_version}.exe"
-            self.installer_path = os.path.join(temp_dir, filename)
+            self.installer_path = os.path.join(update_dir, filename)
             partial_path = self.installer_path + ".part"
-            
-            response = session.get(download_url, stream=True, timeout=60)
+
+            # (connect_timeout=15s, read_timeout=300s) — handles slow connections
+            response = session.get(download_url, stream=True, timeout=(15, 300))
             response.raise_for_status()
             expected_size_header = response.headers.get('content-length')
             
@@ -559,9 +600,12 @@ class SilentUpdater(QThread):
         """Schedule update to install when app exits (alternative to immediate install)"""
         if not self.installer_path or not os.path.exists(self.installer_path):
             return False
-        
+
         # Create a batch script to run after app closes
-        batch_path = os.path.join(tempfile.gettempdir(), "ors_update.bat")
+        appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+        update_dir = os.path.join(appdata, 'OperationReportSystem', 'update')
+        os.makedirs(update_dir, exist_ok=True)
+        batch_path = os.path.join(update_dir, "ors_update.bat")
         batch_content = f'''@echo off
 timeout /t 2 /nobreak > nul
 "{self.installer_path}" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART
@@ -592,12 +636,14 @@ class UpdateDownloader(QThread):
     def run(self):
         """Download the update file"""
         try:
-            # Create temp directory for download
-            temp_dir = tempfile.gettempdir()
-            self.download_path = os.path.join(temp_dir, self.filename)
-            
-            # Download with progress tracking
-            response = requests.get(self.download_url, stream=True, timeout=30)
+            # Use APPDATA update dir — temp dirs can be restricted on some PCs
+            appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+            update_dir = os.path.join(appdata, 'OperationReportSystem', 'update')
+            os.makedirs(update_dir, exist_ok=True)
+            self.download_path = os.path.join(update_dir, self.filename)
+
+            # (connect_timeout=15s, read_timeout=300s) — handles slow connections
+            response = requests.get(self.download_url, stream=True, timeout=(15, 300))
             response.raise_for_status()
             
             total_size = int(response.headers.get('content-length', 0))

@@ -285,8 +285,8 @@ class UserManagementPage(QWidget):
         
         # Table
         self.branch_table = QTableWidget()
-        self.branch_table.setColumnCount(12)
-        self.branch_table.setHorizontalHeaderLabels(["ID", "Branch Name", "Corporation", "Sub Corporation", "OS", "Area", "Global", "Sunday", "LOB", "Created At", "Registered", "Actions"])
+        self.branch_table.setColumnCount(13)
+        self.branch_table.setHorizontalHeaderLabels(["ID", "Branch Name", "Corporation", "Sub Corporation", "OS", "Area", "Global", "Sunday", "LOB", "Payroll", "Created At", "Registered", "Actions"])
         self.branch_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.branch_table.setAlternatingRowColors(True)
         self.branch_table.setStyleSheet("""
@@ -583,6 +583,7 @@ class UserManagementPage(QWidget):
                        COALESCE(b.global_tag, '') as global_tag,
                        COALESCE(b.sunday, '') as sunday,
                        COALESCE(b.line_of_business, '') as line_of_business,
+                       COALESCE(b.payroll, '') as payroll,
                        b.sub_corporation_id,
                        COALESCE(sc.name, '') as sub_corp_name
                 FROM branches b
@@ -709,7 +710,27 @@ class UserManagementPage(QWidget):
                     lob_lay.addWidget(lob_edit_btn)
                     self.branch_table.setCellWidget(row_idx, 8, lob_widget)
 
-                    self.branch_table.setItem(row_idx, 9, QTableWidgetItem(str(row_data.get('created_at', ''))[:19]))
+                    # Payroll column (col 9)
+                    payroll_val = row_data.get('payroll', '') or ''
+                    payroll_widget = QWidget()
+                    payroll_lay = QHBoxLayout(payroll_widget)
+                    payroll_lay.setContentsMargins(2, 2, 2, 2)
+                    payroll_lay.setSpacing(4)
+                    payroll_label = QLabel(payroll_val if payroll_val else '—')
+                    if payroll_val.upper() == 'YES':
+                        payroll_label.setStyleSheet("font-size:10px; color: #27ae60; font-weight: bold;")
+                    else:
+                        payroll_label.setStyleSheet("font-size:10px; color: #aaa;")
+                    payroll_edit_btn = QPushButton("✏️")
+                    payroll_edit_btn.setFixedSize(24, 24)
+                    payroll_edit_btn.setToolTip("Edit Payroll Tag")
+                    payroll_edit_btn.setStyleSheet("QPushButton { background: #3498db; border: none; border-radius: 3px; } QPushButton:hover { background: #2980b9; }")
+                    payroll_edit_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data.get('name', ''), cur=payroll_val: self._edit_branch_dropdown(bid, bname, 'payroll', 'Payroll', cur, ['YES', 'NO']))
+                    payroll_lay.addWidget(payroll_label, 1)
+                    payroll_lay.addWidget(payroll_edit_btn)
+                    self.branch_table.setCellWidget(row_idx, 9, payroll_widget)
+
+                    self.branch_table.setItem(row_idx, 10, QTableWidgetItem(str(row_data.get('created_at', ''))[:19]))
                     
                     is_registered = row_data.get('is_registered', 1)
                     reg_widget = QWidget()
@@ -736,20 +757,20 @@ class UserManagementPage(QWidget):
                     reg_layout.addWidget(status_label)
                     reg_layout.addWidget(reg_btn)
                     reg_layout.addStretch()
-                    self.branch_table.setCellWidget(row_idx, 10, reg_widget)
-                    
+                    self.branch_table.setCellWidget(row_idx, 11, reg_widget)
+
                     action_widget = QWidget()
                     action_layout = QHBoxLayout(action_widget)
                     action_layout.setContentsMargins(2, 2, 2, 2)
                     action_layout.setSpacing(2)
-                    
+
                     del_btn = QPushButton("🗑️")
                     del_btn.setFixedSize(28, 24)
                     del_btn.setStyleSheet("QPushButton { background: #e74c3c; border: none; border-radius: 3px; } QPushButton:hover { background: #c0392b; }")
                     del_btn.clicked.connect(lambda checked, bid=row_data['id'], bname=row_data['name']: self._delete_branch(bid, bname))
-                    
+
                     action_layout.addWidget(del_btn)
-                    self.branch_table.setCellWidget(row_idx, 11, action_widget)
+                    self.branch_table.setCellWidget(row_idx, 12, action_widget)
             
             self.branch_page_label.setText(f"Page {self.branch_page + 1} of {total_pages} ({self.branch_total} total)")
             

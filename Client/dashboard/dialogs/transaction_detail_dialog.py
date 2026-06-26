@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import QApplication
 class PalawanTransactionDetailDialog(QDialog):
 
 
-    def __init__(self, field_label="Transaction Details", transactions=None, parent=None, code_name_lookup=None, transaction_type=None):
+    def __init__(self, field_label="Transaction Details", transactions=None, parent=None, code_name_lookup=None, transaction_type=None, has_payroll=False, line_of_business=''):
 
         super().__init__(parent)
         self.setWindowTitle(f"Palawan Transactions – {field_label}")
@@ -24,6 +24,10 @@ class PalawanTransactionDetailDialog(QDialog):
         # transaction_type: 'so' (send-out, 49%), 'po' (pay-out, 43%), 'int' (international, default 43%)
         self._transaction_type = transaction_type or 'po'
         self._income_rate = 0.39 if transaction_type == 'so' else 0.43
+        self._has_payroll = has_payroll
+        # VAT (12%) applies only to Line of Business Group 1 branches
+        # Normalise: strip spaces so 'Group 1', 'group 1', 'Group1', 'group1' all match
+        self._has_vat = str(line_of_business or '').strip().lower().replace(' ', '') == 'group1'
 
         # Size to 90% of available screen so it fits on any monitor
         from PyQt5.QtWidgets import QApplication
@@ -289,6 +293,23 @@ class PalawanTransactionDetailDialog(QDialog):
         income_v.addWidget(self.income_lbl)
         calc_h.addLayout(income_v, 1)
 
+        # VAT (12%) column — only for Line of Business Group 1 branches
+        vat_v = QVBoxLayout()
+        vat_v.setSpacing(6)
+        self._vat_label = QLabel("VAT (12%)")
+        self._vat_label.setStyleSheet("font-weight: 700; font-size: 13px; color: #D97706;")
+        self._vat_lbl = QLineEdit()
+        self._vat_lbl.setReadOnly(True)
+        self._vat_lbl.setText("0.00")
+        self._vat_lbl.setStyleSheet(
+            "background-color: white; color: #D97706; font-size: 13px;"
+            "font-weight: 700; border: 1px solid #CBD5E1;"
+        )
+        self._vat_lbl.setMinimumHeight(36)
+        vat_v.addWidget(self._vat_label)
+        vat_v.addWidget(self._vat_lbl)
+        calc_h.addLayout(vat_v, 1)
+
         # A/R Palawan or A/P Palawan column (depends on transaction type)
         ar_ap_v = QVBoxLayout()
         ar_ap_v.setSpacing(6)
@@ -315,9 +336,9 @@ class PalawanTransactionDetailDialog(QDialog):
             self.cash_on_hand_label.setVisible(True)
             self.cash_on_hand_lbl.setVisible(True)
         elif self._transaction_type == 'po':
-            # Pay-Out: no Cash on Hand, 43% income, A/R Palawan = Principal + Total SC - Income
+            # Pay-Out: no Cash on Hand, 43% income, A/R Palawan = Principal + Income
             self.income_label_text.setText("Income (43% of Commission)")
-            self.ar_ap_label_text.setText("A/R PALAWAN (Principal + Total SC - Income)")
+            self.ar_ap_label_text.setText("A/R PALAWAN (Principal + Income)")
             self.cash_on_hand_label.setVisible(False)
             self.cash_on_hand_lbl.setVisible(False)
         else:
@@ -326,6 +347,10 @@ class PalawanTransactionDetailDialog(QDialog):
             self.ar_ap_label_text.setText("A/R PALAWAN (Principal + Income)")
             self.cash_on_hand_label.setVisible(False)
             self.cash_on_hand_lbl.setVisible(False)
+
+        # VAT field: only visible for Line of Business Group 1
+        self._vat_label.setVisible(self._has_vat)
+        self._vat_lbl.setVisible(self._has_vat)
 
         # ========== SECTION 4: DOCUMENTATION & DETAILS ==========
         doc_group = QGroupBox("Documentation & Transaction Details")
@@ -394,7 +419,10 @@ class PalawanTransactionDetailDialog(QDialog):
         doc_group.setLayout(doc_form)
         form_layout.addWidget(doc_group)
 
-        # ── Add Transaction button (inside scroll) ────────────────────────────
+        # ── Action buttons row (inside scroll) ────────────────────────────────
+        action_row = QHBoxLayout()
+        action_row.setSpacing(10)
+
         add_btn = QPushButton("+ Add Transaction")
         add_btn.setStyleSheet("""
             QPushButton {
@@ -406,35 +434,60 @@ class PalawanTransactionDetailDialog(QDialog):
             QPushButton:hover { background: #0284C7; }
         """)
         add_btn.clicked.connect(self._add_transaction)
-        form_layout.addWidget(add_btn, alignment=Qt.AlignLeft)
+        action_row.addWidget(add_btn)
+
+        if self._has_payroll:
+            import_btn = QPushButton("↑ Import from Excel")
+            import_btn.setStyleSheet("""
+                QPushButton {
+                    background: #16A34A; color: white; border: none;
+                    border-radius: 6px; padding: 8px 20px;
+                    font-weight: 700; font-size: 13px;
+                    min-height: 34px;
+                }
+                QPushButton:hover { background: #15803D; }
+            """)
+            import_btn.setToolTip(
+                "Import transactions from an Excel file.\n"
+                "Required columns: Code, Principal, Commission, SC\n"
+                "Optional: Receiver, Sender, Position, Relationship,\n"
+                "          Source of Funds, Purpose, KYC Docs,\n"
+                "          Business Name, Evaluation"
+            )
+            import_btn.clicked.connect(self._import_from_excel)
+            action_row.addWidget(import_btn)
+
+        action_row.addStretch()
+        form_layout.addLayout(action_row)
 
         # ── Transactions table (inside scroll) ───────────────────────────────
-        # 12 columns: col 8 = Cash on Hand (sendout only, hidden for payout/int)
+        # 13 columns: col 8 = Cash on Hand (so only), col 10 = VAT (Group 1 only)
         _ar_ap_col_lbl = "A/P Palawan" if self._transaction_type == 'so' else "A/R Palawan"
-        self.table = QTableWidget(0, 12)
+        self.table = QTableWidget(0, 13)
         self.table.setHorizontalHeaderLabels([
             "Code", "Receiver", "Sender", "Position", "Principal", "Commission", "SC",
-            "Total SC", "Cash on Hand", "Income", _ar_ap_col_lbl, ""
+            "Total SC", "Cash on Hand", "Income", "VAT (12%)", _ar_ap_col_lbl, ""
         ])
         if self._transaction_type != 'so':
             self.table.setColumnHidden(8, True)
+        if not self._has_vat:
+            self.table.setColumnHidden(10, True)
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        for i in range(1, 12):
+        for i in range(1, 13):
             hh.setSectionResizeMode(i, QHeaderView.Stretch)
-        hh.setSectionResizeMode(11, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(12, QHeaderView.ResizeToContents)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
-        self.table.setMinimumHeight(120)
-        self.table.setMaximumHeight(180)
+        self.table.setMinimumHeight(260)
         self.table.setStyleSheet("""
             QTableWidget { border: 1px solid #E2E8F0; border-radius: 6px; }
             QHeaderView::section { background: #F1F5F9; font-weight: 700;
                                    font-size: 11px; padding: 6px; border: none; }
             QTableWidget::item { padding: 4px 8px; }
         """)
-        form_layout.addWidget(self.table)
+        form_layout.addWidget(self.table, stretch=3)
 
         # ── Totals frame (inside scroll) ─────────────────────────────────────
         totals_frame = QFrame()
@@ -455,10 +508,10 @@ class PalawanTransactionDetailDialog(QDialog):
         ]
         if self._transaction_type == 'so':
             _totals_fields.append(("Cash on Hand Total", "_cash_on_hand_total"))
-        _totals_fields += [
-            ("Income Total",   "_income_total"),
-            (_ar_ap_lbl,       "_ar_total"),
-        ]
+        _totals_fields.append(("Income Total", "_income_total"))
+        if self._has_vat:
+            _totals_fields.append(("VAT (12%)", "_vat_total"))
+        _totals_fields.append((_ar_ap_lbl, "_ar_total"))
         for label_text, attr_name in _totals_fields:
             box = QVBoxLayout()
             lbl_title = QLabel(label_text)
@@ -480,8 +533,9 @@ class PalawanTransactionDetailDialog(QDialog):
 
         # ── Dialog buttons — OUTSIDE scroll so always visible ─────────────────
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        btns.button(QDialogButtonBox.Ok).setText("Save")
-        btns.button(QDialogButtonBox.Ok).setStyleSheet(
+        self._save_btn = btns.button(QDialogButtonBox.Ok)
+        self._save_btn.setText("Save")
+        self._save_btn.setStyleSheet(
             "background:#16A34A;color:white;border:none;border-radius:5px;"
             "padding:6px 18px;font-weight:700;min-height:36px;"
         )
@@ -496,6 +550,24 @@ class PalawanTransactionDetailDialog(QDialog):
         # Load existing transactions if provided
         if self._transactions:
             self._refresh_table()
+        else:
+            self._update_save_btn()
+
+    def _update_save_btn(self):
+        self._save_btn.setEnabled(True)
+        self._save_btn.setStyleSheet(
+            "background:#16A34A;color:white;border:none;border-radius:5px;"
+            "padding:6px 18px;font-weight:700;min-height:36px;"
+        )
+
+    def accept(self):
+        if not self._transactions:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self, "No Transactions",
+                "Please add at least one transaction before saving."
+            )
+        super().accept()
 
     def _calculate_derived(self):
         """Calculate derived fields based on transaction type."""
@@ -508,9 +580,12 @@ class PalawanTransactionDetailDialog(QDialog):
 
         total_sc = commission + sc
         income = commission * self._income_rate
+        vat = income / 1.12 * 0.12
 
         self.total_sc_lbl.setText(f"{total_sc:.2f}")
         self.income_lbl.setText(f"{income:.2f}")
+        if self._has_vat:
+            self._vat_lbl.setText(f"{vat:.2f}")
 
         if self._transaction_type == 'so':
             # Send-Out: Cash on Hand = Principal + Total SC; A/R = Cash on Hand - Income
@@ -518,8 +593,8 @@ class PalawanTransactionDetailDialog(QDialog):
             self.cash_on_hand_lbl.setText(f"{cash_on_hand:.2f}")
             self.ar_palawan_lbl.setText(f"{cash_on_hand - income:.2f}")
         elif self._transaction_type == 'po':
-            # Pay-Out: no Cash on Hand; A/P = Principal + Total SC - Income
-            self.ar_palawan_lbl.setText(f"{principal + total_sc - income:.2f}")
+            # Pay-Out: no Cash on Hand; A/R = Principal + Income
+            self.ar_palawan_lbl.setText(f"{principal + income:.2f}")
         else:
             # International: A/R = Principal + Income
             self.ar_palawan_lbl.setText(f"{principal + income:.2f}")
@@ -533,6 +608,7 @@ class PalawanTransactionDetailDialog(QDialog):
         except ValueError:
             principal = commission = sc = 0.0
 
+        _income = commission * self._income_rate
         txn = {
             "code": self.code_edit.text().strip(),
             "receiver": self.receiver_edit.text().strip(),
@@ -541,13 +617,13 @@ class PalawanTransactionDetailDialog(QDialog):
             "commission": commission,
             "sc": sc,
             "total_sc": commission + sc,
-            "income": commission * self._income_rate,
-            # so/po: Principal + Total SC - Income (Cash on Hand - Income for so)
-            # int:   Principal + Income
+            "income": _income,
+            "vat": _income / 1.12 * 0.12,
+            # so: Cash on Hand - Income  |  po/int: Principal + Income
             "ar_palawan": (
-                principal + commission + sc - (commission * self._income_rate)
-                if self._transaction_type in ('so', 'po') else
-                principal + (commission * self._income_rate)
+                principal + commission + sc - _income
+                if self._transaction_type == 'so' else
+                principal + _income
             ),
             "kyc_docs": self.kyc_docs_edit.text().strip(),
             "business_name": self.business_name_edit.text().strip(),
@@ -588,19 +664,363 @@ class PalawanTransactionDetailDialog(QDialog):
         self.evaluation_edit.setCurrentIndex(0)
         self._calculate_derived()
 
+    # ── Column keyword mapping for Excel import ───────────────────────────────
+    _IMPORT_KEYWORDS = {
+        "type":         ["type", "transaction type", "txn type", "trans type",
+                         "trans. type", "category", "kind"],
+        "code":         ["code", "txn", "transaction code", "control", "reference",
+                         "ref no", "control no", "trans. code", "trans code"],
+        "receiver":     ["receiver", "beneficiary", "recipient", "payee"],
+        "sender":       ["sender", "remitter", "originator", "remittance by"],
+        "principal":    ["principal", "amount", "principal amount", "remittance amount",
+                         "capital"],
+        "commission":   ["commission", "comm", "comm.", "fee", "service fee"],
+        "sc":           ["sc", "service charge", "s.c", "s.c.", "svc charge"],
+        "kyc_docs":     ["kyc", "photo id", "kyc docs", "identification", "id presented",
+                         "valid id"],
+        "business_name":["business", "company", "business name", "company name",
+                         "business/company"],
+        "position":     ["position", "position in company", "job", "occupation",
+                         "position in the"],
+        "relationship": ["relationship", "relation", "relationship to",
+                         "relationship to sender", "relationship to receiver"],
+        "source_funds": ["source", "source of funds", "fund source", "funds",
+                         "source of fund"],
+        "purpose":      ["purpose", "reason", "purpose of transaction",
+                         "nature of transaction", "purpose of trans"],
+        "evaluation":   ["evaluation", "risk", "risk level", "remarks", "risk evaluation"],
+        "vat":          ["vat", "vat amount", "vat (12%)", "vat(12%)", "value added tax",
+                         "tax", "vat 12%"],
+    }
+
+    # Keywords that identify each transaction type value inside the "type" column
+    _TYPE_KEYWORDS = {
+        "so":  ["send", "sendout", "send out", "send-out", "so", "remittance"],
+        "po":  ["pay", "payout", "pay out", "pay-out", "po"],
+        "int": ["international", "intl", "int"],
+    }
+
+    @staticmethod
+    def _match_column(header: str) -> "str | None":
+        """Return the field name for an Excel column header, or None if unrecognised."""
+        h = header.lower().strip()
+        if not h:
+            return None
+        for field, keywords in PalawanTransactionDetailDialog._IMPORT_KEYWORDS.items():
+            for kw in keywords:
+                # Exact match
+                if h == kw:
+                    return field
+                # Header starts with keyword  e.g. "position in company" → "position"
+                if h.startswith(kw):
+                    return field
+                # Keyword starts with header  e.g. "relation" → "relationship",
+                #                                  "commiss" → "commission"
+                if kw.startswith(h):
+                    return field
+        return None
+
+    def _classify_type(self, raw_value: str) -> "str | None":
+        """Return 'so', 'po', 'int', or None for an unrecognised type cell value."""
+        v = raw_value.lower().strip()
+        for txn_type, keywords in self._TYPE_KEYWORDS.items():
+            for kw in keywords:
+                if kw in v or v in kw:
+                    return txn_type
+        return None
+
+    def _import_from_excel(self):
+        """Import transactions from an Excel file.
+
+        Handles three formats:
+        - Single-type file: all rows are one transaction type
+        - Side-by-side combined: separate column groups per type in the same sheet
+          e.g. "RELEASED (PAYOUT)" columns on the left,
+               "REMITTANCE (SENDOUT)" columns on the right
+        - Type-column combined: a dedicated column identifies each row's type
+        """
+        try:
+            from openpyxl import load_workbook
+        except ImportError:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(
+                self, "Missing Dependency",
+                "The openpyxl package is required to import Excel files.\n"
+                "Install it with:  pip install openpyxl"
+            )
+            return
+
+        from PyQt5.QtWidgets import QFileDialog, QMessageBox
+
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Excel File", "",
+            "Excel Files (*.xlsx *.xls *.xlsm);;All Files (*)"
+        )
+        if not file_path:
+            return
+
+        try:
+            wb = load_workbook(file_path, read_only=True, data_only=True)
+            ws = wb.active
+        except Exception as exc:
+            QMessageBox.critical(self, "File Error", f"Could not open the file:\n{exc}")
+            return
+
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+
+        if not rows:
+            QMessageBox.warning(self, "Empty File", "The selected file has no data.")
+            return
+
+        # ── Step 1: detect side-by-side section headers ───────────────────────
+        # Scan the first 5 rows for cells that identify each section
+        # e.g. "RELEASED (PAYOUT)"  → po
+        #      "REMITTANCE (SENDOUT)" → so
+        _SECTION_MARKERS = {
+            'so':  ('sendout', 'send-out', 'send out', 'remittance'),
+            'po':  ('payout',  'pay-out',  'pay out',  'released'),
+            'int': ('international', 'intl'),
+        }
+        section_col_starts = {}   # type_key → column index where that section title starts
+        for row in rows[:5]:
+            for col_idx, cell in enumerate(row):
+                if cell is None:
+                    continue
+                v = str(cell).lower()
+                for t_key, markers in _SECTION_MARKERS.items():
+                    if t_key not in section_col_starts and any(m in v for m in markers):
+                        section_col_starts[t_key] = col_idx
+
+        # ── Step 2: determine column slice for the target type ────────────────
+        target    = self._transaction_type   # 'so', 'po', or 'int'
+        col_start = 0       # inclusive
+        col_end   = None    # exclusive; None = to end of row
+
+        if len(section_col_starts) >= 2:
+            # Side-by-side layout detected — restrict to matching section columns
+            sorted_secs = sorted(section_col_starts.items(), key=lambda x: x[1])
+            found_target = False
+            for i, (sec_type, sec_col) in enumerate(sorted_secs):
+                if sec_type == target:
+                    col_start    = sec_col
+                    col_end      = sorted_secs[i + 1][1] if i + 1 < len(sorted_secs) else None
+                    found_target = True
+                    break
+
+            if not found_target:
+                _lbl = {"so": "Send-Out", "po": "Pay-Out", "int": "International"}
+                found_names = [_lbl.get(k, k) for k in section_col_starts]
+                QMessageBox.warning(
+                    self, "Section Not Found",
+                    f"This file contains sections for: {', '.join(found_names)}\n\n"
+                    f"No '{_lbl.get(target, target)}' section was detected.\n"
+                    "Please open the correct dialog before importing."
+                )
+                return
+
+        def _slice(row):
+            s = row[col_start:col_end] if col_end is not None else row[col_start:]
+            return s
+
+        # ── Step 3: find header row inside the column slice ───────────────────
+        best_row_idx = 0
+        best_score   = -1
+        for idx, raw_row in enumerate(rows):
+            sliced = _slice(raw_row)
+            score  = sum(
+                1 for cell in sliced
+                if cell and self._match_column(str(cell)) is not None
+            )
+            if score > best_score:
+                best_score   = score
+                best_row_idx = idx
+
+        if best_score == 0:
+            QMessageBox.warning(
+                self, "No Recognised Columns",
+                "Could not find recognised column headers in the file.\n\n"
+                "Expected columns include:\n"
+                "Code, Principal, Commission, SC, Receiver, Sender,\n"
+                "KYC Docs, Business Name, Position, Relationship,\n"
+                "Source of Funds, Purpose, Evaluation"
+            )
+            return
+
+        # Build col_map relative to the slice (0-based within the slice)
+        header_sliced = _slice(rows[best_row_idx])
+        col_map = {}
+        for col_idx, cell in enumerate(header_sliced):
+            if cell is None:
+                continue
+            field = self._match_column(str(cell))
+            if field and field not in col_map:
+                col_map[field] = col_idx
+
+        # ── Step 4: check required columns ───────────────────────────────────
+        missing = [f for f in ("code", "principal", "commission", "sc") if f not in col_map]
+        if missing:
+            QMessageBox.warning(
+                self, "Missing Required Columns",
+                "The following required columns were not found:\n"
+                + ", ".join(missing).upper()
+                + "\n\nPlease make sure your Excel file has these headers."
+            )
+            return
+
+        has_type_col = "type" in col_map
+
+        # ── Step 5: parse data rows ───────────────────────────────────────────
+        existing_codes = {t.get("code", "") for t in self._transactions}
+        imported      = 0
+        skipped_dup   = []
+        skipped_empty = 0
+        skipped_type  = 0
+
+        def _str(sliced_row, field, default=""):
+            idx = col_map.get(field)
+            if idx is None or idx >= len(sliced_row):
+                return default
+            val = sliced_row[idx]
+            return str(val).strip() if val is not None else default
+
+        def _num(sliced_row, field):
+            idx = col_map.get(field)
+            if idx is None or idx >= len(sliced_row):
+                return 0.0
+            val = sliced_row[idx]
+            if val is None:
+                return 0.0
+            try:
+                return float(str(val).replace(",", "").strip() or 0)
+            except (ValueError, TypeError):
+                return 0.0
+
+        for raw_row in rows[best_row_idx + 1:]:
+            sliced = _slice(raw_row)
+
+            # Skip completely empty rows in this section
+            if all(cell is None or str(cell).strip() == "" for cell in sliced):
+                skipped_empty += 1
+                continue
+
+            # If there is a type column, filter by it (type-column combined files)
+            if has_type_col:
+                raw_type = _str(sliced, "type")
+                if raw_type and self._classify_type(raw_type) != target:
+                    skipped_type += 1
+                    continue
+
+            code       = _str(sliced, "code")
+            principal  = _num(sliced, "principal")
+            commission = _num(sliced, "commission")
+            sc         = _num(sliced, "sc")
+
+            # Skip rows that are effectively empty data
+            if not code and principal == 0 and commission == 0:
+                skipped_empty += 1
+                continue
+
+            # Skip duplicate codes
+            if code and code in existing_codes:
+                skipped_dup.append(code)
+                continue
+
+            # Calculate derived fields
+            total_sc = commission + sc
+            income   = commission * self._income_rate
+            # Use VAT from Excel if the column is present and non-zero,
+            # otherwise calculate it (income / 1.12 × 12%)
+            if "vat" in col_map:
+                vat = _num(sliced, "vat") or (income / 1.12 * 0.12)
+            else:
+                vat = income / 1.12 * 0.12
+            ar_palawan = (
+                (principal + total_sc) - income   # so: cash_on_hand - income
+                if target == 'so' else
+                principal + income                 # po / int: principal + income
+            )
+
+            eval_raw = _str(sliced, "evaluation", "LOW RISK").upper()
+            if "HIGH" in eval_raw:
+                evaluation = "HIGH RISK"
+            elif "MEDIUM" in eval_raw or "MED" in eval_raw:
+                evaluation = "MEDIUM RISK"
+            else:
+                evaluation = "LOW RISK"
+
+            txn = {
+                "code":          code,
+                "receiver":      _str(sliced, "receiver"),
+                "sender":        _str(sliced, "sender"),
+                "principal":     principal,
+                "commission":    commission,
+                "sc":            sc,
+                "total_sc":      total_sc,
+                "income":        income,
+                "vat":           vat,
+                "ar_palawan":    ar_palawan,
+                "kyc_docs":      _str(sliced, "kyc_docs"),
+                "business_name": _str(sliced, "business_name"),
+                "position":      _str(sliced, "position"),
+                "relationship":  _str(sliced, "relationship"),
+                "source_funds":  _str(sliced, "source_funds"),
+                "purpose":       _str(sliced, "purpose"),
+                "evaluation":    evaluation,
+            }
+            self._transactions.append(txn)
+            if code:
+                existing_codes.add(code)
+            imported += 1
+
+        # ── Step 6: refresh UI and show summary ───────────────────────────────
+        if imported:
+            self._refresh_table()
+
+        _lbl = {"so": "Send-Out", "po": "Pay-Out", "int": "International"}
+        current_label = _lbl.get(target, target)
+        side_by_side  = len(section_col_starts) >= 2
+
+        parts = [f"{imported} {current_label} transaction(s) imported successfully."]
+        if side_by_side:
+            parts[0] += f"  (read from '{current_label}' section of combined file)"
+        if has_type_col and skipped_type:
+            parts.append(f"{skipped_type} row(s) skipped — not {current_label} type.")
+        if skipped_dup:
+            parts.append(
+                f"{len(skipped_dup)} skipped (duplicate codes): "
+                + ", ".join(skipped_dup[:5])
+                + (" …" if len(skipped_dup) > 5 else "")
+            )
+        if skipped_empty:
+            parts.append(f"{skipped_empty} empty row(s) skipped.")
+
+        if imported == 0 and not skipped_dup:
+            QMessageBox.warning(
+                self, "No Data Imported",
+                f"No valid {current_label} rows were found in the file.\n\n"
+                + ("Check that the section columns contain data rows."
+                   if side_by_side else
+                   "Please check that the file has data rows below the header.")
+            )
+        else:
+            QMessageBox.information(self, "Import Complete", "\n".join(parts))
+
     def _refresh_table(self):
 
         self.table.setRowCount(0)
 
-        p_total = c_total = s_total = ts_total = i_total = ar_total = coh_total = 0.0
+        p_total = c_total = s_total = ts_total = i_total = vat_total = ar_total = coh_total = 0.0
 
         for txn in self._transactions:
             row = self.table.rowCount()
             self.table.insertRow(row)
 
-            # Add transaction data to table
-            _p = float(txn.get("principal", 0))
-            _ts = float(txn.get("total_sc", 0))
+            _p    = float(txn.get("principal", 0))
+            _ts   = float(txn.get("total_sc", 0))
+            _inc  = float(txn.get("income", 0))
+            _vat  = float(txn.get("vat", _inc / 1.12 * 0.12))
+
             self.table.setItem(row, 0, QTableWidgetItem(txn.get("code", "")))
             self.table.setItem(row, 1, QTableWidgetItem(txn.get("receiver", "")))
             self.table.setItem(row, 2, QTableWidgetItem(txn.get("sender", "")))
@@ -611,10 +1031,12 @@ class PalawanTransactionDetailDialog(QDialog):
             self.table.setItem(row, 7, QTableWidgetItem(f"{_ts:.2f}"))
             # col 8: Cash on Hand (sendout only)
             self.table.setItem(row, 8, QTableWidgetItem(f"{_p + _ts:.2f}" if self._transaction_type == 'so' else ""))
-            self.table.setItem(row, 9, QTableWidgetItem(f"{txn.get('income', 0):.2f}"))
-            self.table.setItem(row, 10, QTableWidgetItem(f"{txn.get('ar_palawan', 0):.2f}"))
+            self.table.setItem(row, 9, QTableWidgetItem(f"{_inc:.2f}"))
+            # col 10: VAT (Group 1 only — column hidden for other branches)
+            self.table.setItem(row, 10, QTableWidgetItem(f"{_vat:.2f}"))
+            self.table.setItem(row, 11, QTableWidgetItem(f"{txn.get('ar_palawan', 0):.2f}"))
 
-            # Delete button
+            # Delete button at col 12
             rem_btn = QPushButton("✕")
             rem_btn.setFixedWidth(28)
             rem_btn.setStyleSheet(
@@ -622,16 +1044,17 @@ class PalawanTransactionDetailDialog(QDialog):
                 "QPushButton:hover { color: #DC2626; }"
             )
             rem_btn.clicked.connect(lambda checked=False, r=row: self._remove_transaction(r))
-            self.table.setCellWidget(row, 11, rem_btn)
+            self.table.setCellWidget(row, 12, rem_btn)
 
             # Accumulate totals
-            p_total += txn.get("principal", 0)
-            c_total += txn.get("commission", 0)
-            s_total += txn.get("sc", 0)
-            ts_total += txn.get("total_sc", 0)
-            i_total += txn.get("income", 0)
-            ar_total += txn.get("ar_palawan", 0)
-            coh_total += txn.get("principal", 0) + txn.get("total_sc", 0)
+            p_total   += txn.get("principal", 0)
+            c_total   += txn.get("commission", 0)
+            s_total   += txn.get("sc", 0)
+            ts_total  += txn.get("total_sc", 0)
+            i_total   += _inc
+            vat_total += _vat
+            ar_total  += txn.get("ar_palawan", 0)
+            coh_total += _p + _ts
 
         # Update total labels
         self._principal_total.setText(f"{p_total:.2f}")
@@ -641,7 +1064,11 @@ class PalawanTransactionDetailDialog(QDialog):
         if self._transaction_type == 'so':
             self._cash_on_hand_total.setText(f"{coh_total:.2f}")
         self._income_total.setText(f"{i_total:.2f}")
+        if self._has_vat:
+            self._vat_total.setText(f"{vat_total:.2f}")
         self._ar_total.setText(f"{ar_total:.2f}")
+
+        self._update_save_btn()
 
     def _remove_transaction(self, row):
         """Remove a transaction by row index."""

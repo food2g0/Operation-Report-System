@@ -44,11 +44,13 @@ class APIDbManager:
         self._token   = None
         self._session = requests.Session()
         retry = Retry(
-            total=3,
-            connect=3,
-            read=3,
+            total=1,
+            connect=1,
+            read=1,
             backoff_factor=0.3,
-            status_forcelist=[429, 500, 502, 503, 504],
+            # 503 = server busy — retrying immediately makes overload worse.
+            # Keep 502/504 (gateway timeouts) which are reliably transient.
+            status_forcelist=[429, 502, 504],
             allowed_methods=["GET", "POST"],
         )
         # pool_block=False + pool_maxsize keeps connections alive but doesn't
@@ -124,16 +126,18 @@ class APIDbManager:
         """POST to /api/exec or /api/exec_safe and handle token refresh."""
         payload = {"sql": sql, "params": self._normalise_params(params)}
         resp = None
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 resp = self._session.post(
                     f"{self.base_url}{endpoint}", json=payload, timeout=(5, self.timeout)
                 )
                 break
             except (requests.Timeout, requests.ConnectionError) as exc:
-                if attempt >= 2:
+                # RetryError means the HTTPAdapter already exhausted its retries —
+                # don't loop again on top of that.
+                if isinstance(exc, requests.exceptions.RetryError) or attempt >= 1:
                     raise
-                wait_s = 0.8 * (attempt + 1)
+                wait_s = 0.8
                 self.logger.warning("Transient network error, retrying in %.1fs: %s", wait_s, exc)
                 time.sleep(wait_s)
         if resp is not None and resp.status_code == 401:

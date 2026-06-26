@@ -251,16 +251,17 @@ class VarianceReviewPage(QWidget):
         self._load_corporations()
 
     def _load_corporations(self):
-        """Load corporations for filter"""
+        """Load corporations from the corporations table."""
         try:
-            query = f"SELECT DISTINCT corporation FROM {self.current_table} ORDER BY corporation"
-            rows = self.db.execute_query(query)
+            rows = self.db.execute_query(
+                "SELECT name FROM corporations ORDER BY name"
+            )
             self.corp_filter.clear()
             self.corp_filter.addItem("All", "")
-            if rows:
-                for r in rows:
-                    if r.get('corporation'):
-                        self.corp_filter.addItem(r['corporation'], r['corporation'])
+            for r in (rows or []):
+                name = r['name'] if isinstance(r, dict) else r[0]
+                if name:
+                    self.corp_filter.addItem(name, name)
         except Exception as e:
             print(f"Error loading corporations: {e}")
 

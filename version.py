@@ -3,13 +3,13 @@ Version Configuration for Operation Report System
 Update this file with each new release.
 """
 
-__version__ = "1.0.0"
+__version__ = "2.0.2"
 __version_info__ = {
-    "major": 1,
+    "major": 2,
     "minor": 0,
-    "patch": 0,
-    "release_date": "2026-02-17",
-    "build": 1
+    "patch": 2,
+    "release_date": "2026-06-22",
+    "build": 4
 }
 
 # Auto-updater configuration

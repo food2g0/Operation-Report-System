@@ -225,10 +225,10 @@ class BIRBookPage(QWidget):
 
         # Transactions table
         self.table = QTableWidget()
-        self.table.setColumnCount(20)
+        self.table.setColumnCount(21)
         self.table.setHorizontalHeaderLabels([
             "Date", "Branch", "Code", "Receiver", "Sender", "Principal",
-            "Commission", "SC", "Total SC", "Cash on Hand", "Income", "A/P Palawan",
+            "Commission", "SC", "Total SC", "Cash on Hand", "Income", "VAT (12%)", "A/P Palawan",
             "KYC Docs", "Business Name", "Position", "Relationship",
             "Source Funds", "Purpose", "Evaluation", ""
         ])
@@ -236,7 +236,7 @@ class BIRBookPage(QWidget):
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.Stretch)
         # Fix last column to have more width for button
-        hh.setSectionResizeMode(19, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(20, QHeaderView.ResizeToContents)
         self.table.setSelectionMode(QAbstractItemView.NoSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
@@ -351,14 +351,14 @@ class BIRBookPage(QWidget):
             self.corporation_combo.clear()
 
             result = self.db.execute_query(
-                "SELECT DISTINCT corporation FROM payable_tbl_brand_a WHERE corporation IS NOT NULL AND corporation != '' ORDER BY corporation"
+                "SELECT name FROM corporations ORDER BY name"
             )
 
             if result:
                 for row in result:
-                    corp = row.get("corporation", "")
-                    if corp:
-                        self.corporation_combo.addItem(corp, corp)
+                    name = row['name'] if isinstance(row, dict) else row[0]
+                    if name:
+                        self.corporation_combo.addItem(name, name)
                 logger.info(f"[BIRBookPage] Loaded {len(result)} corporations")
                 if self.corporation_combo.count() > 0:
                     self.corporation_combo.setCurrentIndex(0)
@@ -423,16 +423,35 @@ class BIRBookPage(QWidget):
 
             logger.info(f"[BIRBookPage] Found {len(result)} total records for date {selected_date}")
 
-            # Collect all transactions into a flat list
+            # Deduplicate DB records by (branch, date) — the OR clause in the query can
+            # return the same physical row twice when a branch matches both the corporation
+            # column and the branch-lookup subquery.  Keep the last occurrence (latest save).
+            seen_br_date = {}
+            for rec in result:
+                k = (str(rec.get('branch', '') or '').strip(),
+                     str(rec.get('date',   '') or ''))
+                seen_br_date[k] = rec
+            unique_result = list(seen_br_date.values())
+            if len(unique_result) < len(result):
+                logger.warning(
+                    f"[BIRBookPage] Collapsed {len(result) - len(unique_result)} "
+                    f"duplicate DB records for the same (branch, date)"
+                )
+
+            # Collect all transactions into a flat list.
+            # Dedup is done INLINE using the record's own date/branch (not the spread
+            # txn dict, which can override 'date'/'branch' if old saves stored them).
             self.all_transactions = []
+            seen_keys = set()
 
-            for record in result:
-                date = record.get("date", "")
+            for record in unique_result:
+                date   = record.get("date",   "")
                 branch = record.get("branch", "")
+                # Use string-normalised values for the dedup key so that
+                # datetime.date objects and their string equivalents match.
+                date_key   = str(date   or '').strip()
+                branch_key = str(branch or '').strip()
 
-                # Process all three sections — read only from _principal column
-                # since that column holds the full transaction list (including sc/commission).
-                # Reading _sc and _commission would duplicate the same transactions.
                 for section_key in ("sendout", "payout", "international"):
                     col_name = f"{section_key}_detailed_principal"
                     json_str = record.get(col_name)
@@ -440,31 +459,47 @@ class BIRBookPage(QWidget):
                     if json_str:
                         try:
                             transactions = json.loads(json_str)
-                            logger.debug(f"[BIRBookPage] Parsed {len(transactions)} transactions from {col_name}")
+                            logger.debug(
+                                f"[BIRBookPage] Parsed {len(transactions)} "
+                                f"transactions from {col_name}"
+                            )
                             for txn in transactions:
+                                code_key = str(txn.get('code', '') or '').strip()
+                                # Fallback discriminator for codeless rows:
+                                # use receiver + principal so two identical
+                                # no-code transactions still collapse to one key.
+                                if not code_key:
+                                    code_key = (
+                                        str(txn.get('receiver',  '') or '').strip()
+                                        + '|'
+                                        + str(txn.get('principal', 0) or 0)
+                                    )
+                                key = (date_key, branch_key, section_key, code_key)
+                                if key in seen_keys:
+                                    logger.debug(
+                                        f"[BIRBookPage] Skipping duplicate txn "
+                                        f"code={code_key!r} branch={branch_key!r}"
+                                    )
+                                    continue
+                                seen_keys.add(key)
+                                # Put **txn first so the explicit metadata keys
+                                # (date, branch, _type) always win and cannot be
+                                # overridden by a stale 'date' field inside the JSON.
                                 txn_with_meta = {
-                                    'date': date,
+                                    **txn,
+                                    'date':   date,
                                     'branch': branch,
-                                    '_type': section_key,
-                                    **txn
+                                    '_type':  section_key,
                                 }
                                 self.all_transactions.append(txn_with_meta)
                         except (json.JSONDecodeError, TypeError) as e:
-                            logger.error(f"[BIRBookPage] JSON parse error for {col_name}: {e}")
+                            logger.error(
+                                f"[BIRBookPage] JSON parse error for {col_name}: {e}"
+                            )
 
-            logger.info(f"[BIRBookPage] Total transactions collected: {len(self.all_transactions)}")
-
-            # Deduplicate by (date, branch, type, code) to guard against double-saved data
-            seen_keys = set()
-            deduped = []
-            for txn in self.all_transactions:
-                key = (txn.get('date'), txn.get('branch'), txn.get('_type'), txn.get('code'))
-                if key not in seen_keys:
-                    seen_keys.add(key)
-                    deduped.append(txn)
-            if len(deduped) < len(self.all_transactions):
-                logger.warning(f"[BIRBookPage] Removed {len(self.all_transactions) - len(deduped)} duplicate transactions")
-            self.all_transactions = deduped
+            logger.info(
+                f"[BIRBookPage] Total unique transactions: {len(self.all_transactions)}"
+            )
 
             self.current_page = 1
             self._display_page()
@@ -486,14 +521,32 @@ class BIRBookPage(QWidget):
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
         selected_txn_type = self.txn_type_combo.currentData()
 
-        # Show/hide Cash on Hand column (col 9) and update A/P vs A/R header (col 11)
+        # Show/hide Cash on Hand column (col 9) and update A/P vs A/R header (col 12)
         is_sendout = selected_txn_type == "sendout"
         self.table.setColumnHidden(9, not is_sendout)
         ar_ap_header = "A/P Palawan" if is_sendout else "A/R Palawan"
-        self.table.setHorizontalHeaderItem(11, QTableWidgetItem(ar_ap_header))
+        self.table.setHorizontalHeaderItem(12, QTableWidgetItem(ar_ap_header))
 
         # Filter transactions by type
         filtered_txns = [t for t in self.all_transactions if t.get('_type') == selected_txn_type]
+
+        # Safety-net dedup: catch any duplicates that survived _load_transactions.
+        # Uses the DB-record date/branch (guaranteed by metadata-first construction)
+        # so it's immune to stale 'date' fields inside the JSON payload.
+        _seen = set()
+        _clean = []
+        for _t in filtered_txns:
+            _code = str(_t.get('code', '') or '').strip()
+            if not _code:
+                _code = (str(_t.get('receiver', '') or '').strip()
+                         + '|' + str(_t.get('principal', 0) or 0))
+            _k = (str(_t.get('date',   '') or '').strip(),
+                  str(_t.get('branch', '') or '').strip(),
+                  _code)
+            if _k not in _seen:
+                _seen.add(_k)
+                _clean.append(_t)
+        filtered_txns = _clean
 
         start_idx = (self.current_page - 1) * self.rows_per_page
         end_idx = start_idx + self.rows_per_page
@@ -539,7 +592,7 @@ class BIRBookPage(QWidget):
                         }
                         QPushButton:hover { background: #2563EB; }
                     """)
-                    expand_btn.clicked.connect(lambda checked, r=row_idx, d=(date, branch), t=txns:
+                    expand_btn.clicked.connect(lambda checked, r=row_idx, d=(date, branch), t=txns[1:]:
                                                self._toggle_group_expansion(r, d, t))
 
                     # Create container widget to center the button
@@ -551,7 +604,7 @@ class BIRBookPage(QWidget):
                     layout.addWidget(expand_btn)
                     layout.addStretch()
 
-                    self.table.setCellWidget(row_idx, 17, container)
+                    self.table.setCellWidget(row_idx, 18, container)
                     self.group_data[row_idx] = (date, branch, txns[1:])  # Store hidden transactions
 
                 row_idx += 1
@@ -583,7 +636,7 @@ class BIRBookPage(QWidget):
 
         # Get all transactions in this group (including the visible one)
         all_txns = [self.table.item(header_row, col).text() if self.table.item(header_row, col) else ''
-                    for col in range(18)]
+                    for col in range(19)]
         all_txns_data = hidden_txns
 
         # Find first transaction to get the visible one
@@ -612,7 +665,7 @@ class BIRBookPage(QWidget):
         self._add_group_totals_row(all_group_txns, insert_row)
 
         # Update button to collapse
-        container = self.table.cellWidget(header_row, 17)
+        container = self.table.cellWidget(header_row, 18)
         if container:
             button = container.findChild(QPushButton)
             if button:
@@ -643,7 +696,7 @@ class BIRBookPage(QWidget):
             self.table.removeRow(header_row + 1)
 
         # Update button to expand
-        container = self.table.cellWidget(header_row, 17)
+        container = self.table.cellWidget(header_row, 18)
         if container:
             button = container.findChild(QPushButton)
             if button:
@@ -682,6 +735,8 @@ class BIRBookPage(QWidget):
         _txn_type = txn.get("_type", "")
         _principal = float(txn.get("principal", 0))
         _total_sc = float(txn.get("total_sc", 0))
+        _income = float(txn.get("income", 0))
+        _vat = float(txn.get("vat", _income / 1.12 * 0.12))
         _cash_on_hand = f"{_principal + _total_sc:.2f}" if _txn_type == "sendout" else ""
         data = [
             str(txn.get("date", "")) if show_date_branch else "",
@@ -693,9 +748,10 @@ class BIRBookPage(QWidget):
             f"{txn.get('commission', 0):.2f}",
             f"{txn.get('sc', 0):.2f}",
             f"{_total_sc:.2f}",
-            _cash_on_hand,            # col 9
-            f"{txn.get('income', 0):.2f}",   # col 10
-            f"{txn.get('ar_palawan', 0):.2f}", # col 11
+            _cash_on_hand,                   # col 9
+            f"{_income:.2f}",                # col 10
+            f"{_vat:.2f}",                   # col 11 VAT (12%)
+            f"{txn.get('ar_palawan', 0):.2f}", # col 12
             txn.get("kyc_docs", ""),
             txn.get("business_name", ""),
             txn.get("position", ""),
@@ -710,7 +766,7 @@ class BIRBookPage(QWidget):
             item = QTableWidgetItem(str(value))
             item.setFlags(item.flags() & ~Qt.ItemIsEditable)
             # Right-align numeric columns
-            if col in [5, 6, 7, 8, 9, 10, 11]:
+            if col in [5, 6, 7, 8, 9, 10, 11, 12]:
                 item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
             # Add light indentation for hidden rows (show_date_branch=False)
             if not show_date_branch and col == 2:
@@ -727,6 +783,7 @@ class BIRBookPage(QWidget):
         total_sc = sum(float(t.get("sc", 0)) for t in transactions)
         total_total_sc = sum(float(t.get("total_sc", 0)) for t in transactions)
         total_income = sum(float(t.get("income", 0)) for t in transactions)
+        total_vat = sum(float(t.get("vat", float(t.get("income", 0)) / 1.12 * 0.12)) for t in transactions)
         total_ar = sum(float(t.get("ar_palawan", 0)) for t in transactions)
         total_cash_on_hand = total_principal + total_total_sc
 
@@ -769,13 +826,14 @@ class BIRBookPage(QWidget):
             self.table.setItem(row_idx, 9, _create_totals_item())
 
         self.table.setItem(row_idx, 10, _create_num_item(total_income))     # Income
+        self.table.setItem(row_idx, 11, _create_num_item(total_vat))       # VAT (12%)
 
-        # A/P Total (sendout) or A/R Total (payout/international) at col 11
+        # A/P Total (sendout) or A/R Total (payout/international) at col 12
         ar_ap_item = _create_num_item(total_ar)
-        self.table.setItem(row_idx, 11, ar_ap_item)
+        self.table.setItem(row_idx, 12, ar_ap_item)
 
         # Rest of columns
-        for col in range(12, 19):
+        for col in range(13, 20):
             self.table.setItem(row_idx, col, _create_totals_item())
 
     def _export_to_excel(self):
@@ -827,7 +885,7 @@ class BIRBookPage(QWidget):
             _ar_ap_lbl = "A/P Palawan" if selected_txn_type == 'sendout' else "A/R Palawan"
             columns = [
                 "Date", "Branch", "Code", "Receiver", "Sender", "Principal",
-                "Commission", "SC", "Total SC", _income_lbl, _ar_ap_lbl,
+                "Commission", "SC", "Total SC", _income_lbl, "VAT (12%)", _ar_ap_lbl,
                 "KYC Docs", "Business Name", "Position", "Relationship",
                 "Source Funds", "Purpose", "Evaluation"
             ]
@@ -852,22 +910,24 @@ class BIRBookPage(QWidget):
                 ws.cell(row=row_idx, column=7).value = float(txn.get("commission", 0))
                 ws.cell(row=row_idx, column=8).value = float(txn.get("sc", 0))
                 ws.cell(row=row_idx, column=9).value = float(txn.get("total_sc", 0))
-                ws.cell(row=row_idx, column=10).value = float(txn.get("income", 0))
-                ws.cell(row=row_idx, column=11).value = float(txn.get("ar_palawan", 0))
-                ws.cell(row=row_idx, column=12).value = txn.get("kyc_docs", "")
-                ws.cell(row=row_idx, column=13).value = txn.get("business_name", "")
-                ws.cell(row=row_idx, column=14).value = txn.get("position", "")
-                ws.cell(row=row_idx, column=15).value = txn.get("relationship", "")
-                ws.cell(row=row_idx, column=16).value = txn.get("source_funds", "")
-                ws.cell(row=row_idx, column=17).value = txn.get("purpose", "")
-                ws.cell(row=row_idx, column=18).value = txn.get("evaluation", "")
+                _inc = float(txn.get("income", 0))
+                ws.cell(row=row_idx, column=10).value = _inc
+                ws.cell(row=row_idx, column=11).value = float(txn.get("vat", _inc / 1.12 * 0.12))
+                ws.cell(row=row_idx, column=12).value = float(txn.get("ar_palawan", 0))
+                ws.cell(row=row_idx, column=13).value = txn.get("kyc_docs", "")
+                ws.cell(row=row_idx, column=14).value = txn.get("business_name", "")
+                ws.cell(row=row_idx, column=15).value = txn.get("position", "")
+                ws.cell(row=row_idx, column=16).value = txn.get("relationship", "")
+                ws.cell(row=row_idx, column=17).value = txn.get("source_funds", "")
+                ws.cell(row=row_idx, column=18).value = txn.get("purpose", "")
+                ws.cell(row=row_idx, column=19).value = txn.get("evaluation", "")
 
                 # Apply borders and formatting
-                for col in range(1, 18):
+                for col in range(1, 19):
                     cell = ws.cell(row=row_idx, column=col)
                     cell.border = border
                     cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
-                    if col in [6, 7, 8, 9, 10, 11]:  # Number columns
+                    if col in [6, 7, 8, 9, 10, 11, 12]:  # Number columns
                         cell.number_format = '#,##0.00'
                         cell.alignment = Alignment(horizontal="right", vertical="top")
 
@@ -883,12 +943,13 @@ class BIRBookPage(QWidget):
             ws.column_dimensions['I'].width = 12
             ws.column_dimensions['J'].width = 12
             ws.column_dimensions['K'].width = 12
-            ws.column_dimensions['L'].width = 15
-            ws.column_dimensions['M'].width = 18
-            ws.column_dimensions['N'].width = 15
+            ws.column_dimensions['L'].width = 12
+            ws.column_dimensions['M'].width = 15
+            ws.column_dimensions['N'].width = 18
             ws.column_dimensions['O'].width = 15
             ws.column_dimensions['P'].width = 15
             ws.column_dimensions['Q'].width = 15
+            ws.column_dimensions['R'].width = 15
 
             # Add summary at bottom
             summary_row = len(filtered_txns) + 3
@@ -900,6 +961,7 @@ class BIRBookPage(QWidget):
             total_sc = sum(float(txn.get("sc", 0)) for txn in filtered_txns)
             total_total_sc = sum(float(txn.get("total_sc", 0)) for txn in filtered_txns)
             total_income = sum(float(txn.get("income", 0)) for txn in filtered_txns)
+            total_vat = sum(float(txn.get("vat", float(txn.get("income", 0)) / 1.12 * 0.12)) for txn in filtered_txns)
             total_ar = sum(float(txn.get("ar_palawan", 0)) for txn in filtered_txns)
 
             ws.cell(row=summary_row + 1, column=5).value = "Total Principal:"
@@ -917,10 +979,15 @@ class BIRBookPage(QWidget):
             ws.cell(row=summary_row + 3, column=8).number_format = '#,##0.00'
             ws.cell(row=summary_row + 3, column=8).font = Font(bold=True)
 
-            ws.cell(row=summary_row + 4, column=5).value = "Total A/R Palawan:"
-            ws.cell(row=summary_row + 4, column=11).value = total_ar
+            ws.cell(row=summary_row + 4, column=5).value = "Total VAT (12%):"
+            ws.cell(row=summary_row + 4, column=11).value = total_vat
             ws.cell(row=summary_row + 4, column=11).number_format = '#,##0.00'
             ws.cell(row=summary_row + 4, column=11).font = Font(bold=True)
+
+            ws.cell(row=summary_row + 5, column=5).value = "Total A/R Palawan:"
+            ws.cell(row=summary_row + 5, column=12).value = total_ar
+            ws.cell(row=summary_row + 5, column=12).number_format = '#,##0.00'
+            ws.cell(row=summary_row + 5, column=12).font = Font(bold=True)
 
             wb.save(file_path)
             QMessageBox.information(
@@ -1020,9 +1087,23 @@ class BIRBookPage(QWidget):
                 self.info_label.setText("No data for selected period")
                 return
 
+            # Deduplicate DB records by (branch, date) before parsing JSON
+            seen_br_date = {}
+            for rec in result:
+                k = (str(rec.get('branch', '') or '').strip(),
+                     str(rec.get('date',   '') or ''))
+                seen_br_date[k] = rec
+            unique_result = list(seen_br_date.values())
+            if len(unique_result) < len(result):
+                logger.warning(
+                    f"[BIRBookPage] Monthly report: collapsed "
+                    f"{len(result) - len(unique_result)} duplicate DB records"
+                )
+
             # Collect all transactions
             all_txns = []
-            for record in result:
+            seen_txn_keys = set()
+            for record in unique_result:
                 date = record.get("date", "")
                 branch = record.get("branch", "")
 
@@ -1034,6 +1115,15 @@ class BIRBookPage(QWidget):
                         try:
                             transactions = json.loads(json_str)
                             for txn in transactions:
+                                txn_key = (
+                                    str(date or ''),
+                                    str(branch or '').strip(),
+                                    section_key,
+                                    str(txn.get('code', '') or ''),
+                                )
+                                if txn_key in seen_txn_keys:
+                                    continue
+                                seen_txn_keys.add(txn_key)
                                 txn_with_meta = {
                                     'date': date,
                                     'branch': branch,

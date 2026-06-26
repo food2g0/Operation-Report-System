@@ -1107,15 +1107,16 @@ class SuperAdminDashboard(QWidget):
         self.setMinimumSize(1050, 700)
         self.showMaximized()
 
-        # Initialize currencies
-        init_currencies_table()
-
         self.session = SessionManager(inactivity_timeout=1800)
         self._session_timer = QTimer(self)
         self._session_timer.timeout.connect(self._check_session_timeout)
         self._session_timer.start(60000)
 
         self._build_ui()
+
+        # Defer currency table init so the window opens immediately.
+        # Runs after the event loop starts — no UI lag on slow API connections.
+        QTimer.singleShot(200, self._init_currencies_bg)
 
         if AUTO_UPDATE_ENABLED and check_update_success:
             check_update_success(parent=self)
@@ -1480,6 +1481,12 @@ class SuperAdminDashboard(QWidget):
             self.session.logout()
             self.logout_requested.emit()
             self.close()
+
+    def _init_currencies_bg(self):
+        """Initialize currencies table in a background thread to avoid UI lag."""
+        import threading
+        threading.Thread(target=init_currencies_table, daemon=True,
+                         name="CurrencyInit").start()
 
     def _check_session_timeout(self):
         if self.session.check_timeout():

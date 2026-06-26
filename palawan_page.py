@@ -131,16 +131,17 @@ class PalawanPage(QWidget):
         self.populate_table()
 
     def load_corporations(self):
-        """Load unique corporations from the daily reports table"""
+        """Load corporations from the corporations table."""
         self.corp_selector.clear()
         try:
-            # Get distinct corporations from appropriate table
-            query = f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation"
-            corporations = db_manager.execute_query(query)
-
+            corporations = db_manager.execute_query(
+                "SELECT name FROM corporations ORDER BY name"
+            )
             self.corp_selector.blockSignals(True)
-            for corp in corporations:
-                self.corp_selector.addItem(corp['corporation'])
+            for corp in (corporations or []):
+                name = corp['name'] if isinstance(corp, dict) else corp[0]
+                if name:
+                    self.corp_selector.addItem(name)
             self.corp_selector.blockSignals(False)
 
         except Exception as e:

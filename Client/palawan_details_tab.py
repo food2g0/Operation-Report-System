@@ -330,7 +330,13 @@ class PalawanDetailsTab(QWidget):
         dialog_label = f"{section} Transactions"
 
         # Open dialog with transaction type for correct income calculation
-        dlg = PalawanTransactionDetailDialog(dialog_label, existing_txns, self, transaction_type=prefix)
+        # VAT (12%) is shown only when branch line_of_business == 'Group 1'
+        dlg = PalawanTransactionDetailDialog(
+            dialog_label, existing_txns, self,
+            transaction_type=prefix,
+            has_payroll=getattr(self.parent, 'has_payroll', False),
+            line_of_business=getattr(self.parent, 'line_of_business', ''),
+        )
         if dlg.exec_():
             # Get the transactions
             txns = dlg.get_transactions_data()
@@ -547,6 +553,10 @@ class PalawanDetailsTab(QWidget):
                 print(f"   ❌ {label} NOT found in adjustments_inputs!")
 
     def clear_fields(self):
+        # Clear per-transaction detail data so a new date starts with a clean slate.
+        self._detailed_transactions = {}
+        self._code_name_lookup = {}
+
         for fields in (self._so_fields, self._po_fields, self._int_fields):
             for key in ("lotes", "principal", "sc", "commission"):
                 fields[key].blockSignals(True)

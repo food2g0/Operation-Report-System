@@ -12,6 +12,7 @@ Requires: pip install requests rich
 
 import argparse
 import datetime
+import os
 import random
 import statistics
 import sys

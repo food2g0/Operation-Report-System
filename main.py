@@ -1,4 +1,6 @@
 import sys
+import os
+import json
 import traceback
 import ctypes
 import time
@@ -209,6 +211,44 @@ def main():
     sys.exit(result)
 
 
+_MACHINE_CACHE_TTL = 86400  # 24 hours — admin revocations take effect within one day
+
+
+def _machine_cache_path() -> str:
+    appdata = os.environ.get('APPDATA') or os.path.expanduser('~')
+    folder = os.path.join(appdata, 'OperationReportSystem')
+    os.makedirs(folder, exist_ok=True)
+    return os.path.join(folder, 'machine_status_cache.json')
+
+
+def _read_machine_cache(machine_id: str) -> "str | None":
+    """Return 'approved' from cache if fresh and machine matches, else None.
+    Pending/revoked are never served from cache — they always hit the server."""
+    try:
+        with open(_machine_cache_path(), 'r') as f:
+            data = json.load(f)
+        if data.get('machine_id') != machine_id:
+            return None
+        if data.get('status') != 'approved':
+            return None
+        if time.time() - data.get('cached_at', 0) > _MACHINE_CACHE_TTL:
+            return None
+        return 'approved'
+    except Exception:
+        return None
+
+
+def _write_machine_cache(machine_id: str, status: str) -> None:
+    # Only cache approved machines — pending/revoked always re-check the server
+    if status != 'approved':
+        return
+    try:
+        with open(_machine_cache_path(), 'w') as f:
+            json.dump({'machine_id': machine_id, 'status': status, 'cached_at': time.time()}, f)
+    except Exception:
+        pass
+
+
 def _check_machine_startup() -> str:
     """
     Called once at app startup (before the login window).
@@ -217,6 +257,8 @@ def _check_machine_startup() -> str:
       'pending'  → show waiting screen and exit
       'revoked'  → show error and exit
       'bypass'   → server unreachable, allow through silently
+
+    Approved machines are cached for 24 hours. Pending/revoked always hit the DB.
     """
     try:
         import requests
@@ -224,13 +266,19 @@ def _check_machine_startup() -> str:
         from api_config import API_URL, API_KEY
 
         info = get_machine_info()
+        machine_id = info["machine_id"]
+
+        cached_status = _read_machine_cache(machine_id)
+        if cached_status:
+            logger.debug("Machine status from cache: %s", cached_status)
+            return cached_status
 
         # Single call — no separate /api/token step needed
         resp = requests.post(
             f"{API_URL}/api/machine/status",
             json={
                 "api_key":    API_KEY,
-                "machine_id": info["machine_id"],
+                "machine_id": machine_id,
                 "hostname":   info.get("hostname"),
                 "mac_address": info.get("mac_address"),
                 "cpu_info":   info.get("cpu_info"),
@@ -238,7 +286,9 @@ def _check_machine_startup() -> str:
             timeout=5,
         )
         if resp.status_code == 200:
-            return resp.json().get("status", "bypass")
+            status = resp.json().get("status", "bypass")
+            _write_machine_cache(machine_id, status)
+            return status
 
         return "bypass"
     except Exception as exc:

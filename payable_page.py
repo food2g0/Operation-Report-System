@@ -1015,10 +1015,12 @@ class PayablesPage(QWidget):
         self.corp_selector.addItem("")  # empty = All Corporations (when using OS filter)
         try:
             results = db_manager.execute_query(
-                f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation"
+                "SELECT name FROM corporations ORDER BY name"
             )
-            for corp in results:
-                self.corp_selector.addItem(corp['corporation'])
+            for corp in (results or []):
+                name = corp['name'] if isinstance(corp, dict) else corp[0]
+                if name:
+                    self.corp_selector.addItem(name)
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
         finally:

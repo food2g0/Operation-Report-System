@@ -36,7 +36,10 @@ class APIDbManager:
             connect=1,
             read=1,
             backoff_factor=0.3,
-            status_forcelist=[429, 500, 502, 503, 504],
+            # 503 = server busy — retrying immediately makes overload worse.
+            # 500 = server error — may be transient but also often not; skip retry.
+            # Keep 502/504 (gateway timeouts) which are reliably transient.
+            status_forcelist=[429, 502, 504],
             allowed_methods=["GET", "POST"],
         )
         adapter = HTTPAdapter(max_retries=retry)
@@ -121,16 +124,18 @@ class APIDbManager:
         import requests as _requests
         payload = {"sql": sql, "params": self._normalise_params(params)}
         resp = None
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 resp = self._session.post(
                     f"{self.base_url}{endpoint}", json=payload, timeout=(5, self.timeout)
                 )
                 break
             except (_requests.Timeout, _requests.ConnectionError) as exc:
-                if attempt >= 2:
+                # RetryError means the HTTPAdapter already exhausted its retries —
+                # don't loop again on top of that.
+                if isinstance(exc, _requests.exceptions.RetryError) or attempt >= 1:
                     raise
-                wait_s = 0.8 * (attempt + 1)
+                wait_s = 0.8
                 self.logger.warning("Transient network error, retrying in %.1fs: %s", wait_s, exc)
                 time.sleep(wait_s)
         if resp is not None and resp.status_code == 401:

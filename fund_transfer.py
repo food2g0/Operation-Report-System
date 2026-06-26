@@ -304,25 +304,25 @@ class FundTransferPage(QWidget):
         self.populate_table()
 
     def load_corporations(self):
-        """Load unique corporations from the appropriate daily_reports table"""
+        """Load corporations from the corporations table."""
         self.corp_selector.clear()
         try:
-            query = f"SELECT DISTINCT corporation FROM {self.daily_table} ORDER BY corporation"
-            corporations = db_manager.execute_query(query)
-
+            corporations = db_manager.execute_query(
+                "SELECT name FROM corporations ORDER BY name"
+            )
             if not corporations:
-                print("No corporations found in database")
                 return
 
             self.corp_selector.blockSignals(True)
             for corp in corporations:
-                self.corp_selector.addItem(corp['corporation'])
+                name = corp['name'] if isinstance(corp, dict) else corp[0]
+                if name:
+                    self.corp_selector.addItem(name)
             self.corp_selector.blockSignals(False)
 
         except Exception as e:
             self.corp_selector.blockSignals(False)
-            print(f"Error loading corporations: {e}")
-            QMessageBox.critical(self, "Database Error", f"Error connecting to database: {str(e)}")
+            QMessageBox.critical(self, "Database Error", f"Error loading corporations: {str(e)}")
 
     def load_os_list(self):
 
@@ -583,6 +583,12 @@ class FundTransferPage(QWidget):
             filter_value = self.corp_selector.currentText()
             if not filter_value:
                 return
+            is_global_reliance = 'GLOBAL RELIANCE' in filter_value.upper()
+            # Global Reliance: all branches with global_tag = 'GLOBAL' regardless of corporation_id
+            branch_where = "global_tag = 'GLOBAL'" if is_global_reliance else (
+                f"(corporation_id = (SELECT id FROM corporations WHERE name = %s)"
+                f" OR sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))"
+            )
             if is_range:
                 query = f"""
                     SELECT b.name as branch,
@@ -598,8 +604,7 @@ class FundTransferPage(QWidget):
                                MAX(global_tag) as global_tag, MAX(sunday) as sunday,
                                MAX(COALESCE(sub_corporation_id, corporation_id)) as corp_id
                         FROM branches
-                        WHERE (corporation_id = (SELECT id FROM corporations WHERE name = %s)
-                               OR sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
+                        WHERE {branch_where}
                         {inner_reg_clause}
                         GROUP BY name
                     ) b
@@ -609,7 +614,7 @@ class FundTransferPage(QWidget):
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (filter_value, filter_value, date_start, date_end)
+                params = (date_start, date_end) if is_global_reliance else (filter_value, filter_value, date_start, date_end)
             else:
                 query = f"""
                     SELECT b.name as branch,
@@ -625,8 +630,7 @@ class FundTransferPage(QWidget):
                                MAX(global_tag) as global_tag, MAX(sunday) as sunday,
                                MAX(COALESCE(sub_corporation_id, corporation_id)) as corp_id
                         FROM branches
-                        WHERE (corporation_id = (SELECT id FROM corporations WHERE name = %s)
-                               OR sub_corporation_id = (SELECT id FROM corporations WHERE name = %s))
+                        WHERE {branch_where}
                         {inner_reg_clause}
                         GROUP BY name
                     ) b
@@ -636,7 +640,7 @@ class FundTransferPage(QWidget):
                     GROUP BY b.name, b.area, b.line_of_business, b.global_tag, b.sunday
                     ORDER BY COALESCE(b.area, 'ZZZZZ'), b.name
                 """
-                params = (filter_value, filter_value, date_start)
+                params = (date_start,) if is_global_reliance else (filter_value, filter_value, date_start)
         else:  # OS mode
             filter_value = self.os_selector.currentText()
             if not filter_value:
@@ -700,6 +704,8 @@ class FundTransferPage(QWidget):
 
         self._pending_is_range_mode = is_range and date_start != date_end
         _ds, _de, _ir = date_start, date_end, is_range
+        _filter_value = filter_value      # capture for result handler
+        _report_type  = report_type       # capture for result handler
 
         def _fetch():
             rows = db_manager.execute_query(query, params) or []
@@ -721,7 +727,8 @@ class FundTransferPage(QWidget):
                         es_val = float(es[0].get('amount', 0) or 0)
             except Exception:
                 pass
-            return {'results': rows, 'extra_space': es_val}
+            return {'results': rows, 'extra_space': es_val,
+                    'filter_value': _filter_value, 'report_type': _report_type}
 
         run_func_async(
             parent=self,
@@ -738,6 +745,11 @@ class FundTransferPage(QWidget):
         results = data['results']
         extra_space_val = data['extra_space']
         is_range_mode = self._pending_is_range_mode
+        filter_value = data.get('filter_value', '')
+        report_type  = data.get('report_type', '')
+        # Extra Space only applies to the Richelle OS group (never for corporation filter)
+        show_extra_space = (report_type != 'corporation'
+                            and 'richelle' in filter_value.lower())
 
         try:
             # Temporarily disconnect signals
@@ -894,48 +906,44 @@ class FundTransferPage(QWidget):
             grand_total_cash_count += area_total_cash_count
             row_idx += 1
 
-        # ── EXTRA SPACE row (NOT included in grand total) ───────────
-        self.table.insertRow(row_idx)
-        self._extra_space_row = row_idx
-        es_font = QFont()
-        es_font.setBold(True)
+        # ── EXTRA SPACE row — only shown for Richelle group ─────────
+        self._extra_space_row = -1
+        if show_extra_space:
+            self.table.insertRow(row_idx)
+            self._extra_space_row = row_idx
+            es_font = QFont()
+            es_font.setBold(True)
 
-        for col in range(12):
-            if col == 6:
-                label_text = "EXTRA SPACE"
-                if is_range_mode:
-                    label_text = "EXTRA SPACE (Total)"
-                es_item = QTableWidgetItem(label_text)
-                es_item.setTextAlignment(Qt.AlignCenter)
-                es_item.setFont(es_font)
-                es_item.setFlags(es_item.flags() & ~Qt.ItemIsEditable)
-            elif col == 9:
-                if extra_space_val > 0:
-                    es_item = QTableWidgetItem(f"{extra_space_val:,.2f}")
+            for col in range(12):
+                if col == 6:
+                    label_text = "EXTRA SPACE (Total)" if is_range_mode else "EXTRA SPACE"
+                    es_item = QTableWidgetItem(label_text)
+                    es_item.setTextAlignment(Qt.AlignCenter)
+                    es_item.setFont(es_font)
+                    es_item.setFlags(es_item.flags() & ~Qt.ItemIsEditable)
+                elif col == 9:
+                    es_item = QTableWidgetItem(f"{extra_space_val:,.2f}" if extra_space_val > 0 else "")
+                    es_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                    es_item.setFont(es_font)
+                    if is_range_mode:
+                        es_item.setFlags(es_item.flags() & ~Qt.ItemIsEditable)
                 else:
                     es_item = QTableWidgetItem("")
-                es_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                es_item.setFont(es_font)
-               
-                if is_range_mode:
+                    es_item.setTextAlignment(Qt.AlignCenter)
                     es_item.setFlags(es_item.flags() & ~Qt.ItemIsEditable)
-            else:
-                es_item = QTableWidgetItem("")
-                es_item.setTextAlignment(Qt.AlignCenter)
-                es_item.setFlags(es_item.flags() & ~Qt.ItemIsEditable)
-            es_item.setData(Qt.UserRole, 'extra_space')
-            es_item.setBackground(QBrush(QColor("#FFF8E1")))
-            self.table.setItem(row_idx, col, es_item)
-        row_idx += 1
+                es_item.setData(Qt.UserRole, 'extra_space')
+                es_item.setBackground(QBrush(QColor("#FFF8E1")))
+                self.table.setItem(row_idx, col, es_item)
+            row_idx += 1
 
-    
-        self.table.insertRow(row_idx)
-        for col in range(12):
-            spacer_item = QTableWidgetItem("")
-            spacer_item.setFlags(spacer_item.flags() & ~Qt.ItemIsEditable)
-            spacer_item.setData(Qt.UserRole, 'spacer')
-            self.table.setItem(row_idx, col, spacer_item)
-        row_idx += 1
+            # Spacer between Extra Space and Grand Total
+            self.table.insertRow(row_idx)
+            for col in range(12):
+                spacer_item = QTableWidgetItem("")
+                spacer_item.setFlags(spacer_item.flags() & ~Qt.ItemIsEditable)
+                spacer_item.setData(Qt.UserRole, 'spacer')
+                self.table.setItem(row_idx, col, spacer_item)
+            row_idx += 1
 
 
         self.table.insertRow(row_idx)

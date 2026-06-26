@@ -901,10 +901,12 @@ class DailyTransactionPage(QWidget):
         self.corp_selector.addItem("")
         try:
             rows = db_manager.execute_query(
-                "SELECT DISTINCT corporation FROM daily_reports_brand_a ORDER BY corporation"
+                "SELECT name FROM corporations ORDER BY name"
             )
-            for r in rows:
-                self.corp_selector.addItem(r['corporation'])
+            for r in (rows or []):
+                name = r['name'] if isinstance(r, dict) else r[0]
+                if name:
+                    self.corp_selector.addItem(name)
         except Exception as e:
             logger.error("Error loading corporations: %s", e)
         finally:

@@ -41,12 +41,13 @@ class DatabaseManagerPooled:
                 f"/{DB_CONFIG['database']}?charset=utf8mb4"
             )
 
+            lock_wait_timeout = int(os.environ.get("ORS_LOCK_WAIT_TIMEOUT", "10"))
             self.engine = create_engine(
                 connection_string,
                 poolclass=pool.QueuePool,
-                pool_size=int(os.environ.get("ORS_POOL_SIZE",    "50")),   # 50 persistent connections
-                max_overflow=int(os.environ.get("ORS_POOL_OVERFLOW", "150")),  # +150 burst connections (200 total)
-                pool_timeout=int(os.environ.get("ORS_POOL_TIMEOUT",  "30")),  # wait up to 30s for a slot
+                pool_size=int(os.environ.get("ORS_POOL_SIZE",    "50")),
+                max_overflow=int(os.environ.get("ORS_POOL_OVERFLOW", "150")),
+                pool_timeout=int(os.environ.get("ORS_POOL_TIMEOUT",  "30")),
                 pool_recycle=1800,
                 pool_pre_ping=True,
                 echo=False,
@@ -56,6 +57,20 @@ class DatabaseManagerPooled:
                     'write_timeout': 30,
                 }
             )
+
+            # Cap InnoDB row-lock waits per session.  Default MySQL value is 50s,
+            # which lets a single blocked write hold a connection slot for 25-50s
+            # and drive P95/P99 through the roof.  Failing fast at 10s returns
+            # error 1205 quickly so the client can retry instead of waiting.
+            _lock_timeout_sql = f"SET SESSION innodb_lock_wait_timeout={lock_wait_timeout}"
+            from sqlalchemy import event as _sa_event
+
+            def _on_new_connection(dbapi_conn, _):
+                cur = dbapi_conn.cursor()
+                cur.execute(_lock_timeout_sql)
+                cur.close()
+
+            _sa_event.listen(self.engine, "connect", _on_new_connection)
             
 
             with self.engine.connect() as conn:
@@ -141,25 +156,17 @@ class DatabaseManagerPooled:
         self.logger.info(f"Idle monitor started (timeout: {self.idle_timeout}s)")
 
     def reconnect_if_needed(self) -> bool:
-
-        if not self.engine:
-            if self._is_disconnected_for_idle:
-                self.logger.info("Reconnecting after idle disconnect...")
-            result = self.connect()
-            if result:
-                self.start_idle_monitor() 
-            return result
-        
-        try:
-            with self.engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
+        # pool_pre_ping=True already validates connections on checkout — no need
+        # to do an extra SELECT 1 here on every call.  Only reconnect when the
+        # engine itself is gone (idle-timeout teardown or first call).
+        if self.engine:
             return True
-        except Exception:
-            self.logger.warning("Connection lost — reconnecting...")
-            result = self.connect()
-            if result:
-                self.start_idle_monitor()
-            return result
+        if self._is_disconnected_for_idle:
+            self.logger.info("Reconnecting after idle disconnect...")
+        result = self.connect()
+        if result:
+            self.start_idle_monitor()
+        return result
 
     def _prepare_params(self, query: str, params):
         """Convert %s-style params to SQLAlchemy :paramN style."""
@@ -174,20 +181,22 @@ class DatabaseManagerPooled:
         return query, params or {}
 
     def execute_query(self, query: str, params: Optional[tuple] = None) -> Optional[Any]:
-
-        with self.lock:
-
-            if not self.reconnect_if_needed():
-                self.logger.error("Failed to connect to database")
-                return None
-
-            self.last_used = time.time() 
+        # Only take the lock to guard the engine-is-None case (rare: first call
+        # or after idle teardown).  The SQLAlchemy pool is fully thread-safe, so
+        # normal query execution runs lock-free — this was the source of the 25 s
+        # P95/P99 spikes under 400-branch concurrent load.
+        if not self.engine:
+            with self.lock:
+                if not self.reconnect_if_needed():
+                    self.logger.error("Failed to connect to database")
+                    return None
+        self.last_used = time.time()
 
         try:
             prepared_query, param_dict = self._prepare_params(query, params)
             with self.engine.connect() as conn:
                 result = conn.execute(text(prepared_query), param_dict)
-                
+
                 if query.strip().upper().startswith("SELECT"):
                     return [dict(row._mapping) for row in result]
                 else:
@@ -196,13 +205,13 @@ class DatabaseManagerPooled:
 
         except Exception as e:
             error_msg = str(e).lower()
-            
-  
-            if any(keyword in error_msg for keyword in ["can't connect", "connection refused", "timeout", "timed out", "lost connection", "name resolution"]):
+            if any(keyword in error_msg for keyword in [
+                "can't connect", "connection refused", "timeout", "timed out",
+                "lost connection", "name resolution",
+            ]):
                 self.logger.error(f"Network/Connection error: {e}")
             else:
                 self.logger.error(f"Query failed: {e}\nQuery: {query}\nParams: {params}")
-            
             return None
 
     def execute_query_with_exception(self, query: str, params: Optional[tuple] = None) -> Tuple[Optional[Any], Optional[Exception]]:
@@ -358,7 +367,6 @@ class RemoteDatabaseManager:
     # ── Token management ──────────────────────────────────────────────────
 
     def _refresh_token(self):
-        import requests as _req
         try:
             resp = self._session.post(
                 f"{self._api_url}/api/token",
@@ -377,8 +385,8 @@ class RemoteDatabaseManager:
 
     @staticmethod
     def _is_transient_network_error(exc: Exception) -> bool:
-        import requests as _req
-        return isinstance(exc, (_req.Timeout, _req.ConnectionError))
+        import requests
+        return isinstance(exc, (requests.Timeout, requests.ConnectionError))
 
     def _ensure_token(self) -> bool:
         if self._token:
@@ -387,7 +395,6 @@ class RemoteDatabaseManager:
 
     def _call(self, endpoint: str, sql: str, params=None):
         """POST to endpoint, auto-refresh token on 401."""
-        import requests as _req
         if not self._ensure_token():
             return None, Exception("Could not obtain API token")
 
@@ -422,19 +429,16 @@ class RemoteDatabaseManager:
 
     def _json_or_error(self, resp):
         """Safely decode JSON; raises ValueError with status info on failure."""
-        import time as _time
         if resp.status_code == 429:
-            # Rate-limited — wait and signal caller to retry
             raise _RateLimitError(resp)
         try:
             return resp.json(), None
-        except Exception as e:
+        except Exception:
             return None, Exception(
                 f"Non-JSON response (HTTP {resp.status_code}): {resp.text[:200]}"
             )
 
     def execute_query(self, query: str, params=None):
-        import time as _time
         for attempt in range(3):
             resp, err = self._call("/api/exec", query, params)
             if err:
@@ -445,7 +449,7 @@ class RemoteDatabaseManager:
             except _RateLimitError:
                 wait = 2 * (attempt + 1)
                 self.logger.warning(f"Rate limited (429) — retrying in {wait}s")
-                _time.sleep(wait)
+                time.sleep(wait)
                 continue
             if decode_err:
                 self.logger.error(str(decode_err))
@@ -458,7 +462,6 @@ class RemoteDatabaseManager:
         return None
 
     def execute_query_with_exception(self, query: str, params=None):
-        import time as _time
         for attempt in range(3):
             resp, err = self._call("/api/exec_safe", query, params)
             if err:
@@ -468,7 +471,7 @@ class RemoteDatabaseManager:
             except _RateLimitError:
                 wait = 2 * (attempt + 1)
                 self.logger.warning(f"Rate limited (429) — retrying in {wait}s")
-                _time.sleep(wait)
+                time.sleep(wait)
                 continue
             if decode_err:
                 return None, decode_err

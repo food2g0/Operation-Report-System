@@ -10,8 +10,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Import database manager (optional - for offline fallback)
-# Client normally uses API, but can fall back to direct DB if offline
+
 try:
     from db_connect_pooled import db_manager
     DB_MANAGER_AVAILABLE = True
@@ -28,13 +27,14 @@ from offline_manager import offline_manager
 
 
 try:
-    from auto_updater import check_for_updates_silent, check_version_compliance
+    from auto_updater import check_for_updates_silent, check_version_compliance, check_for_updates
     from version import __version__, CHECK_ON_STARTUP
     AUTO_UPDATE_ENABLED = True
 except ImportError:
     __version__ = "1.0.0"
     CHECK_ON_STARTUP = False
     AUTO_UPDATE_ENABLED = False
+    check_for_updates = None
     logger.warning("Auto-updater not available (missing dependencies)")
 
 
@@ -61,12 +61,11 @@ class LoginWindow(QWidget):
         
       
         self.init_database()
-
-        if AUTO_UPDATE_ENABLED and CHECK_ON_STARTUP:
-            self.check_updates_on_startup()
+        # Update check is handled by UpdateLauncherWindow before login opens.
+        # Running it again here would double the GitHub API calls and cause 403s.
 
     def enforce_version_policy(self):
-        """Block access if app version does not match latest GitHub release."""
+        """Block login if app version does not match latest GitHub release."""
         if not AUTO_UPDATE_ENABLED:
             return
 
@@ -91,21 +90,46 @@ class LoginWindow(QWidget):
         self.password_input.setEnabled(False)
         self.remember_me_checkbox.setEnabled(False)
         self.show_password_checkbox.setEnabled(False)
-        self.login_button.setEnabled(False)
-        self.login_button.setText("Update Required")
 
-        self.connection_status_label.setText(f"Update required: v{current} -> v{latest}")
+        self.connection_status_label.setText(f"Update required: v{current}  →  v{latest}")
         self.connection_status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
         self.connection_status_label.setVisible(True)
 
-        QMessageBox.warning(
-            self,
-            "Update Required",
-            "This application version is no longer allowed.\n\n"
-            f"Current version: {current}\n"
-            f"Latest version: {latest}\n\n"
-            "Please update the app before logging in."
+        # Re-wire login button → update trigger instead of login
+        self.login_button.setEnabled(True)
+        self.login_button.setText("Update Now")
+        self.login_button.setStyleSheet(
+            "QPushButton { background-color: #e67e22; color: white; "
+            "border-radius: 6px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #d35400; }"
         )
+        try:
+            self.login_button.clicked.disconnect()
+        except Exception:
+            pass
+        self.login_button.clicked.connect(self._do_update)
+
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Update Required")
+        msg.setText(
+            "This version of the app is no longer supported.\n\n"
+            f"Current version:  v{current}\n"
+            f"Latest version:   v{latest}\n\n"
+            "Click 'Update Now' to download and install the latest version."
+        )
+        update_btn = msg.addButton("Update Now", QMessageBox.AcceptRole)
+        msg.addButton("Later", QMessageBox.RejectRole)
+        msg.exec_()
+        if msg.clickedButton() is update_btn:
+            self._do_update()
+
+    def _do_update(self):
+        """Trigger the interactive update dialog with download progress."""
+        if check_for_updates is None:
+            QMessageBox.warning(self, "Update Error", "Auto-updater is not available.")
+            return
+        check_for_updates(parent=self, silent=True)
 
     def init_database(self):
         # Client-only build: no direct DB access, use API only
