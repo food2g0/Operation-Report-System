@@ -12,7 +12,7 @@ This script:
 4. Validates the migration afterwards
 """
 
-from api_db_manager import db_manager
+from tools.db_connect_pooled import db_manager
 import logging
 from datetime import datetime
 

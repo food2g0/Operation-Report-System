@@ -19,7 +19,7 @@ except ImportError:
     pass  # python-dotenv not installed — env vars must be set manually
 
 # Setup centralized logging FIRST
-from logging_config import setup_logging, get_logger
+from tools.logging_config import setup_logging, get_logger
 setup_logging("api_server", os.environ.get("ORS_LOG_LEVEL", "INFO"))
 
 from fastapi import FastAPI, Depends, HTTPException, Request
@@ -41,8 +41,8 @@ except ImportError:
 import sys
 _RUNNING_WITH_GUNICORN = "gunicorn" in sys.modules or any("gunicorn" in arg for arg in sys.argv)
 
-from db_connect_pooled import DatabaseManagerPooled
-from error_tracker import error_tracker, audit_logger, log_exception, log_audit
+from tools.db_connect_pooled import DatabaseManagerPooled
+from tools.error_tracker import error_tracker, audit_logger, log_exception, log_audit
 from notification_manager import notification_manager
 import bcrypt
 
@@ -1535,6 +1535,10 @@ class MachineStatusRequest(BaseModel):
 def machine_status(body: MachineStatusRequest, request: Request):
     """Single startup call: validate API key, register/refresh machine, return status.
     Replaces the two-step  POST /api/token  →  POST /api/machine/register  flow.
+
+    Identity is based on PC name (hostname). A new machine_id whose hostname
+    already belongs to a different registered machine is flagged 'duplicate' so
+    super admin can investigate before granting access.
     """
     if body.api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid API key")
@@ -1550,10 +1554,27 @@ def machine_status(body: MachineStatusRequest, request: Request):
         )
         return {"status": existing[0]["status"]}
 
-    # New machine — respect ORS_MACHINE_AUTO_APPROVE (same as /api/machine/register).
-    # Set ORS_MACHINE_AUTO_APPROVE=true on the server while rolling out v2.0.0 so
-    # existing machines are auto-approved on first contact; set it back to false
-    # afterwards to require manual approval for genuinely new machines.
+    # New machine_id — check whether the hostname is already taken by another machine.
+    hostname_conflict = False
+    if body.hostname:
+        conflict_row = _db.execute_query(
+            "SELECT machine_id FROM machines WHERE hostname = %s AND machine_id != %s LIMIT 1",
+            [body.hostname, body.machine_id],
+        )
+        hostname_conflict = bool(conflict_row)
+
+    if hostname_conflict:
+        # Same PC name, different fingerprint → flag as duplicate for admin review.
+        _db.execute_query(
+            """INSERT INTO machines
+               (machine_id, hostname, mac_address, cpu_info, status, registered_at, last_seen)
+               VALUES (%s, %s, %s, %s, 'duplicate', NOW(), NOW())""",
+            [body.machine_id, body.hostname, body.mac_address, body.cpu_info],
+        )
+        log.warning("Duplicate hostname registration: %s (machine_id=%s)", body.hostname, body.machine_id)
+        return {"status": "duplicate"}
+
+    # No conflict — respect ORS_MACHINE_AUTO_APPROVE.
     auto_approve = os.environ.get("ORS_MACHINE_AUTO_APPROVE", "false").lower() == "true"
     initial_status = "approved" if auto_approve else "pending"
     _db.execute_query(

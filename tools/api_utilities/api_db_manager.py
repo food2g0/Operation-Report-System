@@ -15,7 +15,7 @@ import logging
 import threading
 import time
 
-from api_client_base import _APIClientBase
+from tools.api_client_base import _APIClientBase
 
 log = logging.getLogger("APIDbManager")
 
@@ -92,4 +92,4 @@ if _API_MODE:
     db_manager = _get_shared_instance()
 else:
     # Fall back to direct DB — zero behaviour change when API_MODE is off.
-    from db_connect_pooled import db_manager  # noqa: F401
+    from tools.db_connect_pooled import db_manager  # noqa: F401

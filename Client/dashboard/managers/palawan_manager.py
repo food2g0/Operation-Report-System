@@ -428,7 +428,28 @@ class PalawanManager:
                             inc, skid, skir, cancellation])
 
             if not has_data:
-                logger.info(f"No palawan data to save for {self.branch} on {date_str}")
+                # No Palawan transactions or adjustments, but if a record already
+                # exists (prior submission), update it to zero out stale values
+                # such as SKIR so the edit takes effect in the database.
+                try:
+                    existing = self.db_manager.execute_query(
+                        "SELECT 1 FROM payable_tbl_brand_a WHERE branch=%s AND date=%s AND corporation=%s LIMIT 1",
+                        (self.branch, date_str, self.corporation)
+                    )
+                    if existing:
+                        self.db_manager.execute_query(
+                            "UPDATE payable_tbl_brand_a "
+                            "SET inc=0, skid=0, skir=0, cancellation=0, "
+                            "sendout_lotes=0, sendout_capital=0, sendout_sc=0, sendout_commission=0, sendout_total=0, "
+                            "payout_lotes=0, payout_capital=0, payout_sc=0, payout_commission=0, payout_total=0, "
+                            "international_lotes=0, international_capital=0, international_sc=0, international_commission=0, international_total=0, "
+                            "updated_at=CURRENT_TIMESTAMP "
+                            "WHERE branch=%s AND date=%s AND corporation=%s",
+                            (self.branch, date_str, self.corporation)
+                        )
+                        logger.info(f"Zeroed payable_tbl_brand_a for {self.branch} on {date_str} (all values cleared by user)")
+                except Exception as _upd_err:
+                    logger.warning(f"Could not zero payable record: {_upd_err}")
                 return False
 
             logger.info(f"🔵 save_palawan_to_payable ({brand_full}): branch={self.branch}, date={date_str}, "

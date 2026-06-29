@@ -15,6 +15,9 @@ logs/*.log
 logs/backup.log
 crash.log
 offline_data/
+*.log
+data/*.db
+Client/drafts/*.json
 
 # Secrets / local config
 db_config.enc

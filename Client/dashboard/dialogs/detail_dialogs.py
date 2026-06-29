@@ -32,6 +32,7 @@ class FundTransferHODialog(QDialog):
         {"id": 12, "bank_name": "CIB-UB", "account_name": "BPI BILLS PAYMENT HOMENEEDS", "account_number": ""},
         {"id": 13, "bank_name": "CIB-UB", "account_name": "BPI  BILLS PAYMENT KRISTAL CLEAR", "account_number": ""},
         {"id": 14, "bank_name": "CIB-UB", "account_name": "BPI BILLS PAYMENT SAFELOCK", "account_number": ""},
+        {"id": 99, "bank_name": "CA AUDIT", "account_name": "", "account_number": ""},
     ]
 
     def __init__(self, field_label="Fund Transfer to HEAD OFFICE", parent=None):
@@ -131,7 +132,8 @@ class FundTransferHODialog(QDialog):
         bank_combo = QComboBox()
         bank_combo.setMinimumWidth(200)
         for bank in self.BANK_ACCOUNTS:
-            display = f"{bank['bank_name']} - {bank['account_name']}"
+            display = (f"{bank['bank_name']} - {bank['account_name']}"
+                       if bank['account_name'] else bank['bank_name'])
             bank_combo.addItem(display, bank['id'])
         bank_combo.setStyleSheet("padding: 4px 6px; font-size: 12px;")
         self.table.setCellWidget(row, 0, bank_combo)

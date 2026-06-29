@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import threading
 
-from api_client_base import _APIClientBase
+from tools.api_client_base import _APIClientBase
 
 log = logging.getLogger("APIDbManager")
 
@@ -80,4 +80,4 @@ except ImportError:
 if _API_MODE:
     db_manager = _get_shared_instance()
 else:
-    from db_connect_pooled import db_manager  # noqa: F401
+    from tools.db_connect_pooled import db_manager  # noqa: F401

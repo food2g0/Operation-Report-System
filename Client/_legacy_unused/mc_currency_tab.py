@@ -12,7 +12,7 @@ logger = logging.getLogger("MCCurrencyTab")
 
 # Load currencies from centralized manager when possible
 try:
-    from currency_manager import get_all_currencies
+    from admin.currency_manager import get_all_currencies
 except Exception:
     # Fallback: local default loader
     def get_all_currencies(active_only=True):

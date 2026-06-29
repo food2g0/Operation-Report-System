@@ -122,7 +122,7 @@ class MCCurrencyDialog(QDialog):
         self.setMinimumHeight(400)
 
         try:
-            from currency_manager import get_all_currencies
+            from admin.currency_manager import get_all_currencies
             self.currencies = get_all_currencies(active_only=True)
             if not self.currencies:
                 raise Exception("empty")
@@ -364,7 +364,7 @@ class MCCurrencyDialog(QDialog):
 
     def _reload_currencies(self):
         try:
-            from currency_manager import get_all_currencies
+            from admin.currency_manager import get_all_currencies
             new = get_all_currencies(active_only=True) or []
             if not new:
                 return

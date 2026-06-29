@@ -5,7 +5,7 @@ This script truncates all tables in the database, removing all data while preser
 Use this when preparing for production to remove test data.
 """
 
-from db_connect_pooled import db_manager
+from tools.db_connect_pooled import db_manager
 
 def clear_all_data():
     """Clear all data from all tables in the database"""

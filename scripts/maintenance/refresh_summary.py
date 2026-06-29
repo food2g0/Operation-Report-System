@@ -1,4 +1,4 @@
-from db_connect_pooled import db_manager
+from tools.db_connect_pooled import db_manager
 
 # Refresh summary for last N days (default 30)
 import sys

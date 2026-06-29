@@ -7,7 +7,7 @@ import json
 import threading
 from datetime import datetime
 from typing import Dict, List, Set, Optional
-from logging_config import get_logger
+from tools.logging_config import get_logger
 
 log = get_logger("NotificationManager")
 
@@ -91,6 +91,4 @@ class NotificationManager:
                 }
             }
 
-
-# Global notification manager instance
 notification_manager = NotificationManager()

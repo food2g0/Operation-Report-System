@@ -44,7 +44,7 @@ setup_logging()
 _log_startup_time("Client/Login imports")
 
 from Client.client_dashboard import ClientDashboard
-from login import LoginWindow
+from auth import LoginWindow
 
 logger = get_logger(__name__)
 _log_startup_time("All imports complete")
@@ -174,6 +174,21 @@ def main():
                 release_single_instance_lock()
                 sys.exit(0)
                 return
+            if machine_status == "duplicate":
+                import socket as _socket
+                _hostname = _socket.gethostname()
+                QMessageBox.critical(
+                    None,
+                    "Duplicate PC Name Detected",
+                    f"A computer named \"{_hostname}\" is already registered in the system.\n\n"
+                    "This may indicate a naming conflict with another machine.\n\n"
+                    "Your administrator has been notified and must review this before "
+                    "access can be granted.\n\n"
+                    "Please contact your system administrator.",
+                )
+                release_single_instance_lock()
+                sys.exit(0)
+                return
             if machine_status == "pending":
                 QMessageBox.information(
                     None,
@@ -239,7 +254,7 @@ def _read_machine_cache(machine_id: str) -> "str | None":
 
 
 def _write_machine_cache(machine_id: str, status: str) -> None:
-    # Only cache approved machines — pending/revoked always re-check the server
+    # Only cache approved machines — pending/revoked/duplicate always re-check the server
     if status != 'approved':
         return
     try:

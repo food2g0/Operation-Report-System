@@ -3,7 +3,7 @@
 DEBUG SCRIPT: Analyze a single report to see exactly how calculations are being done
 """
 import json
-from db_connect_pooled import db_manager
+from tools.db_connect_pooled import db_manager
 
 # Load field config
 cfg_result = db_manager.execute_query('SELECT config_value FROM field_config WHERE config_key = "field_definitions" LIMIT 1')

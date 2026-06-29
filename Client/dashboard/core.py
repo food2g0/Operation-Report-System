@@ -199,6 +199,7 @@ class FundTransferHODialog(QDialog):
         {"id": 12, "bank_name": "CIB-UB", "account_name": "BPI BILLS PAYMENT HOMENEEDS", "account_number": ""},
         {"id": 13, "bank_name": "CIB-UB", "account_name": "BPI  BILLS PAYMENT KRISTAL CLEAR", "account_number": ""},
         {"id": 14, "bank_name": "CIB-UB", "account_name": "BPI BILLS PAYMENT SAFELOCK", "account_number": ""},
+        {"id": 99, "bank_name": "CA AUDIT", "account_name": "", "account_number": ""},
     ]
 
     def __init__(self, field_label="Fund Transfer to HEAD OFFICE", parent=None):
@@ -206,7 +207,7 @@ class FundTransferHODialog(QDialog):
         self.setWindowTitle(f"Detail – {field_label}")
         self.setMinimumSize(620, 460)
         self.setModal(True)
-        self._rows_data = [] 
+        self._rows_data = []
 
         root = QVBoxLayout(self)
         root.setSpacing(12)
@@ -291,7 +292,8 @@ class FundTransferHODialog(QDialog):
         bank_combo = QComboBox()
         bank_combo.setMinimumWidth(200)
         for bank in self.BANK_ACCOUNTS:
-            display = f"{bank['bank_name']} - {bank['account_name']}"
+            display = (f"{bank['bank_name']} - {bank['account_name']}"
+                       if bank['account_name'] else bank['bank_name'])
             bank_combo.addItem(display, bank['id'])
         bank_combo.setStyleSheet("padding: 4px 6px; font-size: 12px;")
         self.table.setCellWidget(row, 0, bank_combo)
@@ -960,7 +962,7 @@ class ClientDashboard(QWidget):
     def _setup_notification_listener(self):
         """Initialize WebSocket notification listener for entry reset alerts."""
         try:
-            from notification_listener import NotificationListener
+            from Client.notification_listener import NotificationListener
             from api_config import API_URL
 
             self._notification_listener = NotificationListener(API_URL, self.branch, parent=self)
@@ -3620,8 +3622,7 @@ class ClientDashboard(QWidget):
                         # Brand A data stays in daily_reports_brand_a (primary key conflict prevention)
                         if brand_full == "Brand B":
                             try:
-                                brand_pal_adjustments = self._get_brand_specific_palawan_adjustments(sd, brand_full)
-                                self._save_palawan_to_payable(sd, brand_full, pal, brand_pal_adjustments)
+                                self._save_palawan_to_payable(sd, brand_full, pal)
                                 logger.info(f"✅ Palawan Details B saved to payable_tbl_brand_a for {self.branch} on {sd}")
                             except Exception as payable_err:
                                 logger.warning(f"Could not save Palawan Details B to payable table: {payable_err}")
@@ -3695,6 +3696,7 @@ class ClientDashboard(QWidget):
                 self.clear_all_fields()
             elif skipped and not successes:
                 self.loading_overlay.hide()
+                self._delete_draft(sd)
                 self._msg("Nothing to Post",
                           "All brands already have entries for this date.",
                           QMessageBox.Information)
@@ -4919,9 +4921,10 @@ class ClientDashboard(QWidget):
                 status_a = self.check_existing_entry(sd, "Brand A")
                 status_b = self.check_existing_entry(sd, "Brand B")
                 if status_a == "locked" and status_b == "locked":
-                    self._msg("Draft Not Saved",
+                    self._delete_draft(sd)
+                    self._msg("Draft Deleted",
                               f"Report for {sd} has already been submitted.\n"
-                              "There is no need to save a draft for this date.",
+                              "The saved draft for this date has been automatically deleted.",
                               QMessageBox.Information)
                     return
             draft = {
@@ -5401,35 +5404,62 @@ class ClientDashboard(QWidget):
             if hasattr(cf_tab, 'clear_fields'):
                 cf_tab.clear_fields()
 
-            # ── Cache read (locked reports only) ─────────────────────────────
-            data = _cache_load(date_str, brand, self.branch, self.corporation)
-            if data:
-                logger.info("Cache HIT for %s/%s — skipping DB query", brand, date_str)
-            else:
-                # Cache miss — fetch from DB
-                if brand == "Brand B":
-                    # daily_reports is exclusively the Brand B table; no brand filter needed.
-                    results = None
-                    for q, params in [
-                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
-                         (date_str, self.branch, self.corporation)),
-                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
-                         (date_str, self.branch)),
-                    ]:
-                        results = self.db_manager.execute_query(q, params)
-                        if results:
-                            break
-                else:
-                    results = None
-                    for q, params in [
-                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
-                         (date_str, self.branch, self.corporation)),
-                        (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
-                         (date_str, self.branch)),
-                    ]:
-                        results = self.db_manager.execute_query(q, params)
-                        if results:
-                            break
+            # ── Cache read with staleness guard ──────────────────────────────
+            # Load from disk cache first, then verify the DB row is still
+            # locked and hasn't been modified since the cache was written.
+            # This catches cases where the admin edited the report but the
+            # real-time invalidation notification wasn't received.
+            cached_data, cached_at = _cache_load(date_str, brand, self.branch, self.corporation)
+            data = None
+
+            if cached_data:
+                # Quick staleness check: fetch only is_locked + updated_at from DB
+                try:
+                    _stale_q = (
+                        f"SELECT is_locked, updated_at FROM {table_name} "
+                        f"WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1"
+                    )
+                    _stale_r = self.db_manager.execute_query(
+                        _stale_q, (date_str, self.branch, self.corporation)
+                    )
+                    if not _stale_r:
+                        # Row gone from DB — discard cache
+                        _cache_invalidate(date_str, self.branch, self.corporation)
+                        logger.info("Cache STALE (row missing) — evicted for %s/%s", brand, date_str)
+                    else:
+                        _row = _stale_r[0]
+                        _still_locked = bool(_row.get('is_locked'))
+                        _db_updated   = str(_row.get('updated_at') or '')
+                        _cache_stale  = (
+                            not _still_locked
+                            or (_db_updated and cached_at and _db_updated > cached_at)
+                        )
+                        if _cache_stale:
+                            _cache_invalidate(date_str, self.branch, self.corporation)
+                            logger.info(
+                                "Cache STALE (locked=%s updated_at=%s cached_at=%s) — evicted for %s/%s",
+                                _still_locked, _db_updated, cached_at, brand, date_str
+                            )
+                        else:
+                            data = cached_data
+                            logger.info("Cache HIT (verified) for %s/%s — skipping DB query", brand, date_str)
+                except Exception as _ce:
+                    # Staleness check failed (network/DB error) — use cache as fallback
+                    logger.debug("Cache staleness check failed (%s/%s): %s — using cached data", brand, date_str, _ce)
+                    data = cached_data
+
+            if data is None:
+                # Cache miss or evicted — fetch full row from DB
+                results = None
+                for q, params in [
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                     (date_str, self.branch, self.corporation)),
+                    (f"SELECT * FROM {table_name} WHERE date=%s AND branch=%s LIMIT 1",
+                     (date_str, self.branch)),
+                ]:
+                    results = self.db_manager.execute_query(q, params)
+                    if results:
+                        break
 
                 if not results or len(results) == 0:
                     logger.debug(
@@ -5475,6 +5505,38 @@ class ClientDashboard(QWidget):
                     logger.error("Error loading cash_float for Brand A: %s", e)
             
    
+            # For Brand B: daily_reports palawan adjustment columns may be 0 because
+            # the migration zeroed them (data lives in payable_tbl_brand_a).
+            # Patch data dict BEFORE the widget-population loop so the existing
+            # col_mapping → widget path picks up the correct values automatically.
+            if brand == "Brand B":
+                _adj_map = {
+                    "palawan_suki_discounts":     "skid",
+                    "palawan_suki_rebates":       "skir",
+                    "palawan_cancel":             "cancellation",
+                    "palawan_pay_out_incentives": "inc",
+                }
+                _needs_payable = any(
+                    float(data.get(col, 0) or 0) == 0 for col in _adj_map
+                )
+                if _needs_payable:
+                    try:
+                        _pr = self.db_manager.execute_query(
+                            "SELECT skid, skir, cancellation, inc "
+                            "FROM payable_tbl_brand_a "
+                            "WHERE date=%s AND branch=%s AND corporation=%s LIMIT 1",
+                            (date_str, self.branch, self.corporation)
+                        )
+                        if _pr:
+                            for _dc, _pc in _adj_map.items():
+                                if float(data.get(_dc, 0) or 0) == 0:
+                                    _v = float(_pr[0].get(_pc, 0) or 0)
+                                    if _v:
+                                        data[_dc] = _v
+                                        logger.info(f"Palawan adj patch Brand B {_dc}={_v} from payable_tbl_brand_a")
+                    except Exception as _e:
+                        logger.debug(f"Palawan adj patch failed: {_e}")
+
             col_mapping = cf_tab._build_column_mapping()
 
             # Block ALL signals during loading to prevent recalculate_all() from being triggered

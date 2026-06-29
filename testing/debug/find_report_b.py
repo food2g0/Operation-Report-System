@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from db_connect_pooled import db_manager
+from tools.db_connect_pooled import db_manager
 
 # Search for RICHELLE TECSON in Brand B (daily_reports)
 print("=" * 80)

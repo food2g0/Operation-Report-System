@@ -52,7 +52,7 @@ class _PingWorker(QRunnable):
         self.setAutoDelete(True)
 
     def run(self):
-        from network_safety import safe_socket_check
+        from tools.network_safety import safe_socket_check
         # Use safer timeout handling
         ok = safe_socket_check(host="8.8.8.8", port=53, timeout=self.TIMEOUT)
         self.signals.result.emit(ok)

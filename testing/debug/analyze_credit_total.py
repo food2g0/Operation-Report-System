@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import json
-from db_connect_pooled import db_manager
+from tools.db_connect_pooled import db_manager
 
 # Get field config
 cfg_result = db_manager.execute_query('SELECT config_value FROM field_config WHERE config_key = "field_definitions" LIMIT 1')

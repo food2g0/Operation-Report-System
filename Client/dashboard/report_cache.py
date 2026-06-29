@@ -63,7 +63,11 @@ def save(date_str: str, brand: str, branch: str, corporation: str, data: dict):
     """Persist *data* (the raw DB row dict) to the local cache."""
     try:
         path = _cache_path(date_str, brand, branch, corporation)
-        payload = {"v": _CACHE_VERSION, "data": data}
+        payload = {
+            "v":         _CACHE_VERSION,
+            "cached_at": datetime.datetime.utcnow().isoformat(),
+            "data":      data,
+        }
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, cls=_Encoder, ensure_ascii=False)
         logger.debug("Cache WRITE %s", path)
@@ -72,22 +76,22 @@ def save(date_str: str, brand: str, branch: str, corporation: str, data: dict):
 
 
 def load(date_str: str, brand: str, branch: str, corporation: str):
-    """Return cached row dict, or *None* on miss / version mismatch."""
+    """Return (cached_row_dict, cached_at_iso) or (None, None) on miss."""
     try:
         path = _cache_path(date_str, brand, branch, corporation)
         if not os.path.exists(path):
-            return None
+            return None, None
         with open(path, "r", encoding="utf-8") as fh:
             payload = json.load(fh)
         if payload.get("v") != _CACHE_VERSION:
             os.remove(path)
             logger.debug("Cache STALE (version mismatch) — discarded: %s", path)
-            return None
+            return None, None
         logger.debug("Cache HIT %s", path)
-        return payload["data"]
+        return payload["data"], payload.get("cached_at")
     except Exception as exc:
         logger.warning("Cache read failed (%s/%s/%s): %s", date_str, brand, branch, exc)
-        return None
+        return None, None
 
 
 def invalidate(date_str: str, branch: str, corporation: str):
