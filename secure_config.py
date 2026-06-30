@@ -11,10 +11,11 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-# Application-specific salt and password for key derivation
-# These make the encryption unique to this application
-_APP_SALT = b'OperationReportSystem2026'
-_APP_KEY = b'ORS_SecureKey_X9K2M5'
+# Application-specific salt and password for key derivation.
+# Override via ORS_ENC_SALT and ORS_ENC_KEY environment variables
+# or keep defaults for local development.
+_APP_SALT = os.environ.get("ORS_ENC_SALT", "ORS-default-salt").encode()
+_APP_KEY  = os.environ.get("ORS_ENC_KEY",  "ORS-default-key").encode()
 
 
 def _derive_key():
