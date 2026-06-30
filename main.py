@@ -133,6 +133,10 @@ def main():
     app.setQuitOnLastWindowClosed(True)
     _log_startup_time("QApplication created")
 
+    from resources.font_loader import load_poppins
+    load_poppins()
+    _log_startup_time("Fonts loaded")
+
     # Set application name and version for proper taskbar display
     app.setApplicationName("Operation Report System")
     app.setApplicationVersion(APP_VERSION)

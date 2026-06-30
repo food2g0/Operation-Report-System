@@ -2403,8 +2403,15 @@ class ClientDashboard(QWidget):
         """Remove keys from all_vals that are not columns in the table."""
         existing = self._get_table_columns(table_name)
         if not existing:
-            return all_vals 
-        return {k: v for k, v in all_vals.items() if k in existing}
+            return all_vals
+        filtered = {k: v for k, v in all_vals.items() if k in existing}
+        dropped = set(all_vals.keys()) - set(filtered.keys())
+        if dropped:
+            logger.warning(
+                "_filter_vals_for_table: dropping %d unknown column(s) from %s: %s",
+                len(dropped), table_name, sorted(dropped)
+            )
+        return filtered
 
     def check_existing_entry(self, selected_date, brand="Brand A"):
 

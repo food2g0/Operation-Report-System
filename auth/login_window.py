@@ -369,14 +369,14 @@ class LoginWindow(QWidget):
             )
         else:
             logo.setText("📊")
-            logo.setFont(QFont("Segoe UI Emoji", 48))
+            logo.setFont(QFont("Poppins", 48))
         logo.setAlignment(Qt.AlignCenter)
         lv.addWidget(logo)
 
         title = QLabel("OPERATION REPORT SYSTEM")
         title.setObjectName("brandTitle")
         title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("Segoe UI", 14, QFont.Bold))
+        title.setFont(QFont("Poppins", 14, QFont.Bold))
         title.setWordWrap(True)
         lv.addWidget(title)
 
@@ -405,7 +405,7 @@ class LoginWindow(QWidget):
         welcome = QLabel("WELCOME")
         welcome.setObjectName("welcomeTitle")
         welcome.setAlignment(Qt.AlignCenter)
-        welcome.setFont(QFont("Segoe UI", 24, QFont.Bold))
+        welcome.setFont(QFont("Poppins", 24, QFont.Bold))
         rv.addWidget(welcome)
         rv.addSpacing(30)
 
@@ -414,7 +414,7 @@ class LoginWindow(QWidget):
             lbl = QLabel(label_text)
             lbl.setObjectName("formLabel")
             lbl.setFixedWidth(100)
-            lbl.setFont(QFont("Segoe UI", 11))
+            lbl.setFont(QFont("Poppins", 11))
             row.addWidget(lbl)
             row.addWidget(widget)
             return row
@@ -463,7 +463,7 @@ class LoginWindow(QWidget):
         self.connection_status = QLabel("")
         self.connection_status.setObjectName("statusLabel")
         self.connection_status.setAlignment(Qt.AlignCenter)
-        self.connection_status.setFont(QFont("Segoe UI", 9))
+        self.connection_status.setFont(QFont("Poppins", 9))
         self.connection_status.setVisible(False)
         rv.addWidget(self.connection_status)
 
@@ -473,48 +473,80 @@ class LoginWindow(QWidget):
 
     def _apply_styles(self) -> None:
         self.setStyleSheet("""
-            QWidget { font-family: 'Segoe UI', Arial, sans-serif; }
+            QWidget { font-family: 'Poppins', 'Segoe UI', Arial, sans-serif; }
 
-            #leftPanel  { background-color: #2C3E50; border: none; }
-            #brandTitle { color: #A0AEC0; letter-spacing: 1px; padding: 0 20px; }
+            #leftPanel  { background-color: #1E293B; border: none; }
+            #brandTitle {
+                color: #94A3B8;
+                letter-spacing: 1.5px;
+                padding: 0 20px;
+                font-weight: 600;
+                font-size: 11px;
+            }
 
-            #rightPanel   { background-color: #1A2332; border: none; }
-            #welcomeTitle { color: #FFFFFF; letter-spacing: 2px; }
-            #formLabel    { color: #A0AEC0; }
+            #rightPanel   { background-color: #0F172A; border: none; }
+            #welcomeTitle {
+                color: #F1F5F9;
+                letter-spacing: 3px;
+                font-weight: 700;
+                font-size: 24px;
+            }
+            #formLabel {
+                color: #CBD5E1;
+                font-weight: 500;
+                font-size: 12px;
+            }
 
             #formInput {
-                padding: 10px 15px;
-                border: 2px solid #3D4F5F;
-                border-radius: 8px;
+                padding: 11px 16px;
+                border: 2px solid #334155;
+                border-radius: 9px;
+                font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
                 font-size: 13px;
-                background-color: #E8ECEF;
-                color: #2C3E50;
+                font-weight: 500;
+                background-color: #1E293B;
+                color: #F1F5F9;
             }
             #formInput:focus {
-                border-color: #20B2AA;
-                background-color: #FFFFFF;
+                border-color: #38BDF8;
+                background-color: #1E3A5F;
+                color: #FFFFFF;
             }
 
-            #formCheckbox { color: #A0AEC0; font-size: 9px; spacing: 6px; }
+            #formCheckbox {
+                color: #94A3B8;
+                font-size: 11px;
+                spacing: 6px;
+                font-weight: 500;
+            }
             #formCheckbox::indicator {
-                width: 12px; height: 12px; border-radius: 3px;
+                width: 14px; height: 14px; border-radius: 4px;
             }
             #formCheckbox::indicator:unchecked {
-                border: 2px solid #3D4F5F; background-color: #2C3E50;
+                border: 2px solid #475569; background-color: #1E293B;
             }
             #formCheckbox::indicator:checked {
-                border: 2px solid #20B2AA; background-color: #20B2AA;
+                border: 2px solid #38BDF8; background-color: #0284C7;
             }
 
             #loginButton {
-                background-color: #20B2AA; color: white; border: none;
-                border-radius: 22px; font-size: 14px; font-weight: bold;
-                letter-spacing: 1px;
+                background-color: #0284C7;
+                color: #FFFFFF;
+                border: none;
+                border-radius: 24px;
+                font-family: 'Poppins', 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                font-weight: 700;
+                letter-spacing: 0.8px;
             }
-            #loginButton:hover   { background-color: #1A9690; }
-            #loginButton:pressed { background-color: #158580; }
+            #loginButton:hover   { background-color: #0369A1; }
+            #loginButton:pressed { background-color: #075985; }
 
-            #statusLabel { color: #A0AEC0; }
+            #statusLabel {
+                color: #94A3B8;
+                font-size: 11px;
+                font-weight: 500;
+            }
         """)
 
     # ── Qt overrides ──────────────────────────────────────────────────────────
