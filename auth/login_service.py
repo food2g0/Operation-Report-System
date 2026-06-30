@@ -47,7 +47,7 @@ class AuthResult:
 
     @property
     def is_admin_role(self) -> bool:
-        return self.role in ("admin", "super_admin", "accounting")
+        return self.role in ("admin", "super_admin", "accounting", "compliance")
 
 
 # ── Service ───────────────────────────────────────────────────────────────────

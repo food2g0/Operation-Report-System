@@ -1,5 +1,6 @@
 
 import os
+import sys
 import json
 import time
 import uuid
@@ -10,6 +11,18 @@ import collections
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, List, Optional, Tuple
+
+# Ensure the repo root (parent of 'tools/') is on sys.path so that
+# 'from tools.X import ...' works regardless of where gunicorn is launched.
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _candidate in [
+    os.path.dirname(os.path.dirname(_HERE)),   # repo root when file is tools/api_utilities/
+    os.path.dirname(_HERE),                    # one level up (e.g. standalone deployment)
+    _HERE,                                     # same dir as api_server.py
+]:
+    if os.path.isdir(os.path.join(_candidate, "tools")) and _candidate not in sys.path:
+        sys.path.insert(0, _candidate)
+        break
 
 # Load .env file if present (must happen before any os.environ.get calls)
 try:
@@ -1120,7 +1133,7 @@ class UserLoginRequest(BaseModel):
     mac_address: Optional[str] = None
     cpu_info:    Optional[str] = None
 
-_VALID_ROLES = {"super_admin", "admin", "user", "accounting"}
+_VALID_ROLES = {"super_admin", "admin", "user", "accounting", "compliance"}
 
 @app.post("/api/auth/login")
 def user_login(body: UserLoginRequest, request: Request):
@@ -1135,7 +1148,7 @@ def user_login(body: UserLoginRequest, request: Request):
         """SELECT id, username, password, branch, corporation, role,
                   account_type, COALESCE(os_group,'') AS os_group
            FROM users
-           WHERE username = %s AND role IN ('admin','super_admin','user','accounting')
+           WHERE username = %s AND role IN ('admin','super_admin','user','accounting','compliance')
            LIMIT 1""",
         [body.username],
     )
@@ -1180,7 +1193,7 @@ def user_login(body: UserLoginRequest, request: Request):
 
 @app.get("/api/auth/verify")
 def verify_user_token(payload: dict = Depends(_require_role(
-    "super_admin", "admin", "user", "accounting"
+    "super_admin", "admin", "user", "accounting", "compliance"
 ))):
     """Verify that a user JWT is still valid and return its claims."""
     return {
