@@ -382,7 +382,7 @@ class LoginWindow(QWidget):
 
         lv.addStretch()
         credit = QLabel(
-            '© 2026 <a href="http://222.127.90.218:8080/" '
+            '© 2026 <a href="#" '
             'style="color:rgba(255,255,255,0.75);text-decoration:none;">'
             'Paolo Somido</a>'
         )

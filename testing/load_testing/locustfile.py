@@ -5,13 +5,13 @@ Usage:
     pip install locust
 
     # Headless (CI / server terminal):
-    locust --headless -u 500 -r 25 --run-time 3m --host http://222.127.90.218
+    locust --headless -u 500 -r 25 --run-time 3m --host http://<SERVER_IP>
 
     # Bypass Nginx (direct to app, no rate limiting):
-    locust --headless -u 500 -r 25 --run-time 3m --host http://222.127.90.218:5000
+    locust --headless -u 500 -r 25 --run-time 3m --host http://<SERVER_IP>:5000
 
     # Interactive web UI (open http://localhost:8089):
-    locust --host http://222.127.90.218
+    locust --host http://<SERVER_IP>
 
 Scenario weights (realistic daily branch workflow):
     ┌─────────────────────────────────────────┬────────┐

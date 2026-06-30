@@ -4,7 +4,7 @@ load_test.py — Simulate 400+ branches uploading reports simultaneously.
 Usage:
     python load_test.py                        # 400 branches, all scenarios
     python load_test.py --branches 100         # quick run with 100 branches
-    python load_test.py --url http://222.127.90.218  # target server
+    python load_test.py --url http://<SERVER_IP>  # target server
     python load_test.py --ramp 10              # ramp-up 10 new branches per second
 
 Requires: pip install requests rich
@@ -42,7 +42,7 @@ except ImportError:
     print("[INFO] Install 'rich' for a nicer display:  pip install rich")
 
 # ── Config ────────────────────────────────────────────────────────────────────
-DEFAULT_URL      = "http://222.127.90.218"
+DEFAULT_URL      = os.environ.get("ORS_API_URL", "http://localhost:5000")
 DEFAULT_BRANCHES = 400
 API_KEY          = os.environ.get("ORS_API_KEY", "")
 JWT_HOURS        = 12   # matches ORS_JWT_HOURS on the server
