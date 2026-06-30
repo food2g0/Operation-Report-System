@@ -176,18 +176,17 @@ QTabWidget::pane {{
     top: -1px;
 }}
 QTabBar::tab {{
-    background-color: {_SLATE_100};
-    color: {_TEXT_SEC};
+    background-color: {_SLATE_200};
+    color: {_SLATE_700};
     border: 1px solid {_BORDER};
     border-bottom: none;
-    padding: {_sz(10)}px {_sz(24)}px;
+    padding: {_sz(10)}px {_sz(20)}px;
     margin-right: 2px;
     border-top-left-radius: {_sz(7)}px;
     border-top-right-radius: {_sz(7)}px;
     font-family: {_FONT};
-    font-size: {_sz(13)}px;
+    font-size: {_sz(12)}px;
     font-weight: 600;
-    min-width: {_sz(110)}px;
 }}
 QTabBar::tab:selected {{
     background-color: {_BG_CARD};
@@ -196,7 +195,7 @@ QTabBar::tab:selected {{
     border-bottom: 2px solid {_BG_CARD};
 }}
 QTabBar::tab:hover:!selected {{
-    background-color: {_SLATE_200};
+    background-color: {_SLATE_300};
     color: {_SLATE_800};
 }}
 
