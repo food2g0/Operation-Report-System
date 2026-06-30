@@ -19,9 +19,15 @@ offline_data/
 data/*.db
 Client/drafts/*.json
 
-# Secrets / local config
-db_config.enc
+# Secrets / local config — NEVER commit these
 .env
+.env.*
+*.env
+db_config.enc
+secrets.json
+credentials.json
+*_secret*
+*_private*
 
 # Virtual environments
 venv/
